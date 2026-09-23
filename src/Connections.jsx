@@ -7,8 +7,7 @@ import {
   readWorkbook,
   hasGoogleSession,
 } from "./google";
-const configKey = "streamlion-google-public-config";
-const publicDefaults = {
+const googleConfig = {
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || "",
   apiKey: import.meta.env.VITE_GOOGLE_PICKER_API_KEY || "",
   appId: import.meta.env.VITE_GOOGLE_PROJECT_NUMBER || "",
@@ -20,17 +19,7 @@ export default function Connections({
   onExport,
   busyCapture,
 }) {
-  const [config, setConfig] = useState(() => {
-      try {
-        return {
-          ...publicDefaults,
-          ...JSON.parse(localStorage.getItem(configKey)),
-        };
-      } catch {
-        return publicDefaults;
-      }
-    }),
-    [error, setError] = useState(""),
+  const [error, setError] = useState(""),
     [status, setStatus] = useState(""),
     [busy, setBusy] = useState(false),
     [connected, setConnected] = useState(hasGoogleSession());
@@ -67,50 +56,27 @@ export default function Connections({
           workbook. Authorization expires; reconnect when asked. Tokens stay in
           memory.
         </p>
-        <details open={!config.clientId}>
-          <summary>Google application setup</summary>
-          <p className="hint">
-            The app owner supplies these public identifiers. Never paste a
-            client secret or access token here. See the repository’s Google
-            setup guide.
+        {!googleConfig.clientId && (
+          <p role="status" className="error">
+            Google connection is being configured by StreamLion. Please try
+            again later.
           </p>
-          {[
-            ["clientId", "OAuth web client ID"],
-            ["apiKey", "Picker API key (existing workbooks)"],
-            ["appId", "Google Cloud project number (existing workbooks)"],
-          ].map(([key, label]) => (
-            <label key={key}>
-              {label}
-              <input
-                value={config[key] || ""}
-                onChange={(e) =>
-                  setConfig({ ...config, [key]: e.target.value.trim() })
-                }
-              />
-            </label>
-          ))}
-          <button
-            disabled={busy}
-            onClick={() => {
-              try {
-                localStorage.setItem(configKey, JSON.stringify(config));
-                setStatus("Public application settings saved on this device.");
-              } catch (e) {
-                setError(e.message);
-              }
-            }}
-          >
-            Save application settings
-          </button>
-        </details>
+        )}
+        {googleConfig.clientId &&
+          (!googleConfig.apiKey || !googleConfig.appId) && (
+            <p role="status" className="hint">
+              Choosing an existing workbook is temporarily unavailable. You can
+              still connect Google and create a workbook.
+            </p>
+          )}
         <div className="actions">
           <button
             className="primary"
-            disabled={busy || busyCapture}
+            disabled={busy || busyCapture || !googleConfig.clientId}
             onClick={() =>
               act(async () => {
                 onDisconnect();
-                await connectGoogle(config.clientId || "");
+                await connectGoogle(googleConfig.clientId);
                 setStatus("Connected. Create or select a workbook.");
               })
             }
@@ -129,8 +95,16 @@ export default function Connections({
             Create workbook
           </button>
           <button
-            disabled={busy || busyCapture || !connected}
-            onClick={() => act(async () => open(await pickWorkbook(config)))}
+            disabled={
+              busy ||
+              busyCapture ||
+              !connected ||
+              !googleConfig.apiKey ||
+              !googleConfig.appId
+            }
+            onClick={() =>
+              act(async () => open(await pickWorkbook(googleConfig)))
+            }
           >
             Choose workbook
           </button>

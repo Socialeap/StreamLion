@@ -39,7 +39,9 @@ export function hasGoogleSession() {
 }
 export async function connectGoogle(clientId) {
   if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId))
-    throw new Error("Enter the Google OAuth web client ID from Connections.");
+    throw new Error(
+      "Google sign-in is unavailable. Please contact StreamLion support.",
+    );
   await loadScript("https://accounts.google.com/gsi/client");
   disconnectGoogle();
   const generation = session;
@@ -100,7 +102,7 @@ export async function pickWorkbook({ apiKey, appId }) {
   if (!hasGoogleSession()) throw new Error("Connect Google first.");
   if (!apiKey || !/^\d+$/.test(appId))
     throw new Error(
-      "Existing workbooks need a Google Picker API key and numeric Cloud project number in Connections.",
+      "Choosing an existing workbook is unavailable. Please contact StreamLion support.",
     );
   await loadScript("https://apis.google.com/js/api.js");
   await new Promise((resolve, reject) =>
