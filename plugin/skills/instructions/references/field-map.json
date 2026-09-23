@@ -1,0 +1,443 @@
+{
+  "schemaVersion": 1,
+  "kind": "streamlion.project",
+  "fields": [
+    {
+      "key": "title",
+      "label": "Project name",
+      "group": "Project",
+      "type": "text",
+      "legacy": "3dScanCapture"
+    },
+    {
+      "key": "reference",
+      "label": "Project ID",
+      "group": "Project",
+      "type": "text",
+      "legacy": "projectId"
+    },
+    {
+      "key": "companyName",
+      "label": "Commissioning company",
+      "group": "Project",
+      "type": "text",
+      "legacy": "companyName"
+    },
+    {
+      "key": "propertySizeSqFt",
+      "label": "Property size (sq ft)",
+      "group": "Project",
+      "type": "number",
+      "legacy": "propertySize"
+    },
+    {
+      "key": "approxHours",
+      "label": "Estimated total hours",
+      "group": "Project",
+      "type": "number",
+      "legacy": "approxHours"
+    },
+    {
+      "key": "siteHours",
+      "label": "Estimated on-site hours",
+      "group": "Project",
+      "type": "number",
+      "legacy": "anticipatedWork"
+    },
+    {
+      "key": "address",
+      "label": "Street address",
+      "group": "Location",
+      "type": "text",
+      "legacy": "projectAddress[addr_line1]"
+    },
+    {
+      "key": "address2",
+      "label": "Unit / address line 2",
+      "group": "Location",
+      "type": "text",
+      "legacy": "projectAddress[addr_line2]"
+    },
+    {
+      "key": "city",
+      "label": "City",
+      "group": "Location",
+      "type": "text",
+      "legacy": "projectAddress[city]"
+    },
+    {
+      "key": "region",
+      "label": "State / region",
+      "group": "Location",
+      "type": "text",
+      "legacy": "projectAddress[state]"
+    },
+    {
+      "key": "postal",
+      "label": "Postal code",
+      "group": "Location",
+      "type": "text",
+      "legacy": "projectAddress[postal]"
+    },
+    {
+      "key": "country",
+      "label": "Country",
+      "group": "Location",
+      "type": "text",
+      "legacy": ""
+    },
+    {
+      "key": "requesterName",
+      "label": "Requested by",
+      "group": "Contacts",
+      "type": "text",
+      "legacy": "requestBy[first] + requestBy[last]"
+    },
+    {
+      "key": "requesterEmail",
+      "label": "Requester email",
+      "group": "Contacts",
+      "type": "email",
+      "legacy": ""
+    },
+    {
+      "key": "contact1Name",
+      "label": "On-site contact 1",
+      "group": "Contacts",
+      "type": "text",
+      "legacy": "projectContact"
+    },
+    {
+      "key": "contact1Phone",
+      "label": "Contact 1 phone",
+      "group": "Contacts",
+      "type": "tel",
+      "legacy": "projectContact247"
+    },
+    {
+      "key": "contact2Name",
+      "label": "On-site contact 2",
+      "group": "Contacts",
+      "type": "text",
+      "legacy": "projectContact254"
+    },
+    {
+      "key": "contact2Phone",
+      "label": "Contact 2 phone",
+      "group": "Contacts",
+      "type": "tel",
+      "legacy": "projectContact255"
+    },
+    {
+      "key": "providerName",
+      "label": "Capture provider",
+      "group": "Contacts",
+      "type": "text",
+      "legacy": ""
+    },
+    {
+      "key": "providerEmail",
+      "label": "Provider email",
+      "group": "Contacts",
+      "type": "email",
+      "legacy": ""
+    },
+    {
+      "key": "startLocal",
+      "label": "Start date and time",
+      "group": "Schedule",
+      "type": "datetime-local",
+      "legacy": "startDate[*]"
+    },
+    {
+      "key": "endLocal",
+      "label": "Confirmed end date and time",
+      "group": "Schedule",
+      "type": "datetime-local",
+      "legacy": "endDatetime[*]"
+    },
+    {
+      "key": "timeZone",
+      "label": "Time zone (e.g. America/New_York)",
+      "group": "Schedule",
+      "type": "text",
+      "legacy": ""
+    },
+    {
+      "key": "appointmentStatus",
+      "label": "Appointment status",
+      "group": "Schedule",
+      "type": "appointment",
+      "legacy": ""
+    },
+    {
+      "key": "proposedTimes",
+      "label": "Proposed availability",
+      "group": "Schedule",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "scope",
+      "label": "Scope of work",
+      "group": "Scope",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "exclusions",
+      "label": "Exclusions",
+      "group": "Scope",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "accessInstructions",
+      "label": "Access instructions",
+      "group": "Scope",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "deliverables",
+      "label": "Required deliverables / checklist",
+      "group": "Scope",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "deliveryDeadline",
+      "label": "Delivery deadline as stated",
+      "group": "Scope",
+      "type": "text",
+      "legacy": ""
+    },
+    {
+      "key": "deliveryDestination",
+      "label": "Delivery destination / instructions",
+      "group": "Scope",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "notes",
+      "label": "Additional notes",
+      "group": "Scope",
+      "type": "textarea",
+      "legacy": "additionalNotes"
+    },
+    {
+      "key": "offeredFee",
+      "label": "Offered fee",
+      "group": "Money",
+      "type": "money",
+      "legacy": "pay364"
+    },
+    {
+      "key": "agreedFee",
+      "label": "Agreed fee",
+      "group": "Money",
+      "type": "money",
+      "legacy": ""
+    },
+    {
+      "key": "currency",
+      "label": "Currency (ISO code)",
+      "group": "Money",
+      "type": "text",
+      "legacy": ""
+    },
+    {
+      "key": "invoiceAmount",
+      "label": "Invoiced amount",
+      "group": "Money",
+      "type": "money",
+      "legacy": ""
+    },
+    {
+      "key": "paidAmount",
+      "label": "Amount received",
+      "group": "Money",
+      "type": "money",
+      "legacy": "Amount PAID"
+    },
+    {
+      "key": "paidDate",
+      "label": "Payment received date",
+      "group": "Money",
+      "type": "date",
+      "legacy": ""
+    },
+    {
+      "key": "dueDate",
+      "label": "Confirmed payment due date",
+      "group": "Money",
+      "type": "date",
+      "legacy": ""
+    },
+    {
+      "key": "paymentTerms",
+      "label": "Payment terms and trigger",
+      "group": "Money",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "reference1Name",
+      "label": "Reference 1 name",
+      "group": "Documents",
+      "type": "text",
+      "legacy": "reference1nameshort"
+    },
+    {
+      "key": "reference1Url",
+      "label": "Reference 1 link",
+      "group": "Documents",
+      "type": "url",
+      "legacy": "documentimageLink-1"
+    },
+    {
+      "key": "reference2Name",
+      "label": "Reference 2 name",
+      "group": "Documents",
+      "type": "text",
+      "legacy": "reference2nameshort"
+    },
+    {
+      "key": "reference2Url",
+      "label": "Reference 2 link",
+      "group": "Documents",
+      "type": "url",
+      "legacy": "documentimageLink-2"
+    },
+    {
+      "key": "document1Name",
+      "label": "Document 1 name",
+      "group": "Documents",
+      "type": "text",
+      "legacy": "document1Name"
+    },
+    {
+      "key": "document1Url",
+      "label": "Document 1 link",
+      "group": "Documents",
+      "type": "url",
+      "legacy": "documentLink-1"
+    },
+    {
+      "key": "document2Name",
+      "label": "Document 2 name",
+      "group": "Documents",
+      "type": "text",
+      "legacy": "document2Name"
+    },
+    {
+      "key": "document2Url",
+      "label": "Document 2 link",
+      "group": "Documents",
+      "type": "url",
+      "legacy": "document2Link"
+    },
+    {
+      "key": "driveFolderUrl",
+      "label": "Project Drive folder",
+      "group": "Documents",
+      "type": "url",
+      "legacy": ""
+    },
+    {
+      "key": "otherDocuments",
+      "label": "Additional files and links",
+      "group": "Documents",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "sourceNotes",
+      "label": "Sources: document, page, passage",
+      "group": "Review",
+      "type": "textarea",
+      "legacy": ""
+    },
+    {
+      "key": "unresolved",
+      "label": "Missing / conflicting information",
+      "group": "Review",
+      "type": "textarea",
+      "legacy": ""
+    }
+  ],
+  "workbook": {
+    "Projects": [
+      "recordId",
+      "revisionId",
+      "parentRevisionId",
+      "updatedAt",
+      "reviewState",
+      "title",
+      "reference",
+      "companyName",
+      "propertySizeSqFt",
+      "approxHours",
+      "siteHours",
+      "address",
+      "address2",
+      "city",
+      "region",
+      "postal",
+      "country",
+      "requesterName",
+      "requesterEmail",
+      "contact1Name",
+      "contact1Phone",
+      "contact2Name",
+      "contact2Phone",
+      "providerName",
+      "providerEmail",
+      "startLocal",
+      "endLocal",
+      "timeZone",
+      "appointmentStatus",
+      "proposedTimes",
+      "scope",
+      "exclusions",
+      "accessInstructions",
+      "deliverables",
+      "deliveryDeadline",
+      "deliveryDestination",
+      "notes",
+      "offeredFee",
+      "agreedFee",
+      "currency",
+      "invoiceAmount",
+      "paidAmount",
+      "paidDate",
+      "dueDate",
+      "paymentTerms",
+      "reference1Name",
+      "reference1Url",
+      "reference2Name",
+      "reference2Url",
+      "document1Name",
+      "document1Url",
+      "document2Name",
+      "document2Url",
+      "driveFolderUrl",
+      "otherDocuments",
+      "sourceNotes",
+      "unresolved"
+    ],
+    "Observations": [
+      "recordId",
+      "revisionId",
+      "parentRevisionId",
+      "updatedAt",
+      "reviewState",
+      "projectId",
+      "area",
+      "text",
+      "sourceText",
+      "audioUrl"
+    ]
+  }
+}

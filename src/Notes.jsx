@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { readDraft, writeDraft, clearDraft } from "./drafts";
 import { Download, Check, NotebookPen } from "lucide-react";
 import Recorder from "./Recorder";
 import { download, getAudio } from "./storage";
-function Note({ note, onRevise, onReview }) {
+function Note({ note, onRevise, onReview, captureBusy }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.text);
   const [error, setError] = useState("");
@@ -24,6 +25,11 @@ function Note({ note, onRevise, onReview }) {
         <strong>{note.area}</strong>
         <span>{new Date(note.createdAt).toLocaleString()}</span>
       </div>
+      {note.audioUrl && (
+        <a href={note.audioUrl} target="_blank" rel="noreferrer">
+          Open retained audio in Drive ↗
+        </a>
+      )}
       {note.audioId ? (
         <>
           <p>Voice memo · awaiting transcription</p>
@@ -57,6 +63,7 @@ function Note({ note, onRevise, onReview }) {
           <label>
             Corrected note
             <textarea
+              disabled={busy || captureBusy}
               value={text}
               onChange={(e) => setText(e.target.value)}
               required
@@ -64,11 +71,12 @@ function Note({ note, onRevise, onReview }) {
             />
           </label>
           <div className="actions">
-            <button disabled={busy} className="primary">
+            <button disabled={busy || captureBusy} className="primary">
               Save correction
             </button>
             <button
               type="button"
+              disabled={busy || captureBusy}
               onClick={() => {
                 setText(note.text);
                 setEditing(false);
@@ -82,9 +90,17 @@ function Note({ note, onRevise, onReview }) {
         <>
           <p className="note-text">{note.text}</p>
           <div className="actions">
-            <button onClick={() => setEditing(true)}>Correct</button>
             <button
-              disabled={busy || note.reviewed}
+              disabled={busy || captureBusy}
+              onClick={() => {
+                setText(note.text);
+                setEditing(true);
+              }}
+            >
+              Correct
+            </button>
+            <button
+              disabled={busy || captureBusy || note.reviewed}
               onClick={() => action(() => onReview(note.id))}
             >
               {note.reviewed ? (
@@ -127,11 +143,32 @@ export default function Notes({
   onReview,
   onCaptureBusy,
   captureBusy,
+  draftScope = "local",
+  allowAudio = true,
 }) {
-  const [area, setArea] = useState("");
-  const [text, setText] = useState("");
+  const draftKey = `${draftScope}:note:${selected}`;
+  const savedDraft = readDraft(draftKey);
+  const [area, setArea] = useState(savedDraft?.area || "");
+  const [text, setText] = useState(savedDraft?.text || "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const d = readDraft(draftKey);
+    setArea(d?.area || "");
+    setText(d?.text || "");
+  }, [draftKey]);
+  function updateDraft(a, t) {
+    setArea(a);
+    setText(t);
+    try {
+      writeDraft(draftKey, { area: a, text: t });
+      setError("");
+    } catch {
+      setError(
+        "Draft cannot be saved on this device. Copy your text before leaving.",
+      );
+    }
+  }
   const job = workspace.jobs.find((j) => j.id === selected);
   const notes = workspace.notes.filter((n) => n.jobId === selected);
   async function submit(e) {
@@ -139,9 +176,15 @@ export default function Notes({
     setBusy(true);
     setError("");
     try {
-      if (!area.trim() || !text.trim())
-        throw new Error("Enter an area and note.");
+      if (
+        !selected ||
+        !workspace.jobs.some((j) => j.id === selected) ||
+        !area.trim() ||
+        !text.trim()
+      )
+        throw new Error("Choose a project and enter an area and note.");
       await onAdd({ jobId: selected, area: area.trim(), text });
+      clearDraft(draftKey);
       setText("");
     } catch (e) {
       setError(e.message);
@@ -172,6 +215,7 @@ export default function Notes({
               disabled={captureBusy || busy}
               onChange={(e) => onSelect(e.target.value)}
             >
+              <option value="">Choose a project</option>
               {workspace.jobs.map((j) => (
                 <option key={j.id} value={j.id}>
                   {j.title}
@@ -192,7 +236,7 @@ export default function Notes({
                   Area
                   <input
                     value={area}
-                    onChange={(e) => setArea(e.target.value)}
+                    onChange={(e) => updateDraft(e.target.value, text)}
                     disabled={captureBusy || busy}
                     placeholder="Level 1 / Office 3 / Survey wall"
                     required
@@ -203,7 +247,7 @@ export default function Notes({
                   Note
                   <textarea
                     value={text}
-                    onChange={(e) => setText(e.target.value)}
+                    onChange={(e) => updateDraft(area, e.target.value)}
                     placeholder="Record measurements with their exact units, observations, or access issues…"
                     rows={6}
                     maxLength={10000}
@@ -215,7 +259,10 @@ export default function Notes({
                   Original wording and fractions are preserved. Notes are not
                   automatically parsed into measurements.
                 </p>
-                <button className="primary full" disabled={busy || captureBusy}>
+                <button
+                  className="primary full"
+                  disabled={busy || captureBusy || !selected}
+                >
                   {busy ? "Saving…" : "Save note"}
                 </button>
                 {error && (
@@ -224,12 +271,20 @@ export default function Notes({
                   </p>
                 )}
               </form>
-              <Recorder
-                jobId={selected}
-                area={area}
-                onSave={onAudio}
-                onBusy={onCaptureBusy}
-              />
+              {allowAudio ? (
+                <Recorder
+                  jobId={selected}
+                  area={area}
+                  onSave={onAudio}
+                  onBusy={onCaptureBusy}
+                />
+              ) : (
+                <p className="hint">
+                  Use Ask → Open StreamLion in ChatGPT for voice annotations.
+                  Typed annotations here save directly to this project in
+                  Google.
+                </p>
+              )}
             </section>
             <section aria-label="Saved notes" className="note-list">
               <h2>
@@ -247,6 +302,7 @@ export default function Notes({
                       note={note}
                       onRevise={onRevise}
                       onReview={onReview}
+                      captureBusy={captureBusy}
                     />
                   ))
               )}
