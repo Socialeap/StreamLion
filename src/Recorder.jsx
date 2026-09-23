@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Mic, Square, Download } from "lucide-react";
 import { download } from "./storage";
 export default function Recorder({ jobId, area, onSave, onBusy }) {
   const [state, setState] = useState("idle");
   const [error, setError] = useState("");
   const [seconds, setSeconds] = useState(0);
+  const [downloadRequested, setDownloadRequested] = useState(false);
+  const mounted = useRef(true);
+  const requestCancelled = useRef(false);
   const recorder = useRef(null);
   const pending = useRef(null);
   const timer = useRef(null);
@@ -21,8 +24,12 @@ export default function Recorder({ jobId, area, onSave, onBusy }) {
     clearInterval(timer.current);
   }
   useEffect(() => {
+    mounted.current = true;
     const hide = () => {
-      if (document.hidden) stop();
+      if (document.hidden) {
+        requestCancelled.current = true;
+        stop();
+      }
     };
     const leave = (e) => {
       if (stream.current || pending.current) {
@@ -33,6 +40,8 @@ export default function Recorder({ jobId, area, onSave, onBusy }) {
     document.addEventListener("visibilitychange", hide);
     window.addEventListener("beforeunload", leave);
     return () => {
+      mounted.current = false;
+      requestCancelled.current = true;
       document.removeEventListener("visibilitychange", hide);
       window.removeEventListener("beforeunload", leave);
       clearInterval(timer.current);
@@ -44,6 +53,8 @@ export default function Recorder({ jobId, area, onSave, onBusy }) {
     try {
       await onSave(capture.current, pending.current);
       pending.current = null;
+      setError("");
+      setDownloadRequested(false);
       setState("idle");
       onBusy(false);
     } catch (e) {
@@ -54,6 +65,8 @@ export default function Recorder({ jobId, area, onSave, onBusy }) {
     }
   }
   async function start() {
+    requestCancelled.current = false;
+    setDownloadRequested(false);
     setError("");
     setState("requesting");
     onBusy(true);
@@ -64,6 +77,19 @@ export default function Recorder({ jobId, area, onSave, onBusy }) {
     };
     try {
       const source = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Permission may resolve after visibility changed or this component unmounted.
+      // Release the newly acquired microphone before constructing a recorder.
+      if (document.hidden || requestCancelled.current || !mounted.current) {
+        source.getTracks().forEach((track) => track.stop());
+        if (mounted.current) {
+          setError(
+            "Recording cancelled because the app left the foreground. Tap Record audio to try again.",
+          );
+          setState("idle");
+          onBusy(false);
+        }
+        return;
+      }
       stream.current = source;
       const r = new MediaRecorder(source);
       recorder.current = r;
@@ -136,17 +162,46 @@ export default function Recorder({ jobId, area, onSave, onBusy }) {
           </button>
           <button
             type="button"
-            onClick={() =>
-              download(
-                pending.current,
-                "streamlion-recovered-audio." +
-                  (pending.current.type.includes("mp4") ? "m4a" : "webm"),
-              )
-            }
+            onClick={() => {
+              try {
+                download(
+                  pending.current,
+                  "streamlion-recovered-audio." +
+                    (pending.current.type.includes("mp4") ? "m4a" : "webm"),
+                );
+                setDownloadRequested(true);
+              } catch (e) {
+                setError(
+                  `Download could not start: ${e.message}. The audio is still available to retry.`,
+                );
+              }
+            }}
           >
             <Download size={16} />
             Download audio
           </button>
+          {downloadRequested && (
+            <>
+              <p className="hint">
+                Check that the downloaded audio opens before continuing.
+                Continuing releases this unsaved recording from memory.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  pending.current = null;
+                  capture.current = null;
+                  recorder.current = null;
+                  setDownloadRequested(false);
+                  setError("");
+                  setState("idle");
+                  onBusy(false);
+                }}
+              >
+                I have a copy — continue
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <p role="status">
