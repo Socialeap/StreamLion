@@ -1,0 +1,4 @@
+interface:
+  default_prompt: Create a StreamLion project from these specifications, or help me annotate and query an existing project in my Google workbook.
+  display_name: StreamLion
+  short_description: Spatial capture projects and field notes in Google.

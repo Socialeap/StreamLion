@@ -1,54 +1,34 @@
 # StreamLion
 
-Local field-workspace foundation for spatial capture providers. This is an initial review increment, not a production release or the full planned product.
+Google-owned project workspace for spatial capture providers. ChatGPT interprets specifications and assists with voice annotations; Google Sheets/Drive own the business records. This version implements the field contract, PWA editor, Google browser adapter and plugin instructions. Google configuration and mobile voice acceptance remain required before the connected workflow is ready for users.
 
-## Run and verify
+## Run
 
-Use Node 22.12+ (Node 22 recommended for Cloudflare).
+Node 22.12+:
 
 ```sh
 npm ci
 npm test
 npm run build
-npm run preview
+npm run dev -- --port 4174
 ```
 
-## Works in this increment
+## Workflow
 
-- Create jobs with original project IDs, site, scope, and optional offered USD fee.
-- Capture area-linked typed notes; keep fractions and wording unchanged.
-- Correct notes with retained revision history and explicit review state.
-- Record short foreground audio with captured job/area context; store recordings and notes together in IndexedDB. No transcription is performed.
-- Export jobs and notes as JSON; download each recording separately.
-- Responsive layout, PWA manifest, and app-shell precache. New service workers wait rather than forcing reload during field work.
-- Storage errors remain visible; stale concurrent-tab writes fail rather than overwrite.
+Upload specifications in ChatGPT using StreamLion. Review and save through the connected Google tools, or import its JSON into the PWA. In Connections, authorize Google and create/select the StreamLion workbook. Refresh to read current project records. Edit details, add area-specific notes, and use Ask to copy project context into ChatGPT for queries/voice.
 
-## Not yet implemented / verified
+- [Google setup and activation](docs/google-setup.md)
+- [Current architecture and limits](docs/google-owned-plan.md)
+- [Field map](docs/field-map.md)
+- [JSON fixture](fixtures/project-intake.json)
+- [Plugin source](plugin/skills/instructions/SKILL.md)
 
-Google OAuth and sync, user accounts, tenant isolation, structured measurement parsing, checklist completion, PDF intake, AI answers, invoicing, payments, backup import, and commercial readiness. No cloud data storage or API keys are required. Use synthetic test data until field validation and security work are complete.
+Google access tokens stay in memory. Project drafts and the original local workspace stay on the device; browser storage is not a backup. Source documents and retained recordings belong in the user's Drive. No model API key, StreamLion database or MCP server is deployed by this code. The skill uses the host's existing Google connector; missing tools produce an explicit JSON fallback.
 
-Browser data is not a backup. It can be cleared or evicted. Export records regularly and download audio. JSON export does not embed audio. Physical iPhone/Android recording, interruption recovery, PWA installation and offline operation require owner testing.
+Append-only workbook revisions support idempotent retry and detect competing revisions. They do not provide transactional concurrency against arbitrary external Sheet edits. Pilot with one active editor per project. Workbook limit: 10,000 grid rows per tab. JSON export of the legacy local workspace excludes audio and is not yet a restorable backup package.
 
-## Deployment: Cloudflare Pages with Porkbun DNS
+## Cloudflare
 
-After the reviewed change is merged to `main`:
+Existing project streamlion, repository Socialeap/StreamLion, production branch main. Build npm run build, output dist, repository root, Node 22. Do not alter Porkbun nameservers, transfer/unlock the domain, or change apex/www/email/3dps records. Existing streamlion.transcendencemedia.com CNAME/Pages arrangement is retained.
 
-| Setting                | Value                                                            |
-| ---------------------- | ---------------------------------------------------------------- |
-| Repository             | `Socialeap/StreamLion`                                           |
-| Project                | `streamlion`                                                     |
-| Production branch      | `main`                                                           |
-| Framework preset       | `Vite` (or None with explicit values below)                      |
-| Build command          | `npm run build`                                                  |
-| Build output directory | `dist`                                                           |
-| Root directory         | repository root / leave default                                  |
-| Node version           | `22` (Pages build environment setting `NODE_VERSION`, if needed) |
-| Application secrets    | none                                                             |
-
-Verify the generated `pages.dev` deployment before adding the custom URL. In the Pages project's Custom domains, register `streamlion.transcendencemedia.com`. Then add **only** a `streamlion` CNAME at Porkbun pointing to the exact assigned Pages hostname. Wait for active HTTPS and verify the app.
-
-**Porkbun remains the registrar and authoritative DNS provider. Do not change nameservers, transfer the domain, unlock it, or alter apex/www/email/3dps records.** The pending Cloudflare domain-zone onboarding is not required for this Pages subdomain setup.
-
-No Lovable action is required: this increment has no backend, migration, server function, or provider activation. Cloudflare Pages build configuration and frontend publication are owner-controlled release steps. Merge, build, live verification, and device acceptance are separate gates.
-
-Build-tool note: official WebAssembly variants of Rollup and esbuild are pinned via npm overrides so builds run without native binaries rejected by the development machine's macOS policy. No system security settings are changed.
+Official wasm Rollup/esbuild overrides accommodate the development machine's native-binary policy. CI runs tests/build. Owner Google setup, published frontend, plugin release, live Google roundtrip and phone voice acceptance are separate gates. See the committed release instructions before claiming completion.
