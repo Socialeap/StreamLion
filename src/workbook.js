@@ -73,6 +73,9 @@ export function validateRevision(record, headers) {
 }
 // Append-only revisions. A fork is surfaced, never resolved by last-row-wins.
 export function readRecords(rows, headers) {
+  return readRecordHistory(rows, headers).heads;
+}
+export function readRecordHistory(rows, headers) {
   assertHeaders(rows, headers);
   const byRevision = new Map(),
     byRecord = new Map();
@@ -109,7 +112,7 @@ export function readRecords(rows, headers) {
     records.push(r);
     byRecord.set(r.recordId, records);
   }
-  return [...byRecord.values()].map((revisions) => {
+  const heads = [...byRecord.values()].map((revisions) => {
     const parents = new Set();
     for (const r of revisions) {
       if (parents.has(r.parentRevisionId))
@@ -139,6 +142,7 @@ export function readRecords(rows, headers) {
       throw new Error("Disconnected revision history.");
     return heads[0];
   });
+  return { heads, revisions: [...byRevision.values()] };
 }
 export function makeRevision(
   fields,

@@ -1,7 +1,7 @@
 import {
   TABS,
   columnName,
-  readRecords,
+  readRecordHistory,
   rowFor,
   assertUnchanged,
   validateRevision,
@@ -168,6 +168,9 @@ export async function createWorkbook() {
   });
 }
 export async function readWorkbook(bookId) {
+  return (await readWorkbookSnapshot(bookId)).heads;
+}
+async function readWorkbookSnapshot(bookId) {
   if (!/^[\w-]+$/.test(bookId)) throw new Error("Invalid workbook ID.");
   // Reject truncated workbooks instead of silently losing projects at a scan limit.
   const meta = await request(
@@ -193,24 +196,33 @@ export async function readWorkbook(bookId) {
   const result = await request(
     `/${bookId}/values:batchGet?${params}&valueRenderOption=UNFORMATTED_VALUE`,
   );
-  return Object.fromEntries(
-    Object.entries(TABS).map(([name, h], i) => [
-      name,
-      readRecords(result.valueRanges[i]?.values || [], h),
-    ]),
-  );
+  const heads = {},
+    history = {};
+  Object.entries(TABS).forEach(([name, h], i) => {
+    const parsed = readRecordHistory(result.valueRanges[i]?.values || [], h);
+    heads[name] = parsed.heads;
+    history[name] = parsed.revisions;
+  });
+  return { heads, history };
+}
+function hasSavedRevision(history, revision, headers) {
+  const saved = history.find((r) => r.revisionId === revision.revisionId);
+  if (!saved) return false;
+  if (
+    JSON.stringify(rowFor(saved, headers)) !==
+    JSON.stringify(rowFor(revision, headers))
+  )
+    throw new Error("Revision ID already has different content.");
+  return true;
 }
 export async function appendRevision(bookId, tab, revision, expected) {
   const h = TABS[tab];
   if (!h) throw new Error("Unknown workbook tab.");
   validateRevision(revision, h);
-  const before = await readWorkbook(bookId);
+  const snapshot = await readWorkbookSnapshot(bookId);
+  const before = snapshot.heads;
   const prior = before[tab].find((r) => r.recordId === revision.recordId);
-  if (prior?.revisionId === revision.revisionId) {
-    if (
-      JSON.stringify(rowFor(prior, h)) !== JSON.stringify(rowFor(revision, h))
-    )
-      throw new Error("Revision ID already has different content.");
+  if (hasSavedRevision(snapshot.history[tab], revision, h)) {
     return before;
   }
   assertUnchanged(prior, expected);
@@ -226,8 +238,8 @@ export async function appendRevision(bookId, tab, revision, expected) {
     { method: "POST", body: JSON.stringify({ values: [rowFor(revision, h)] }) },
   );
   // A timeout has an unknown outcome; caller retains the SAME revision ID for retry.
-  const after = await readWorkbook(bookId);
-  if (!after[tab].some((r) => r.revisionId === revision.revisionId))
+  const after = await readWorkbookSnapshot(bookId);
+  if (!hasSavedRevision(after.history[tab], revision, h))
     throw new Error("Write could not be verified. Refresh before retrying.");
-  return after;
+  return after.heads;
 }
