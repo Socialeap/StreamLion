@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "gpt-11b52f5bcfe3bd414f9586be746198d8",
-  "version": "0.72.0",
+  "version": "0.73.0",
   "description": "Create and query Google-owned spatial capture projects; extract specifications and record reviewed field annotations.",
   "author": {
     "name": "PASCAL E CHARPENTIER"
@@ -10,14 +10,15 @@
     "com.openai": {
       "interface": {
         "displayName": "StreamLion",
-        "shortDescription": "Create projects and annotate field work",
-        "longDescription": "Turn uploaded specifications into reviewed StreamLion project records in your Google workbook. Find jobs, preserve exact field observations, and use ChatGPT voice where tools are available. No StreamLion project database.",
+        "shortDescription": "Ask about projects and open your field workspace",
+        "longDescription": "Ask concise questions about your connected Google workbook, turn specifications into reviewed projects, and open the StreamLion workspace in ChatGPT where supported. Google owns your records.",
         "developerName": "PASCAL E CHARPENTIER",
         "category": "Productivity",
         "capabilities": [
-          "skills"
+          "skills",
+          "mcp"
         ],
-        "defaultPrompt": "Create a project from my specifications, or open a project from my StreamLion Google workbook.",
+        "defaultPrompt": "Help me with my StreamLion projects. Answer a quick question from my connected workbook, or open the workspace if I need to edit.",
         "composerIcon": "./assets/gpt-icon.png",
         "logo": "./assets/gpt-icon.png"
       }
