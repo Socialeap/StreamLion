@@ -26,6 +26,7 @@ const { default: ProjectEditor } = await import("./ProjectEditor.jsx");
 const { chatUrl } = await import("./ChatGPTPanel.jsx");
 const { FIELD_HELP } = await import("./FieldHelp.jsx");
 const { PROJECT_FIELDS } = await import("./project-schema.js");
+const { default: Jobs } = await import("./Jobs.jsx");
 
 test("project wizard starts with the ChatGPT action and reveals one field group at a time", () => {
   localStorage.clear();
@@ -85,6 +86,101 @@ test("manual project details survive the steps and reach save unchanged", async 
   cleanup();
 });
 
+test("any numbered step opens directly and keeps entered details", () => {
+  localStorage.clear();
+  const ui = render(
+    <ProjectEditor
+      draftId="draft-jump"
+      draftScope="jump-test"
+      onSave={async () => {}}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: /Step 3: Where is the site/ }),
+  );
+  fireEvent.change(ui.getByLabelText("City"), {
+    target: { value: "Brooklyn" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: /Step 2: Identify the project/ }),
+  );
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Nassau Street" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: /Step 3: Where is the site/ }),
+  );
+  assert.equal(ui.getByLabelText("City").value, "Brooklyn");
+  cleanup();
+});
+
+test("Step 1 explains the workbook and opens Connections when needed", () => {
+  localStorage.clear();
+  let connect = false;
+  const ui = render(
+    <ProjectEditor
+      draftScope="no-book"
+      onSave={async () => {}}
+      onCancel={() => {}}
+      onConnectGoogle={() => {
+        connect = true;
+      }}
+    />,
+  );
+  assert.match(
+    ui.getByRole("region", { name: "Where this project is saved" }).textContent,
+    /A workbook is the Google Sheet/,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Connect Google and choose a workbook" }),
+  );
+  assert.equal(connect, true);
+  cleanup();
+});
+
+test("Projects shows a named unfinished draft, its count and edit/delete controls", () => {
+  const draft = {
+    scope: "local",
+    draftId: "draft-a",
+    fields: {
+      title: "Nassau Street",
+      city: "Brooklyn",
+      startLocal: "2026-10-01T10:00",
+    },
+  };
+  let edited = false;
+  let deleted = false;
+  const ui = render(
+    <Jobs
+      workspace={{ jobs: [], notes: [] }}
+      drafts={[draft]}
+      onCreate={() => {}}
+      onAsk={() => {}}
+      onResumeDraft={() => {
+        edited = true;
+      }}
+      onDeleteDraft={() => {
+        deleted = true;
+      }}
+    />,
+  );
+  assert.equal(
+    ui.getByText("Projects and named drafts").previousElementSibling
+      .textContent,
+    "1",
+  );
+  assert.ok(ui.getByText("Nassau Street"));
+  assert.ok(ui.getByText("Brooklyn"));
+  assert.ok(ui.getByText("Oct 1, 2026"));
+  assert.ok(ui.getByText("Pending"));
+  fireEvent.click(ui.getByRole("button", { name: "Edit" }));
+  fireEvent.click(ui.getByRole("button", { name: "Delete" }));
+  assert.equal(edited, true);
+  assert.equal(deleted, true);
+  cleanup();
+});
+
 test("ChatGPT link opens a Work chat with StreamLion selected and a drafted message", () => {
   const url = new URL(chatUrl({ mode: "create", bookId: "workbook123" }));
   assert.equal(url.origin, "https://chatgpt.com");
@@ -93,6 +189,10 @@ test("ChatGPT link opens a Work chat with StreamLion selected and a drafted mess
   assert.match(url.searchParams.get("hints"), /^plugin:plugin_/);
   assert.match(url.searchParams.get("prompt"), /specifications I will upload/);
   assert.match(url.searchParams.get("prompt"), /workbook123/);
+  assert.match(
+    new URL(chatUrl({ mode: "create" })).searchParams.get("prompt"),
+    /Do not save to Google yet/,
+  );
   const projectUrl = chatUrl({
     project: { id: "opaque-123", title: "Private Customer Name" },
     bookId: "workbook123",

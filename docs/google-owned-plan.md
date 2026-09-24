@@ -16,6 +16,8 @@ Stable record IDs survive sorting. Metadata headers are fixed. Same-revision ret
 
 Updates append a full row. Direct edits to a latest row are reflected on refresh, but lose that edit's previous cell history unless Google version history supplies it. Prefer editing in StreamLion/ChatGPT. Do not alter IDs, parent relationships or headers. The PWA rejects incompatible/oversized books rather than silently truncating. Pilot cap is 10,000 grid rows per tab, including history.
 
+Delete in the PWA appends a Projects revision with reviewState `archived`; it hides the project and its notes from active PWA lists. Restore appends a draft revision so details can be reviewed again. The workbook rows and observations remain intact. The StreamLion ChatGPT plugin must understand archived heads before this feature is used in a shared workbook; publish its updated instructions after the frontend merge and before owner QA. Neither status means the site work was completed.
+
 Fetched Google lists are held in browser memory and cleared on disconnect. Device drafts, their base snapshots and pending write operations are persisted locally, partitioned by workbook/project, to prevent silent loss and allow the same write to be retried after a reload. These include project details; they remain until saved/released or site data is cleared. Shared-device users should clear site data only after exporting/saving needed drafts. ChatGPT has its own processing/retention; "Google-owned records" does not mean information never reaches ChatGPT.
 
 ## Acceptance and remaining gates

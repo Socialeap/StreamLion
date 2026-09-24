@@ -19,13 +19,13 @@ The primary workflow is uploaded PDFs/text/email threads → source-backed proje
 
 Use the host's connected Google Drive/Sheets tools when available. Inspect actual capabilities: read, metadata, search, append/update, file upload. A Google connection in the PWA does not authorize this ChatGPT session, and the reverse is also true. Ask to connect Google or select the workbook only when needed. Never request passwords, tokens, or a client secret in conversation.
 
-Use an exact user-selected workbook URL/ID. Without one, search narrowly for StreamLion workbooks and let the user choose if ambiguous. Never scan unrelated documents or read other customers' data. Read metadata before ranges. Never change sharing settings. Never duplicate/rebuild an existing workbook automatically.
+Use an exact user-selected workbook URL/ID for workbook operations. If the user is only preparing a project and no workbook is connected or supplied, prepare the review summary and project JSON without asking for a workbook yet. Before a requested Google save, search narrowly for StreamLion workbooks and let the user choose if ambiguous. The PWA's Connections page can create or select a workbook and shows its link. Never scan unrelated documents or read other customers' data. Read metadata before ranges. Never change sharing settings. Never duplicate/rebuild an existing workbook automatically.
 
 If Google tools are missing or access is denied, provide project JSON for the PWA's import flow. Do not claim it was synced. The PWA creates the standard workbook after Google setup. Identify unsupported operations accurately.
 
 ## Contract
 
-Read references/field-map.json. It defines every allowed field and exact ordered headers for the Projects and Observations tabs. Unknown fields cannot become new columns without a versioned migration. Both tabs are append-only revision histories; retain every old row. Use only the latest unambiguous revision for each recordId in queries.
+Read references/field-map.json. It defines every allowed field and exact ordered headers for the Projects and Observations tabs. Unknown fields cannot become new columns without a versioned migration. Both tabs are append-only revision histories; retain every old row. Use only the latest unambiguous revision for each recordId in queries. A Projects head with reviewState `archived` has been moved to Deleted projects in the PWA; exclude it from active results and annotations. Its history remains for restoration.
 
 Return intake as a JSON object (also a downloadable .json when supported):
 
@@ -52,14 +52,14 @@ Show a concise draft summary, conflicts and proposed destination before the firs
 ## Workbook algorithm — enforce on every operation
 
 1. Get metadata; verify both tab names, exact header row from field-map.json, and <=10,000 grid rows per tab. Read the populated bounded range in pages if needed. Do not silently use an incomplete result. No extra columns, missing metadata, or incompatible template versions. Stop and explain repair if invalid.
-2. Each row has recordId, revisionId, parentRevisionId, updatedAt (UTC ISO timestamp), reviewState (draft/reviewed). All IDs are stable UUIDs. The first revision has empty parentRevisionId. Deduplicate identical revisionId rows only if every cell agrees. A differing duplicate, missing parent, disconnected chain, cycle, or two distinct children with the same parent is a conflict. Do not pick the last row to resolve it. Sort order has no meaning.
+2. Each row has recordId, revisionId, parentRevisionId, updatedAt (UTC ISO timestamp), reviewState (draft/reviewed for Observations; draft/reviewed/archived for Projects). All IDs are stable UUIDs. The first revision has empty parentRevisionId. Deduplicate identical revisionId rows only if every cell agrees. A differing duplicate, missing parent, disconnected chain, cycle, or two distinct children with the same parent is a conflict. Do not pick the last row to resolve it. Sort order has no meaning.
 3. Find the unique current head for each recordId by following the parent chain. Read the existing head again immediately before a write and compare all its cells with the reviewed base; if changed, re-present differences. Sheets cannot guarantee compare-and-swap against concurrent external edits. Stop on detected conflicts.
 4. Creates get new recordId and revisionId. Updates keep recordId, copy the complete latest record, apply only approved changes, get a new revisionId and use the previous revisionId as parentRevisionId. updatedAt is current UTC time. Unreviewed imported facts use draft. App-controlled metadata must not be edited manually.
 5. APPEND one complete row to the appropriate tab. Use the exact column order in field-map.json. Use Sheets RAW values or updateCells/appendCells userEnteredValue.stringValue; NEVER formulaValue or USER_ENTERED for uploaded content. Do not overwrite an earlier row. Do not concatenate customer text into formulas.
 6. If an append times out, retain and search for the SAME revisionId before retrying. Do not generate a new ID for the retry. If already present identically, return that receipt. Otherwise retry the identical operation only after verifying the unchanged base.
 7. Read back and validate the chain. Confirm a save only if the exact revision is present and no branch conflict exists. Receipt: project name, recordId, revisionId, workbook link. A tool attempt, cached view or queued action is not a save.
 
-For a save that updates several records, expose partial completion explicitly; do not claim an all-or-nothing transaction across requests. No automatic conflict cleanup, deletion or workbook recreation.
+For a save that updates several records, expose partial completion explicitly; do not claim an all-or-nothing transaction across requests. Do not automatically archive, restore, permanently delete, clean up conflicts, or recreate a workbook. A user-initiated PWA Delete appends an archived project revision; PWA Restore appends a draft revision. Existing observations remain in the workbook history.
 
 ## Field annotations
 

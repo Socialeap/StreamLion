@@ -74,6 +74,54 @@ test("revisions survive sorted rows and identical retries; concurrent forks fail
   );
   assert.throws(() => assertUnchanged(b, a), /changed/);
 });
+test("archived project stays in the revision chain and can be restored", () => {
+  const original = makeRevision(fields(), null, "project-a", "reviewed");
+  const archived = makeRevision(fields(), original, "project-a", "archived");
+  const restored = makeRevision(fields(), archived, "project-a", "draft");
+  assert.equal(
+    readRecords(
+      [
+        PROJECT_HEADERS,
+        rowFor(original, PROJECT_HEADERS),
+        rowFor(archived, PROJECT_HEADERS),
+      ],
+      PROJECT_HEADERS,
+    )[0].reviewState,
+    "archived",
+  );
+  assert.equal(
+    readRecords(
+      [
+        PROJECT_HEADERS,
+        rowFor(original, PROJECT_HEADERS),
+        rowFor(archived, PROJECT_HEADERS),
+        rowFor(restored, PROJECT_HEADERS),
+      ],
+      PROJECT_HEADERS,
+    )[0].reviewState,
+    "draft",
+  );
+  const observation = makeRevision(
+    validateNote({
+      projectId: "project-a",
+      area: "Lobby",
+      text: "Original note",
+    }),
+    null,
+    "note-a",
+  );
+  assert.throws(
+    () =>
+      readRecords(
+        [
+          NOTE_HEADERS,
+          rowFor({ ...observation, reviewState: "archived" }, NOTE_HEADERS),
+        ],
+        NOTE_HEADERS,
+      ),
+    /metadata/,
+  );
+});
 test("tampered headers and conflicting duplicate revision never overwrite", () => {
   const a = makeRevision(fields(), null, "job-a");
   assert.throws(

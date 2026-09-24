@@ -4,7 +4,9 @@ const PLUGIN_ID = "plugin_ab4b9732e6e48191946b488302b897ce";
 
 export function chatPrompt({ mode = "ask", project, bookId }) {
   if (mode === "create")
-    return `Create a spatial capture project from the specifications I will upload.${bookId ? ` My StreamLion Google workbook is https://docs.google.com/spreadsheets/d/${bookId}/edit.` : " Ask me to share my StreamLion Google workbook before saving."} Show me the details and any missing information before saving.`;
+    return bookId
+      ? `Create a spatial capture project from the specifications I will upload. My StreamLion Google workbook is https://docs.google.com/spreadsheets/d/${bookId}/edit. Show me the details and any missing information before saving.`
+      : "Prepare a spatial capture project from the specifications I will upload. Show me the details and any missing information, then give me a StreamLion project JSON file to import in the app. Do not save to Google yet; I will connect a workbook first.";
   if (project && bookId)
     return `Open project record ${project.id} in my Google workbook: https://docs.google.com/spreadsheets/d/${bookId}/edit. Confirm its name before answering my question.`;
   if (bookId)
