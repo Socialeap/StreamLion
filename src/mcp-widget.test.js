@@ -35,5 +35,6 @@ test("in-chat card renders only synthetic data and opens the workspace on reques
     dom.window.document.querySelector("#workspace iframe").src,
     "https://streamlion.transcendencemedia.com/",
   );
+  assert.equal(dom.window.document.querySelector("#workspace iframe").allow, "microphone");
   dom.window.close();
 });

@@ -1,6 +1,6 @@
 // This UI is deliberately data-free until the MCP connection has per-user auth.
 // The existing PWA owns Google access; the MCP endpoint never receives tokens.
-export const STREAMLION_WIDGET_URI = "ui://streamlion/workspace-v1.html";
+export const STREAMLION_WIDGET_URI = "ui://streamlion/workspace-v2.html";
 export const STREAMLION_APP_URL = "https://streamlion.transcendencemedia.com/";
 
 export const STREAMLION_WIDGET_HTML = String.raw`<!doctype html>
@@ -89,6 +89,7 @@ export const STREAMLION_WIDGET_HTML = String.raw`<!doctype html>
           const frame = document.createElement("iframe");
           frame.src = APP_URL;
           frame.title = "StreamLion field workspace";
+          frame.allow = "microphone";
           frame.referrerPolicy = "no-referrer";
           byId("workspace").append(frame);
         }

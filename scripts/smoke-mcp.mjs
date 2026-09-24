@@ -33,7 +33,7 @@ assert.deepEqual(
   ["show_streamlion_example", "show_streamlion_workspace"],
 );
 for (const tool of tools.tools) {
-  assert.equal(tool._meta?.ui?.resourceUri, "ui://streamlion/workspace-v1.html");
+  assert.equal(tool._meta?.ui?.resourceUri, "ui://streamlion/workspace-v2.html");
   assert.equal(tool.annotations.readOnlyHint, true);
 }
 
@@ -51,12 +51,14 @@ assert.equal(example.structuredContent.kind, "sample");
 assert.equal(example.structuredContent.title, "Example venue capture");
 
 const resource = await call("resources/read", {
-  uri: "ui://streamlion/workspace-v1.html",
+  uri: "ui://streamlion/workspace-v2.html",
 });
 assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
 assert.match(resource.contents[0].text, /Open workspace here/);
 assert.deepEqual(resource.contents[0]._meta.ui.csp.frameDomains, [
   "https://streamlion.transcendencemedia.com",
 ]);
+assert.deepEqual(resource.contents[0]._meta.ui.permissions, { microphone: {} });
+assert.match(resource.contents[0].text, /frame\.allow = "microphone"/);
 
 console.log("MCP smoke test passed: 2 read-only tools and one UI resource.");

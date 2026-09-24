@@ -39,6 +39,7 @@ export function createStreamLionMcpServer() {
               prefersBorder: true,
               domain: STREAMLION_APP_URL.slice(0, -1),
               csp: { frameDomains: [STREAMLION_APP_URL.slice(0, -1)] },
+              permissions: { microphone: {} },
             },
             "openai/widgetDescription": "Open the existing StreamLion field workspace in ChatGPT or a browser. The example card contains no customer data.",
             "openai/widgetCSP": {
