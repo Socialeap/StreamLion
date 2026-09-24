@@ -569,3 +569,215 @@ fieldset .form-row {gap:0 18px;}
 .search {margin-top:26px;max-width:700px;}
 @media(max-width:1100px){.project-sections{grid-template-columns:1fr;}}
 @media(max-width:640px){.sync-bar{display:block}.sync-bar button{margin-top:8px}.sticky-actions{bottom:82px}.intake-panel,fieldset{padding:16px}.page-head .actions{margin-top:20px}}
+
+/* Project creation: show one decision or group of fields at a time. */
+.button-link.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+.button-link.primary:hover { background: #123e2c; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.wizard .page-head { margin-bottom: 28px; }
+.wizard-progress {
+  display: block;
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 48px;
+  scrollbar-width: thin;
+}
+.wizard-progress ol {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(9, minmax(80px, 1fr));
+  min-width: 780px;
+  gap: 0;
+  padding: 16px 0;
+  margin: 0;
+}
+.wizard-progress li { min-width: 0; }
+.wizard-progress button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 64px;
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  font-size: 12px;
+  color: #647078;
+}
+.wizard-progress button:disabled { opacity: 1; }
+.wizard-progress button.current,
+.wizard-progress button.visited { color: var(--green); }
+.step-number {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #cbd5d0;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.current .step-number {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+.visited .step-number {
+  border-color: var(--green);
+  background: #e8f0ec;
+}
+.step-label { white-space: nowrap; }
+.wizard-body { max-width: 970px; margin: 0 auto; }
+.wizard-heading { margin-bottom: 28px; }
+.wizard-eyebrow {
+  color: var(--green);
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .1em;
+}
+.wizard-heading h2 {
+  margin: 8px 0;
+  font-size: clamp(26px, 3vw, 38px);
+  letter-spacing: -.035em;
+}
+.wizard-heading p { margin: 4px 0; font-size: 16px; }
+.heading-with-help { display: flex; align-items: center; gap: 10px; }
+.wizard-intro { font-size: 17px; max-width: 680px; margin-bottom: 30px; }
+.starter-steps {
+  list-style: none;
+  counter-reset: guide;
+  display: grid;
+  gap: 23px;
+  margin: 0 0 36px;
+  padding: 0;
+}
+.starter-steps li {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  counter-increment: guide;
+}
+.starter-steps li::before {
+  content: counter(guide);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 50%;
+  background: #edf2ef;
+  font-weight: 700;
+}
+.starter-icon { display: flex; color: var(--green); }
+.starter-steps strong { display: block; font-size: 17px; }
+.starter-steps small { display: block; color: var(--muted); font-size: 14px; margin-top: 4px; line-height: 1.5; }
+.start-actions { align-items: center; margin-bottom: 18px; }
+.start-actions .button-link { gap: 12px; }
+.start-actions .hint { flex-basis: 100%; margin: 0; }
+.text-action {
+  background: transparent;
+  border: 0;
+  color: var(--green);
+  font-weight: 650;
+  padding-left: 0;
+}
+.quiet-details { border-top: 1px solid var(--line); margin-top: 27px; padding-top: 12px; }
+.quiet-details summary { font-size: 15px; font-weight: 650; }
+.quiet-details p { font-size: 14px; }
+.import-details textarea { max-width: 800px; }
+.import-details .actions { align-items: flex-start; }
+.import-details .file-label { max-width: 250px; }
+.wizard-fields {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  max-width: 920px;
+}
+.wizard-fields .form-row { gap: 18px 24px; }
+.wizard-fields .field { min-width: 0; }
+.field-title { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+.field-title label { display: block; margin: 0; }
+.help-tip { position: relative; display: inline-flex; flex: 0 0 auto; }
+.help-tip-button {
+  width: 29px;
+  height: 29px;
+  min-height: 29px;
+  padding: 4px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #5b7065;
+}
+.help-tip-button:hover,
+.help-tip-button[aria-expanded="true"] { background: #e8f0ec; }
+.help-tip-content {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 7px);
+  z-index: 20;
+  width: min(300px, 74vw);
+  padding: 12px 14px;
+  border: 1px solid #bfd4c5;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 30px #17241e24;
+  color: #24362b;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 450;
+}
+.wizard-fields .field:nth-child(even) .help-tip-content { left: auto; right: 0; }
+.wizard-footer {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  max-width: 970px;
+  margin: 34px auto 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffffff0;
+  box-shadow: 0 4px 20px #17241e12;
+}
+.wizard-footer span { color: var(--muted); font-size: 13px; }
+.finish-review .check { margin: 22px 0 8px; }
+.finish-review .check input { flex: 0 0 auto; }
+.finish-review .hint { margin: 8px 0; }
+.import-status { color: var(--green); }
+.chat-panel { max-width: 850px; }
+.chat-panel .quiet-details { margin-top: 20px; }
+.chat-panel .quiet-details p { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .wizard-progress { margin-bottom: 32px; }
+  .wizard .page-head > button { margin-top: 18px; }
+  .wizard-heading h2 { font-size: 29px; }
+  .wizard-fields .form-row { grid-template-columns: 1fr; gap: 16px; }
+  .wizard-fields .wide { grid-column: auto; }
+  .wizard-footer { bottom: 82px; }
+  .wizard-footer span { display: none; }
+  .start-actions .button-link,
+  .start-actions > button { width: 100%; justify-content: center; }
+  .starter-steps li { align-items: flex-start; }
+}
