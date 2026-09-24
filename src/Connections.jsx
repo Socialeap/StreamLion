@@ -23,12 +23,16 @@ export default function Connections({
     [status, setStatus] = useState(""),
     [busy, setBusy] = useState(false),
     [configLoading, setConfigLoading] = useState(true),
+    [configLoadError, setConfigLoadError] = useState(false),
+    [configAttempt, setConfigAttempt] = useState(0),
     [googleConfig, setGoogleConfig] = useState(null),
     [connected, setConnected] = useState(hasGoogleSession());
 
   useEffect(() => {
     let current = true;
     async function loadGoogleConfig() {
+      setConfigLoading(true);
+      setConfigLoadError(false);
       try {
         const response = await fetch("/api/google-config", {
           cache: "no-store",
@@ -36,19 +40,30 @@ export default function Connections({
         });
         if (!response.ok) throw new Error("Google settings unavailable");
         const config = await response.json();
+        if (
+          !config ||
+          typeof config !== "object" ||
+          typeof config.clientId !== "string" ||
+          typeof config.apiKey !== "string" ||
+          typeof config.appId !== "string"
+        ) {
+          throw new Error("Google settings response was invalid");
+        }
         if (current) {
           setGoogleConfig({
-            clientId:
-              typeof config.clientId === "string" ? config.clientId : "",
-            apiKey: typeof config.apiKey === "string" ? config.apiKey : "",
-            appId: typeof config.appId === "string" ? config.appId : "",
+            clientId: config.clientId,
+            apiKey: config.apiKey,
+            appId: config.appId,
           });
         }
       } catch {
         // Vite dev has no Pages Function, so local QA can use .env.local.
-        if (current && import.meta.env?.DEV) setGoogleConfig(localGoogleConfig);
-        else if (current)
-          setGoogleConfig({ clientId: "", apiKey: "", appId: "" });
+        if (current && import.meta.env?.DEV) {
+          setGoogleConfig(localGoogleConfig);
+        } else if (current) {
+          setGoogleConfig(null);
+          setConfigLoadError(true);
+        }
       } finally {
         if (current) setConfigLoading(false);
       }
@@ -57,7 +72,7 @@ export default function Connections({
     return () => {
       current = false;
     };
-  }, []);
+  }, [configAttempt]);
 
   async function act(fn) {
     setBusy(true);
@@ -93,7 +108,22 @@ export default function Connections({
           memory.
         </p>
         {configLoading && <p role="status">Loading Google connection…</p>}
-        {!configLoading && !googleConfig?.clientId && (
+        {!configLoading && configLoadError && (
+          <div className="error" role="alert">
+            <p>
+              Couldn’t load Google connection settings. Check your connection
+              and try again.
+            </p>
+            <button
+              type="button"
+              disabled={busy || busyCapture}
+              onClick={() => setConfigAttempt((attempt) => attempt + 1)}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!configLoading && !configLoadError && !googleConfig?.clientId && (
           <p role="status" className="error">
             Google connection setup is incomplete for this StreamLion app. The
             app owner needs to finish its Google setup.

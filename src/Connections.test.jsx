@@ -19,7 +19,8 @@ Object.defineProperty(globalThis, "navigator", {
   configurable: true,
 });
 
-const { render, act, cleanup } = await import("@testing-library/react");
+const { render, act, cleanup, fireEvent } =
+  await import("@testing-library/react");
 const { default: Connections } = await import("./Connections.jsx");
 
 test("Connections enables Google actions using the runtime public config", async () => {
@@ -61,6 +62,61 @@ test("Connections enables Google actions using the runtime public config", async
     assert.equal(
       ui.getByRole("button", { name: "Choose workbook" }).disabled,
       true,
+    );
+    cleanup();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Connections lets the user retry a failed Google config request", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    if (requestCount === 1) return new Response("unavailable", { status: 503 });
+    return new Response(
+      JSON.stringify({
+        clientId: "public-client-id.apps.googleusercontent.com",
+        apiKey: "public-picker-key",
+        appId: "123456789",
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  try {
+    const ui = render(
+      <Connections
+        onWorkbook={() => {}}
+        onDisconnect={() => {}}
+        onExport={() => {}}
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    assert.match(
+      ui.getByRole("alert").textContent,
+      /Couldn’t load Google connection settings/,
+    );
+    assert.equal(
+      ui.getByRole("button", { name: "Connect Google" }).disabled,
+      true,
+    );
+    assert.equal(ui.queryByText(/Google connection setup is incomplete/), null);
+
+    fireEvent.click(ui.getByRole("button", { name: "Retry" }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    assert.equal(requestCount, 2);
+    assert.equal(ui.queryByRole("alert"), null);
+    assert.equal(
+      ui.getByRole("button", { name: "Connect Google" }).disabled,
+      false,
     );
     cleanup();
   } finally {
