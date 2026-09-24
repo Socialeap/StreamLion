@@ -59,7 +59,11 @@ export function validateRevision(record, headers) {
   )
     throw new Error("Invalid parent identity.");
   if (
-    !["draft", "reviewed"].includes(record.reviewState) ||
+    !(
+      headers === PROJECT_HEADERS
+        ? ["draft", "reviewed", "archived"]
+        : ["draft", "reviewed"]
+    ).includes(record.reviewState) ||
     typeof record.updatedAt !== "string" ||
     !Number.isFinite(Date.parse(record.updatedAt))
   )
@@ -94,7 +98,13 @@ export function readRecordHistory(rows, headers) {
       !/^[\w-]{1,100}$/.test(r.revisionId)
     )
       throw new Error("Invalid record identity.");
-    if (!["draft", "reviewed"].includes(r.reviewState))
+    if (
+      !(
+        headers === PROJECT_HEADERS
+          ? ["draft", "reviewed", "archived"]
+          : ["draft", "reviewed"]
+      ).includes(r.reviewState)
+    )
       throw new Error("Invalid review state.");
     if (headers === PROJECT_HEADERS)
       Object.assign(

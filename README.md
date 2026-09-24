@@ -17,6 +17,8 @@ npm run dev -- --port 4174
 
 Upload specifications in ChatGPT using StreamLion. Review and save through the connected Google tools, or import its JSON into the PWA. In Connections, authorize Google and create/select the StreamLion workbook. Refresh to read current project records. Edit details, add area-specific notes, and use Ask to copy project context into ChatGPT for queries/voice.
 
+Named unfinished drafts appear in Projects on the device where they were started. Project names, cities, visit dates and details review status appear in the list, with Edit and Delete actions. Delete moves a saved project to a restorable section and retains Google revision history and field notes. The details status does not indicate whether site work is finished.
+
 - [Google setup and activation](docs/google-setup.md)
 - [Current architecture and limits](docs/google-owned-plan.md)
 - [Field map](docs/field-map.md)

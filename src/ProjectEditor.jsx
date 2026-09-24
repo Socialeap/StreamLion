@@ -13,7 +13,7 @@ import {
   legacyFields,
   intakeFor,
 } from "./project-schema";
-import { readDraft, writeDraft, clearDraft } from "./drafts";
+import { readDraft, writeDraft, clearDraft, projectDraftKey } from "./drafts";
 import { download } from "./storage";
 import { ChatGPTLaunch } from "./ChatGPTPanel";
 import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
@@ -32,13 +32,15 @@ const STEPS = [
 
 export default function ProjectEditor({
   project,
+  draftId,
   onSave,
   onCancel,
+  onConnectGoogle,
   onRefreshProjects,
   bookId,
   draftScope = "local",
 }) {
-  const key = `${draftScope}:project:${project?.id || "new"}`;
+  const key = projectDraftKey(draftScope, project?.id || draftId || "new");
   const initial = project
     ? legacyFields(project)
     : Object.fromEntries(PROJECT_FIELDS.map((field) => [field.key, ""]));
@@ -126,7 +128,13 @@ export default function ProjectEditor({
     setBusy(true);
     setError("");
     try {
-      await onSave(validateFields(fields), project, reviewed);
+      await onSave(
+        validateFields(fields),
+        project,
+        reviewed,
+        draftId,
+        draftScope,
+      );
       clearDraft(key);
     } catch (exception) {
       setError(exception.message);
@@ -179,11 +187,16 @@ export default function ProjectEditor({
               <button
                 type="button"
                 className={
-                  index === step ? "current" : index < step ? "visited" : ""
+                  index === step
+                    ? "current"
+                    : index <= furthest
+                      ? "visited"
+                      : ""
                 }
-                disabled={busy || index > furthest}
+                disabled={busy}
                 onClick={() => goTo(index)}
                 aria-current={index === step ? "step" : undefined}
+                aria-label={`Step ${index + 1}: ${item.title}`}
                 title={`Step ${index + 1}: ${item.title}`}
               >
                 <span className="step-number">{index + 1}</span>
@@ -207,7 +220,7 @@ export default function ProjectEditor({
                 text={
                   current.group
                     ? GROUP_HELP[current.group]
-                    : "Start in ChatGPT with your brief, emails, or PDF. StreamLion helps prepare the details for review."
+                    : "Start in ChatGPT with your brief, emails, or PDF. Connect Google if you want ChatGPT to save there."
                 }
               />
             </div>
@@ -221,6 +234,52 @@ export default function ProjectEditor({
 
           {step === 0 ? (
             <div className="wizard-start">
+              <section
+                className="workbook-guide"
+                aria-label="Where this project is saved"
+              >
+                <h3>Where will this project be saved?</h3>
+                {bookId ? (
+                  <>
+                    <p>
+                      Your Google workbook is connected. It is the Google Sheet
+                      where StreamLion keeps your projects. The chat button
+                      below gives ChatGPT its link, so you do not need to find
+                      it.
+                    </p>
+                    <a
+                      href={`https://docs.google.com/spreadsheets/d/${bookId}/edit`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open my Google workbook ↗
+                    </a>
+                    <p className="hint">
+                      ChatGPT may ask you to connect your Google account there
+                      separately before it saves anything.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      This device has no Google workbook connected. A workbook
+                      is the Google Sheet that stores your projects. Connect one
+                      before asking ChatGPT to save a project there.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onConnectGoogle}
+                      title="Open Connections to connect your Google account and create or choose the project Sheet."
+                    >
+                      Connect Google and choose a workbook
+                    </button>
+                    <p className="hint">
+                      You can still prepare details in ChatGPT or fill out this
+                      form now. Your unfinished project stays on this device.
+                    </p>
+                  </>
+                )}
+              </section>
               <p className="wizard-intro">
                 Have a PDF, email thread, or written brief? Let StreamLion
                 prepare the details first.

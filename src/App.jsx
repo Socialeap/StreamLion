@@ -1,4 +1,11 @@
-import { readDraft, writeDraft, clearDraft, clearSavedDraft } from "./drafts";
+import {
+  readDraft,
+  writeDraft,
+  clearDraft,
+  clearSavedDraft,
+  listProjectDrafts,
+  projectDraftKey,
+} from "./drafts";
 import Building2 from "./BuildingIcon";
 import { useEffect, useRef, useState } from "react";
 import { FileText, NotebookPen, Link, MessageCircle } from "lucide-react";
@@ -21,6 +28,7 @@ import {
   toLocalNote,
   validateNote,
 } from "./workbook";
+import { legacyFields } from "./project-schema";
 export default function App() {
   const [local, setLocal] = useState(emptyWorkspace),
     current = useRef(null),
@@ -35,6 +43,7 @@ export default function App() {
     [syncBusy, setSyncBusy] = useState(false);
   const [bookId, setBookId] = useState(""),
     [remote, setRemote] = useState(null);
+  const [drafts, setDrafts] = useState(() => listProjectDrafts("local"));
   const pending = useRef(null);
   const [hasPending, setHasPending] = useState(false);
   const [noteEpoch, setNoteEpoch] = useState(0);
@@ -48,12 +57,29 @@ export default function App() {
       })
       .catch((e) => setError(e.message));
   }, []);
-  const workspace = remote
-    ? {
-        jobs: remote.Projects.map(toLocalProject),
-        notes: remote.Observations.map(toLocalNote),
-      }
-    : local;
+  function visibleDrafts(scope, deleted = false) {
+    return [
+      ...listProjectDrafts(scope || "local", { deleted }),
+      ...(scope ? listProjectDrafts("local", { deleted }) : []),
+    ];
+  }
+  function refreshDrafts(scope = bookId) {
+    setDrafts(visibleDrafts(scope));
+  }
+  const allProjects = remote ? remote.Projects.map(toLocalProject) : local.jobs;
+  const archivedProjects = allProjects.filter(
+    (project) => project.reviewState === "archived" || project.deletedAt,
+  );
+  const activeProjects = allProjects.filter(
+    (project) => project.reviewState !== "archived" && !project.deletedAt,
+  );
+  const activeIds = new Set(activeProjects.map((project) => project.id));
+  const workspace = {
+    jobs: activeProjects,
+    notes: (remote ? remote.Observations.map(toLocalNote) : local.notes).filter(
+      (note) => activeIds.has(note.jobId),
+    ),
+  };
   const active = workspace.jobs.find((j) => j.id === selected);
   async function commit(change, audio) {
     if (writing.current) throw new Error("Another save is in progress. Retry.");
@@ -76,6 +102,7 @@ export default function App() {
     pending.current = readDraft(`${id}:pending-write`);
     setHasPending(!!pending.current);
     setBookId(id);
+    refreshDrafts(id);
     setRemote(data);
     setSelected("");
     setEditing(null);
@@ -85,6 +112,7 @@ export default function App() {
     pending.current = null;
     setHasPending(false);
     setBookId("");
+    refreshDrafts("");
     setRemote(null);
     setSelected("");
     setEditing(null);
@@ -118,7 +146,7 @@ export default function App() {
       setSyncBusy(false);
     }
   }
-  async function cloudSave(tab, fields, recordId, reviewState) {
+  async function cloudSave(tab, fields, recordId, reviewState, draftKey) {
     if (!hasGoogleSession())
       throw new Error("Reconnect Google in Connections before saving.");
     const previous = remote[tab].find((r) => r.recordId === recordId);
@@ -141,6 +169,7 @@ export default function App() {
       revision,
       tab,
       expected: previous ?? null,
+      draftKey,
     };
     writeDraft(`${bookId}:pending-write`, operation);
     pending.current = operation;
@@ -180,7 +209,12 @@ export default function App() {
       pending.current = null;
       setHasPending(false);
       clearSavedDraft(bookId, op);
-      if (op.tab === "Projects") {
+      refreshDrafts();
+      if (op.tab === "Projects" && op.revision.reviewState === "archived") {
+        setSelected("");
+        setEditing(null);
+        setPage("Projects");
+      } else if (op.tab === "Projects") {
         setSelected(op.revision.recordId);
         setEditing(null);
         setPage("Field notes");
@@ -194,8 +228,12 @@ export default function App() {
       setSyncBusy(false);
     }
   }
-  async function saveProject(fields, project, reviewed) {
+  async function saveProject(fields, project, reviewed, draftId, draftScope) {
     let id = project?.id || crypto.randomUUID();
+    const draftKey = projectDraftKey(
+      project ? bookId || "local" : draftScope || bookId || "local",
+      project?.id || draftId || "new",
+    );
     if (remote) {
       if (pending.current?.revision && !project)
         id = pending.current.revision.recordId;
@@ -204,6 +242,7 @@ export default function App() {
         fields,
         id,
         reviewed ? "reviewed" : "draft",
+        draftKey,
       );
     } else
       await commit((w) => ({
@@ -235,9 +274,55 @@ export default function App() {
               },
             ],
       }));
+    clearDraft(draftKey);
+    refreshDrafts();
     setSelected(id);
     setEditing(null);
     setPage("Field notes");
+  }
+  async function deleteProject(project) {
+    if (
+      !window.confirm(
+        `Move “${project.title}” to Deleted projects? You can restore it later. Its field notes and Google history will be kept.`,
+      )
+    )
+      return;
+    setError("");
+    if (remote) {
+      await cloudSave(
+        "Projects",
+        legacyFields(project),
+        project.id,
+        "archived",
+      );
+    } else {
+      await commit((w) => ({
+        ...w,
+        jobs: w.jobs.map((job) =>
+          job.id === project.id
+            ? { ...job, deletedAt: new Date().toISOString() }
+            : job,
+        ),
+      }));
+    }
+    if (selected === project.id) setSelected("");
+    setStatus("Project moved to Deleted projects");
+  }
+  async function restoreProject(project) {
+    setError("");
+    if (remote) {
+      await cloudSave("Projects", legacyFields(project), project.id, "draft");
+    } else {
+      await commit((w) => ({
+        ...w,
+        jobs: w.jobs.map((job) => {
+          if (job.id !== project.id) return job;
+          const { deletedAt, ...restored } = job;
+          return restored;
+        }),
+      }));
+    }
+    setStatus("Project restored. Review its details before using it.");
   }
   async function addNote(note) {
     if (remote) {
@@ -318,6 +403,7 @@ export default function App() {
   }
   const disabled = captureBusy || syncBusy;
   const navigate = (p) => {
+    refreshDrafts();
     setEditing(null);
     setPage(p);
   };
@@ -433,18 +519,79 @@ export default function App() {
           <p>Opening local workspace…</p>
         ) : editing ? (
           <ProjectEditor
-            key={(bookId || "local") + ":" + (editing.id || "new")}
+            key={`${editing.draftScope || bookId || "local"}:${editing.id || editing.draftId || "new"}`}
             project={editing.id ? editing : null}
-            draftScope={bookId || "local"}
+            draftId={editing.draftId}
+            draftScope={editing.draftScope || bookId || "local"}
             bookId={bookId}
             onSave={saveProject}
-            onCancel={() => setEditing(null)}
+            onCancel={() => {
+              refreshDrafts();
+              setEditing(null);
+            }}
+            onConnectGoogle={() => {
+              refreshDrafts();
+              setEditing(null);
+              setPage("Connections");
+            }}
             onRefreshProjects={showProjectsFromGoogle}
           />
         ) : page === "Projects" ? (
           <Jobs
             workspace={workspace}
-            onCreate={() => setEditing({})}
+            archivedProjects={archivedProjects}
+            archivedDrafts={visibleDrafts(bookId, true)}
+            drafts={drafts}
+            onCreate={() =>
+              setEditing({
+                draftId: `draft-${crypto.randomUUID()}`,
+                draftScope: bookId || "local",
+              })
+            }
+            onResumeDraft={(draft) =>
+              setEditing({ draftId: draft.draftId, draftScope: draft.scope })
+            }
+            onDeleteDraft={(draft) => {
+              if (
+                window.confirm(
+                  `Move the unfinished project “${draft.fields.title}” to Deleted projects? You can restore it later.`,
+                )
+              ) {
+                try {
+                  const key = projectDraftKey(draft.scope, draft.draftId);
+                  writeDraft(key, {
+                    ...readDraft(key),
+                    deletedAt: new Date().toISOString(),
+                  });
+                  refreshDrafts();
+                } catch {
+                  setError(
+                    "This device could not move the draft. Your project remains in the list.",
+                  );
+                }
+              }
+            }}
+            onRestoreDraft={(draft) => {
+              try {
+                const key = projectDraftKey(draft.scope, draft.draftId);
+                const saved = readDraft(key);
+                if (!saved) return;
+                const { deletedAt, ...restored } = saved;
+                writeDraft(key, restored);
+                refreshDrafts();
+              } catch {
+                setError(
+                  "This device could not restore the draft. Please retry.",
+                );
+              }
+            }}
+            onEdit={(project) => setEditing(project)}
+            onDeleteProject={(project) =>
+              deleteProject(project).catch((e) => setError(e.message))
+            }
+            onRestoreProject={(project) =>
+              restoreProject(project).catch((e) => setError(e.message))
+            }
             onOpen={(id) => {
               setSelected(id);
               setPage("Field notes");

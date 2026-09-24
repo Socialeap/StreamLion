@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "gpt-11b52f5bcfe3bd414f9586be746198d8",
-  "version": "0.71.0",
+  "version": "0.72.0",
   "description": "Create and query Google-owned spatial capture projects; extract specifications and record reviewed field annotations.",
   "author": {
     "name": "PASCAL E CHARPENTIER"
