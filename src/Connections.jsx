@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   connectGoogle,
   disconnectGoogle,
@@ -7,10 +7,10 @@ import {
   readWorkbook,
   hasGoogleSession,
 } from "./google";
-const googleConfig = {
-  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || "",
-  apiKey: import.meta.env.VITE_GOOGLE_PICKER_API_KEY || "",
-  appId: import.meta.env.VITE_GOOGLE_PROJECT_NUMBER || "",
+const localGoogleConfig = {
+  clientId: import.meta.env?.VITE_GOOGLE_CLIENT_ID || "",
+  apiKey: import.meta.env?.VITE_GOOGLE_PICKER_API_KEY || "",
+  appId: import.meta.env?.VITE_GOOGLE_PROJECT_NUMBER || "",
 };
 export default function Connections({
   bookId,
@@ -22,7 +22,43 @@ export default function Connections({
   const [error, setError] = useState(""),
     [status, setStatus] = useState(""),
     [busy, setBusy] = useState(false),
+    [configLoading, setConfigLoading] = useState(true),
+    [googleConfig, setGoogleConfig] = useState(null),
     [connected, setConnected] = useState(hasGoogleSession());
+
+  useEffect(() => {
+    let current = true;
+    async function loadGoogleConfig() {
+      try {
+        const response = await fetch("/api/google-config", {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error("Google settings unavailable");
+        const config = await response.json();
+        if (current) {
+          setGoogleConfig({
+            clientId:
+              typeof config.clientId === "string" ? config.clientId : "",
+            apiKey: typeof config.apiKey === "string" ? config.apiKey : "",
+            appId: typeof config.appId === "string" ? config.appId : "",
+          });
+        }
+      } catch {
+        // Vite dev has no Pages Function, so local QA can use .env.local.
+        if (current && import.meta.env?.DEV) setGoogleConfig(localGoogleConfig);
+        else if (current)
+          setGoogleConfig({ clientId: "", apiKey: "", appId: "" });
+      } finally {
+        if (current) setConfigLoading(false);
+      }
+    }
+    loadGoogleConfig();
+    return () => {
+      current = false;
+    };
+  }, []);
+
   async function act(fn) {
     setBusy(true);
     setError("");
@@ -56,13 +92,15 @@ export default function Connections({
           workbook. Authorization expires; reconnect when asked. Tokens stay in
           memory.
         </p>
-        {!googleConfig.clientId && (
+        {configLoading && <p role="status">Loading Google connection…</p>}
+        {!configLoading && !googleConfig?.clientId && (
           <p role="status" className="error">
-            Google connection is being configured by StreamLion. Please try
-            again later.
+            Google connection setup is incomplete for this StreamLion app. The
+            app owner needs to finish its Google setup.
           </p>
         )}
-        {googleConfig.clientId &&
+        {!configLoading &&
+          googleConfig?.clientId &&
           (!googleConfig.apiKey || !googleConfig.appId) && (
             <p role="status" className="hint">
               Choosing an existing workbook is temporarily unavailable. You can
@@ -72,7 +110,9 @@ export default function Connections({
         <div className="actions">
           <button
             className="primary"
-            disabled={busy || busyCapture || !googleConfig.clientId}
+            disabled={
+              busy || busyCapture || configLoading || !googleConfig?.clientId
+            }
             onClick={() =>
               act(async () => {
                 onDisconnect();
@@ -99,8 +139,9 @@ export default function Connections({
               busy ||
               busyCapture ||
               !connected ||
-              !googleConfig.apiKey ||
-              !googleConfig.appId
+              configLoading ||
+              !googleConfig?.apiKey ||
+              !googleConfig?.appId
             }
             onClick={() =>
               act(async () => open(await pickWorkbook(googleConfig)))
