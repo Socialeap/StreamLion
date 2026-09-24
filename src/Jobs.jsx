@@ -12,8 +12,17 @@ export default function Jobs({ workspace, onCreate, onOpen, onAsk }) {
           <p>From the first brief to the final site note.</p>
         </div>
         <div className="actions">
-          <button onClick={onAsk}>Ask in ChatGPT</button>
-          <button className="primary" onClick={onCreate}>
+          <button
+            onClick={onAsk}
+            title="Open a ChatGPT conversation with StreamLion to ask about your projects."
+          >
+            Ask in ChatGPT
+          </button>
+          <button
+            className="primary"
+            onClick={onCreate}
+            title="Start a project using ChatGPT or enter the details yourself."
+          >
             <Plus size={18} />
             Create project
           </button>
@@ -66,7 +75,11 @@ export default function Jobs({ workspace, onCreate, onOpen, onAsk }) {
               : "Upload your brief in ChatGPT, or start with a manual project."}
           </p>
           {!query && (
-            <button className="primary" onClick={onCreate}>
+            <button
+              className="primary"
+              onClick={onCreate}
+              title="Start a project using ChatGPT or enter the details yourself."
+            >
               Create project
             </button>
           )}

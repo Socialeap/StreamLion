@@ -103,6 +103,21 @@ export default function App() {
       setSyncBusy(false);
     }
   }
+  async function showProjectsFromGoogle() {
+    setSyncBusy(true);
+    setError("");
+    try {
+      const data = await readWorkbook(bookId);
+      setRemote(data);
+      setStatus("Google records refreshed " + new Date().toLocaleTimeString());
+      setEditing(null);
+      setPage("Projects");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSyncBusy(false);
+    }
+  }
   async function cloudSave(tab, fields, recordId, reviewState) {
     if (!hasGoogleSession())
       throw new Error("Reconnect Google in Connections before saving.");
@@ -325,6 +340,15 @@ export default function App() {
               disabled={disabled}
               className={page === label ? "active" : ""}
               onClick={() => navigate(label)}
+              title={
+                {
+                  Projects: "Find, review, or create a project.",
+                  "Field notes": "Record what happened at a site.",
+                  Ask: "Talk with StreamLion about a project in ChatGPT.",
+                  Connections:
+                    "Connect your Google account and choose a workbook.",
+                }[label]
+              }
             >
               <Icon size={20} />
               {label}
@@ -412,8 +436,10 @@ export default function App() {
             key={(bookId || "local") + ":" + (editing.id || "new")}
             project={editing.id ? editing : null}
             draftScope={bookId || "local"}
+            bookId={bookId}
             onSave={saveProject}
             onCancel={() => setEditing(null)}
+            onRefreshProjects={showProjectsFromGoogle}
           />
         ) : page === "Projects" ? (
           <Jobs
@@ -456,15 +482,18 @@ export default function App() {
           <>
             <header className="page-head">
               <div>
-                <h1>Ask StreamLion</h1>
-                <p>Bring your project context into the conversation.</p>
+                <h1 title="Open a conversation about a project or a site note.">
+                  Ask StreamLion
+                </h1>
+                <p>Choose a project, then open the chat.</p>
               </div>
             </header>
             <label>
-              Project context
+              Project to discuss
               <select
                 value={selected}
                 onChange={(e) => setSelected(e.target.value)}
+                title="Choose a project, or leave All projects selected to ask a general question."
               >
                 <option value="">All projects</option>
                 {workspace.jobs.map((j) => (
