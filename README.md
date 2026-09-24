@@ -24,8 +24,9 @@ Named unfinished drafts appear in Projects on the device where they were started
 - [Field map](docs/field-map.md)
 - [JSON fixture](fixtures/project-intake.json)
 - [Plugin source](plugin/skills/instructions/SKILL.md)
+- [ChatGPT in-chat prototype](docs/chatgpt-inline-prototype.md)
 
-Google access tokens stay in memory. Project drafts and the original local workspace stay on the device; browser storage is not a backup. Source documents and retained recordings belong in the user's Drive. No model API key, StreamLion database or MCP server is deployed by this code. The skill uses the host's existing Google connector; missing tools produce an explicit JSON fallback.
+Google access tokens stay in memory. Project drafts and the original local workspace stay on the device; browser storage is not a backup. Source documents and retained recordings belong in the user's Drive. The optional MCP prototype provides a data-free in-chat workspace card; the skill continues to use the host's existing Google connector for real workbook operations. Missing Google tools produce an explicit JSON fallback.
 
 Append-only workbook revisions support idempotent retry and detect competing revisions. They do not provide transactional concurrency against arbitrary external Sheet edits. Pilot with one active editor per project. Workbook limit: 10,000 grid rows per tab. JSON export of the legacy local workspace excludes audio and is not yet a restorable backup package.
 
