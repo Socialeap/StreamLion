@@ -609,6 +609,9 @@ fieldset .form-row {gap:0 18px;}
   border: 0;
 }
 .wizard .page-head { margin-bottom: 28px; }
+.editor-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.editor-save-location { margin: -14px 0 24px; font-size: 14px; }
+.editor-save-error { margin: -14px 0 24px; }
 .wizard-progress {
   display: block;
   overflow-x: auto;
@@ -806,7 +809,7 @@ fieldset .form-row {gap:0 18px;}
   .project-table td:not(:first-child)::before { content: attr(data-label); color: var(--muted); font-size: 12px; }
   .project-row-actions { justify-content: flex-end; }
   .wizard-progress { margin-bottom: 32px; }
-  .wizard .page-head > button { margin-top: 18px; }
+  .editor-header-actions { width: 100%; justify-content: flex-start; }
   .wizard-heading h2 { font-size: 29px; }
   .wizard-fields .form-row { grid-template-columns: 1fr; gap: 16px; }
   .wizard-fields .wide { grid-column: auto; }

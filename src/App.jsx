@@ -22,13 +22,17 @@ import {
   download,
 } from "./storage";
 import { readWorkbook, appendRevision, hasGoogleSession } from "./google";
-import {
-  makeRevision,
-  toLocalProject,
-  toLocalNote,
-  validateNote,
-} from "./workbook";
+import { makeRevision, toLocalNote, validateNote } from "./workbook";
 import { legacyFields } from "./project-schema";
+import { assertSaveDestination, visibleProjects } from "./project-routing";
+const selectedWorkbookKey = "streamlion-selected-workbook-v1";
+function rememberedWorkbook() {
+  try {
+    return localStorage.getItem(selectedWorkbookKey) || "";
+  } catch {
+    return "";
+  }
+}
 export default function App() {
   const [local, setLocal] = useState(emptyWorkspace),
     current = useRef(null),
@@ -41,9 +45,11 @@ export default function App() {
     [editing, setEditing] = useState(null),
     [captureBusy, setCaptureBusy] = useState(false),
     [syncBusy, setSyncBusy] = useState(false);
-  const [bookId, setBookId] = useState(""),
+  const [bookId, setBookId] = useState(rememberedWorkbook),
     [remote, setRemote] = useState(null);
-  const [drafts, setDrafts] = useState(() => listProjectDrafts("local"));
+  const [drafts, setDrafts] = useState(() =>
+    visibleDrafts(rememberedWorkbook()),
+  );
   const pending = useRef(null);
   const [hasPending, setHasPending] = useState(false);
   const [noteEpoch, setNoteEpoch] = useState(0);
@@ -53,7 +59,11 @@ export default function App() {
         current.current = w;
         setLocal(w);
         setReady(true);
-        setStatus("Device workspace");
+        setStatus(
+          rememberedWorkbook()
+            ? "Reconnect Google to load your selected workbook"
+            : "Device workspace",
+        );
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -66,7 +76,7 @@ export default function App() {
   function refreshDrafts(scope = bookId) {
     setDrafts(visibleDrafts(scope));
   }
-  const allProjects = remote ? remote.Projects.map(toLocalProject) : local.jobs;
+  const allProjects = visibleProjects(remote, local.jobs);
   const archivedProjects = allProjects.filter(
     (project) => project.reviewState === "archived" || project.deletedAt,
   );
@@ -76,9 +86,10 @@ export default function App() {
   const activeIds = new Set(activeProjects.map((project) => project.id));
   const workspace = {
     jobs: activeProjects,
-    notes: (remote ? remote.Observations.map(toLocalNote) : local.notes).filter(
-      (note) => activeIds.has(note.jobId),
-    ),
+    notes: [
+      ...(remote ? remote.Observations.map(toLocalNote) : []),
+      ...local.notes,
+    ].filter((note) => activeIds.has(note.jobId)),
   };
   const active = workspace.jobs.find((j) => j.id === selected);
   async function commit(change, audio) {
@@ -99,6 +110,11 @@ export default function App() {
     }
   }
   function connectBook(id, data) {
+    try {
+      localStorage.setItem(selectedWorkbookKey, id);
+    } catch {
+      // A blocked local store must not undo a verified Google connection.
+    }
     pending.current = readDraft(`${id}:pending-write`);
     setHasPending(!!pending.current);
     setBookId(id);
@@ -108,15 +124,26 @@ export default function App() {
     setEditing(null);
     setStatus("Google records refreshed");
   }
-  function disconnect() {
-    pending.current = null;
-    setHasPending(false);
-    setBookId("");
-    refreshDrafts("");
+  function disconnect(preserveSelection = false) {
+    if (!preserveSelection) {
+      pending.current = null;
+      setHasPending(false);
+      try {
+        localStorage.removeItem(selectedWorkbookKey);
+      } catch {
+        // The in-memory selection is still cleared below.
+      }
+      setBookId("");
+    }
+    refreshDrafts(preserveSelection ? bookId : "");
     setRemote(null);
     setSelected("");
     setEditing(null);
-    setStatus("Device workspace");
+    setStatus(
+      preserveSelection
+        ? "Reconnect Google to load your selected workbook"
+        : "Device workspace",
+    );
   }
   async function refresh() {
     setSyncBusy(true);
@@ -234,6 +261,7 @@ export default function App() {
       project ? bookId || "local" : draftScope || bookId || "local",
       project?.id || draftId || "new",
     );
+    assertSaveDestination(bookId, remote);
     if (remote) {
       if (pending.current?.revision && !project)
         id = pending.current.revision.recordId;
@@ -288,7 +316,7 @@ export default function App() {
     )
       return;
     setError("");
-    if (remote) {
+    if (remote && !project.deviceOnly) {
       await cloudSave(
         "Projects",
         legacyFields(project),
@@ -310,7 +338,7 @@ export default function App() {
   }
   async function restoreProject(project) {
     setError("");
-    if (remote) {
+    if (remote && !project.deviceOnly) {
       await cloudSave("Projects", legacyFields(project), project.id, "draft");
     } else {
       await commit((w) => ({
@@ -325,7 +353,7 @@ export default function App() {
     setStatus("Project restored. Review its details before using it.");
   }
   async function addNote(note) {
-    if (remote) {
+    if (remote && !allProjects.find((p) => p.id === note.jobId)?.deviceOnly) {
       const fields = validateNote({
         projectId: note.jobId,
         area: note.area,
@@ -356,7 +384,7 @@ export default function App() {
   }
   async function updateNote(id, text, review) {
     const n = workspace.notes.find((n) => n.id === id);
-    if (remote)
+    if (remote && !local.notes.some((note) => note.id === id))
       await cloudSave(
         "Observations",
         validateNote({
@@ -524,6 +552,7 @@ export default function App() {
             draftId={editing.draftId}
             draftScope={editing.draftScope || bookId || "local"}
             bookId={bookId}
+            googleReady={!!remote && hasGoogleSession()}
             onSave={saveProject}
             onCancel={() => {
               refreshDrafts();
@@ -539,6 +568,7 @@ export default function App() {
         ) : page === "Projects" ? (
           <Jobs
             workspace={workspace}
+            googleConnected={!!remote && hasGoogleSession()}
             archivedProjects={archivedProjects}
             archivedDrafts={visibleDrafts(bookId, true)}
             drafts={drafts}

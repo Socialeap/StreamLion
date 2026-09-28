@@ -145,9 +145,13 @@ export default function Connections({
             }
             onClick={() =>
               act(async () => {
-                onDisconnect();
+                onDisconnect(true);
                 await connectGoogle(googleConfig.clientId);
-                setStatus("Connected. Create or select a workbook.");
+                if (bookId) {
+                  await open(bookId);
+                } else {
+                  setStatus("Connected. Create or select a workbook.");
+                }
               })
             }
           >
@@ -195,6 +199,12 @@ export default function Connections({
             </button>
           )}
         </div>
+        {bookId && !connected && (
+          <p role="status" className="hint">
+            Your workbook is remembered on this device. Reconnect Google to load
+            it before saving a project there.
+          </p>
+        )}
         {bookId && (
           <p>
             <a
@@ -202,7 +212,7 @@ export default function Connections({
               target="_blank"
               rel="noreferrer"
             >
-              Open connected workbook ↗
+              Open selected workbook ↗
             </a>
           </p>
         )}
