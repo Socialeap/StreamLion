@@ -260,7 +260,14 @@ export default function App() {
       setSyncBusy(false);
     }
   }
-  async function saveProject(fields, project, reviewed, draftId, draftScope) {
+  async function saveProject(
+    fields,
+    project,
+    reviewed,
+    draftId,
+    draftScope,
+    step,
+  ) {
     let id = project?.id || crypto.randomUUID();
     const draftKey = projectDraftKey(
       project ? bookId || "local" : draftScope || bookId || "local",
@@ -320,8 +327,13 @@ export default function App() {
               ...previous,
               ...fields,
               id,
-              draftId: previous.draftId || id,
+              draftId: id,
+              draftScope: remote ? bookId : "local",
               reviewState: "draft",
+              savedStep: step,
+              savedNotice: remote
+                ? "Draft saved in Google. Keep editing, or return to Projects when ready."
+                : "Draft saved on this device. Keep editing, or return to Projects when ready.",
             }
           : previous,
       );
@@ -571,6 +583,8 @@ export default function App() {
             project={editing.id ? editing : null}
             draftId={editing.draftId}
             draftScope={editing.draftScope || bookId || "local"}
+            savedStep={editing.savedStep}
+            savedNotice={editing.savedNotice}
             bookId={bookId}
             googleReady={!!remote && hasGoogleSession()}
             onSave={saveProject}

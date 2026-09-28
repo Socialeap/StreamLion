@@ -33,7 +33,7 @@ test("saving a draft keeps its editor and updates the same project on later save
   fireEvent.click(ui.getAllByRole("button", { name: "Create project" })[0]);
   fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
   fireEvent.change(ui.getByLabelText("Project name"), {
-    target: { value: "Nassau Street" },
+    target: { value: " Nassau Street " },
   });
   fireEvent.click(
     ui.getByRole("button", { name: /Step 3: Where is the site/ }),
@@ -51,6 +51,19 @@ test("saving a draft keeps its editor and updates the same project on later save
   fireEvent.change(ui.getByLabelText("City"), {
     target: { value: "Queens" },
   });
+  fireEvent.click(ui.getByRole("button", { name: "Back to projects" }));
+  fireEvent.click(
+    ui
+      .getByRole("row", { name: /Nassau Street/ })
+      .querySelector('button[title^="Edit"]'),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: /Step 3: Where is the site/ }),
+  );
+  assert.equal(ui.getByLabelText("City").value, "Queens");
+  fireEvent.change(ui.getByLabelText("City"), {
+    target: { value: " Queens " },
+  });
   fireEvent.click(ui.getByRole("button", { name: "Save draft on device" }));
   await ui.findByText(/Draft saved on this device/);
   await waitFor(async () => {
@@ -59,11 +72,30 @@ test("saving a draft keeps its editor and updates the same project on later save
     assert.equal(saved.jobs[0].city, "Queens");
   });
   assert.ok(ui.getByLabelText("City"));
+  fireEvent.change(ui.getByLabelText("City"), {
+    target: { value: "Bronx" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Back to projects" }));
+  fireEvent.click(
+    ui
+      .getByRole("row", { name: /Nassau Street/ })
+      .querySelector('button[title^="Edit"]'),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: /Step 3: Where is the site/ }),
+  );
+  assert.equal(ui.getByLabelText("City").value, "Bronx");
+  fireEvent.click(ui.getByRole("button", { name: "Save draft on device" }));
+  await waitFor(async () => {
+    const saved = await loadWorkspace();
+    assert.equal(saved.jobs.length, 1);
+    assert.equal(saved.jobs[0].city, "Bronx");
+  });
   fireEvent.click(ui.getByRole("button", { name: "Back to projects" }));
   assert.equal(
     ui
       .getByRole("row", { name: /Nassau Street/ })
-      .textContent.includes("Queens"),
+      .textContent.includes("Bronx"),
     true,
   );
   cleanup();
