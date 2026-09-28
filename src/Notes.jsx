@@ -280,8 +280,9 @@ export default function Notes({
                 />
               ) : (
                 <p className="hint">
-                  Use Ask → Open StreamLion chat for voice annotations. Typed
-                  annotations here save directly to this project in Google.
+                  Use Ask → Open Work, choose StreamLion for voice annotations.
+                  Typed annotations here save directly to this project in
+                  Google.
                 </p>
               )}
             </section>

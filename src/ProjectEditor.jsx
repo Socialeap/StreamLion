@@ -347,8 +347,11 @@ export default function ProjectEditor({
                     <MessageCircle size={22} />
                   </span>
                   <span>
-                    <strong>Open StreamLion chat</strong>
-                    <small>Start with a message ready to edit.</small>
+                    <strong>Open ChatGPT Work</strong>
+                    <small>
+                      Choose StreamLion in Plugins before sending the prepared
+                      message.
+                    </small>
                   </span>
                 </li>
                 <li>
