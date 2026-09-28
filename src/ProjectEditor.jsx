@@ -59,6 +59,7 @@ export default function ProjectEditor({
     project ? STEPS.length - 1 : firstStep,
   );
   const [error, setError] = useState("");
+  const [saveNotice, setSaveNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [json, setJson] = useState("");
   const [importStatus, setImportStatus] = useState("");
@@ -97,6 +98,7 @@ export default function ProjectEditor({
   function update(next) {
     setFields(next);
     setReviewed(false);
+    setSaveNotice("");
     try {
       writeDraft(key, { fields: next, base: draftBase });
       setError("");
@@ -136,6 +138,14 @@ export default function ProjectEditor({
         draftScope,
       );
       clearDraft(key);
+      if (!asReviewed) {
+        setDraftBase(JSON.stringify(fields));
+        setSaveNotice(
+          bookId
+            ? "Draft saved in Google. Keep editing, or return to Projects when ready."
+            : "Draft saved on this device. Keep editing, or return to Projects when ready.",
+        );
+      }
     } catch (exception) {
       setError(exception.message);
       if (!fields.title.trim()) goTo(1);
@@ -215,6 +225,11 @@ export default function ProjectEditor({
       {error && (
         <p role="alert" className="error editor-save-error">
           {error}
+        </p>
+      )}
+      {saveNotice && (
+        <p role="status" className="hint editor-save-location">
+          {saveNotice}
         </p>
       )}
 
