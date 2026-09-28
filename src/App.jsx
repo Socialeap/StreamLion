@@ -310,8 +310,23 @@ export default function App() {
     clearDraft(draftKey);
     refreshDrafts();
     setSelected(id);
-    setEditing(null);
-    setPage("Field notes");
+    if (reviewed) {
+      setEditing(null);
+      setPage("Field notes");
+    } else {
+      setEditing((previous) =>
+        previous
+          ? {
+              ...previous,
+              ...fields,
+              id,
+              draftId: previous.draftId || id,
+              reviewState: "draft",
+            }
+          : previous,
+      );
+    }
+    return id;
   }
   async function deleteProject(project) {
     if (
@@ -552,7 +567,7 @@ export default function App() {
           <p>Opening local workspace…</p>
         ) : editing ? (
           <ProjectEditor
-            key={`${editing.draftScope || bookId || "local"}:${editing.id || editing.draftId || "new"}`}
+            key={`${editing.draftScope || bookId || "local"}:${editing.draftId || editing.id || "new"}`}
             project={editing.id ? editing : null}
             draftId={editing.draftId}
             draftScope={editing.draftScope || bookId || "local"}
