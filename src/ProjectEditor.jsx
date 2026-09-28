@@ -281,7 +281,7 @@ export default function ProjectEditor({
                 aria-label="Where this project is saved"
               >
                 <h3>Where will this project be saved?</h3>
-                {bookId ? (
+                {bookId && googleReady ? (
                   <>
                     <p>
                       Your Google workbook is connected. It is the Google Sheet
@@ -299,6 +299,21 @@ export default function ProjectEditor({
                     <p className="hint">
                       ChatGPT may ask you to connect your Google account there
                       separately before it saves anything.
+                    </p>
+                  </>
+                ) : bookId ? (
+                  <>
+                    <p>
+                      Your Google workbook is selected on this device, but
+                      Google is not connected right now. Reconnect before saving
+                      a project to that workbook.
+                    </p>
+                    <button type="button" onClick={onConnectGoogle}>
+                      Reconnect Google to save
+                    </button>
+                    <p className="hint">
+                      You can keep preparing this project here. Your unfinished
+                      details stay on this device.
                     </p>
                   </>
                 ) : (
@@ -371,7 +386,7 @@ export default function ProjectEditor({
                   Enter details myself
                 </button>
               </div>
-              {bookId && (
+              {bookId && googleReady && (
                 <button
                   type="button"
                   className="text-action"

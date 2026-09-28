@@ -15,3 +15,11 @@ export function assertSaveDestination(bookId, remote) {
       "Reconnect Google in Connections before saving to your selected workbook. Your draft is still on this device.",
     );
 }
+
+export function noteControlsFor(project, bookId, remote) {
+  const deviceOnly = !!project?.deviceOnly;
+  return {
+    draftScope: deviceOnly ? "local" : bookId || "local",
+    allowAudio: deviceOnly || !remote,
+  };
+}

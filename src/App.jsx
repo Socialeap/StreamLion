@@ -24,7 +24,11 @@ import {
 import { readWorkbook, appendRevision, hasGoogleSession } from "./google";
 import { makeRevision, toLocalNote, validateNote } from "./workbook";
 import { legacyFields } from "./project-schema";
-import { assertSaveDestination, visibleProjects } from "./project-routing";
+import {
+  assertSaveDestination,
+  noteControlsFor,
+  visibleProjects,
+} from "./project-routing";
 const selectedWorkbookKey = "streamlion-selected-workbook-v1";
 function rememberedWorkbook() {
   try {
@@ -92,6 +96,7 @@ export default function App() {
     ].filter((note) => activeIds.has(note.jobId)),
   };
   const active = workspace.jobs.find((j) => j.id === selected);
+  const noteControls = noteControlsFor(active, bookId, remote);
   async function commit(change, audio) {
     if (writing.current) throw new Error("Another save is in progress. Retry.");
     writing.current = true;
@@ -641,7 +646,7 @@ export default function App() {
               </div>
             )}
             <Notes
-              key={`${bookId || "local"}:${selected}:${noteEpoch}`}
+              key={`${noteControls.draftScope}:${selected}:${noteEpoch}`}
               workspace={workspace}
               selected={selected}
               onSelect={setSelected}
@@ -651,8 +656,8 @@ export default function App() {
               onReview={(id) => updateNote(id, null, true)}
               captureBusy={disabled}
               onCaptureBusy={setCaptureBusy}
-              draftScope={bookId || "local"}
-              allowAudio={!remote}
+              draftScope={noteControls.draftScope}
+              allowAudio={noteControls.allowAudio}
             />
           </>
         ) : page === "Ask" ? (

@@ -133,6 +133,14 @@ test("a remembered workbook requires reconnection before saving", () => {
     ui.getByRole("status").textContent,
     /connection needs to be renewed/,
   );
+  assert.match(
+    ui.getByRole("region", { name: "Where this project is saved" }).textContent,
+    /selected on this device, but Google is not connected/,
+  );
+  assert.doesNotMatch(
+    ui.getByRole("region", { name: "Where this project is saved" }).textContent,
+    /workbook is connected/,
+  );
   fireEvent.click(ui.getByRole("button", { name: "Reconnect Google" }));
   assert.equal(reconnect, true);
   cleanup();

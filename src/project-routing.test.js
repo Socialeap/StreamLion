@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assertSaveDestination, visibleProjects } from "./project-routing.js";
+import {
+  assertSaveDestination,
+  noteControlsFor,
+  visibleProjects,
+} from "./project-routing.js";
 
 test("a device-only project remains available after connecting an empty workbook", () => {
   const nassau = {
@@ -19,6 +23,21 @@ test("a device-only project remains available after connecting an empty workbook
   );
   assert.equal(afterSave.length, 1);
   assert.equal(afterSave[0].deviceOnly, undefined);
+});
+
+test("note controls follow the selected project's owner in a mixed workspace", () => {
+  const remote = { Projects: [] };
+  assert.deepEqual(
+    noteControlsFor({ deviceOnly: true }, "workbook-id", remote),
+    {
+      draftScope: "local",
+      allowAudio: true,
+    },
+  );
+  assert.deepEqual(noteControlsFor({}, "workbook-id", remote), {
+    draftScope: "workbook-id",
+    allowAudio: false,
+  });
 });
 
 test("remembered Google workbook cannot silently fall back to a device save", () => {
