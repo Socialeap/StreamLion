@@ -260,7 +260,14 @@ export default function App() {
       setSyncBusy(false);
     }
   }
-  async function saveProject(fields, project, reviewed, draftId, draftScope) {
+  async function saveProject(
+    fields,
+    project,
+    reviewed,
+    draftId,
+    draftScope,
+    step,
+  ) {
     let id = project?.id || crypto.randomUUID();
     const draftKey = projectDraftKey(
       project ? bookId || "local" : draftScope || bookId || "local",
@@ -310,8 +317,28 @@ export default function App() {
     clearDraft(draftKey);
     refreshDrafts();
     setSelected(id);
-    setEditing(null);
-    setPage("Field notes");
+    if (reviewed) {
+      setEditing(null);
+      setPage("Field notes");
+    } else {
+      setEditing((previous) =>
+        previous
+          ? {
+              ...previous,
+              ...fields,
+              id,
+              draftId: id,
+              draftScope: remote ? bookId : "local",
+              reviewState: "draft",
+              savedStep: step,
+              savedNotice: remote
+                ? "Draft saved in Google. Keep editing, or return to Projects when ready."
+                : "Draft saved on this device. Keep editing, or return to Projects when ready.",
+            }
+          : previous,
+      );
+    }
+    return id;
   }
   async function deleteProject(project) {
     if (
@@ -552,10 +579,12 @@ export default function App() {
           <p>Opening local workspace…</p>
         ) : editing ? (
           <ProjectEditor
-            key={`${editing.draftScope || bookId || "local"}:${editing.id || editing.draftId || "new"}`}
+            key={`${editing.draftScope || bookId || "local"}:${editing.draftId || editing.id || "new"}`}
             project={editing.id ? editing : null}
             draftId={editing.draftId}
             draftScope={editing.draftScope || bookId || "local"}
+            savedStep={editing.savedStep}
+            savedNotice={editing.savedNotice}
             bookId={bookId}
             googleReady={!!remote && hasGoogleSession()}
             onSave={saveProject}

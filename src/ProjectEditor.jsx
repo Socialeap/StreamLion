@@ -40,6 +40,8 @@ export default function ProjectEditor({
   bookId,
   googleReady = false,
   draftScope = "local",
+  savedStep = null,
+  savedNotice = "",
 }) {
   const key = projectDraftKey(draftScope, project?.id || draftId || "new");
   const initial = project
@@ -53,12 +55,14 @@ export default function ProjectEditor({
   );
   const [fields, setFields] = useState(() => cached?.fields || initial);
   const firstStep =
-    project || Object.values(cached?.fields || {}).some(Boolean) ? 1 : 0;
+    savedStep ??
+    (project || Object.values(cached?.fields || {}).some(Boolean) ? 1 : 0);
   const [step, setStep] = useState(firstStep);
   const [furthest, setFurthest] = useState(
     project ? STEPS.length - 1 : firstStep,
   );
   const [error, setError] = useState("");
+  const [saveNotice, setSaveNotice] = useState(savedNotice);
   const [busy, setBusy] = useState(false);
   const [json, setJson] = useState("");
   const [importStatus, setImportStatus] = useState("");
@@ -97,6 +101,7 @@ export default function ProjectEditor({
   function update(next) {
     setFields(next);
     setReviewed(false);
+    setSaveNotice("");
     try {
       writeDraft(key, { fields: next, base: draftBase });
       setError("");
@@ -128,14 +133,17 @@ export default function ProjectEditor({
     setBusy(true);
     setError("");
     try {
-      await onSave(
-        validateFields(fields),
-        project,
-        asReviewed,
-        draftId,
-        draftScope,
-      );
+      const savedFields = validateFields(fields);
+      await onSave(savedFields, project, asReviewed, draftId, draftScope, step);
       clearDraft(key);
+      if (!asReviewed) {
+        setDraftBase(JSON.stringify(savedFields));
+        setSaveNotice(
+          bookId
+            ? "Draft saved in Google. Keep editing, or return to Projects when ready."
+            : "Draft saved on this device. Keep editing, or return to Projects when ready.",
+        );
+      }
     } catch (exception) {
       setError(exception.message);
       if (!fields.title.trim()) goTo(1);
@@ -215,6 +223,11 @@ export default function ProjectEditor({
       {error && (
         <p role="alert" className="error editor-save-error">
           {error}
+        </p>
+      )}
+      {saveNotice && (
+        <p role="status" className="hint editor-save-location">
+          {saveNotice}
         </p>
       )}
 
