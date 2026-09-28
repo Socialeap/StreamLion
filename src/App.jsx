@@ -490,7 +490,7 @@ export default function App() {
                 {
                   Projects: "Find, review, or create a project.",
                   "Field notes": "Record what happened at a site.",
-                  Ask: "Talk with StreamLion about a project in ChatGPT.",
+                  Ask: "Choose a project, then open ChatGPT Work and select StreamLion.",
                   Connections:
                     "Connect your Google account and choose a workbook.",
                 }[label]
@@ -696,7 +696,7 @@ export default function App() {
                 <h1 title="Open a conversation about a project or a site note.">
                   Ask StreamLion
                 </h1>
-                <p>Choose a project, then open the chat.</p>
+                <p>Choose a project, then open Work and select StreamLion.</p>
               </div>
             </header>
             <label>
