@@ -1,4 +1,4 @@
 interface:
-  default_prompt: Answer a quick question about my StreamLion projects from my connected Google workbook, or open the workspace if I need to edit.
+  default_prompt: Help me with my StreamLion projects. I'll ask a question or share a brief; use my connected workbook when needed.
   display_name: StreamLion
-  short_description: Ask about projects and open your field workspace.
+  short_description: Ask about projects, prepare drafts, and open your workspace.

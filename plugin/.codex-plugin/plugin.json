@@ -1,23 +1,22 @@
 {
   "interface": {
     "displayName": "StreamLion",
-    "shortDescription": "Create projects and annotate field work",
-    "longDescription": "Turn uploaded specifications into reviewed StreamLion project records in your Google workbook. Find jobs, preserve exact field observations, and use ChatGPT voice where tools are available. No StreamLion project database.",
+    "shortDescription": "Ask about projects, prepare drafts, and open your workspace",
+    "longDescription": "Use one StreamLion conversation to ask about Google-owned projects, turn briefs into reviewed drafts, and open the field workspace when you need to edit.",
     "developerName": "PASCAL E CHARPENTIER",
     "category": "Productivity",
-    "capabilities": [
-      "skills"
-    ],
-    "defaultPrompt": "Create a project from my specifications, or open a project from my StreamLion Google workbook.",
+    "capabilities": ["skills", "mcp"],
+    "defaultPrompt": "Help me with my StreamLion projects. I'll ask a question or share a brief; use my connected workbook when needed.",
     "composerIcon": "./assets/gpt-icon.png",
     "logo": "./assets/gpt-icon.png"
   },
   "name": "gpt-11b52f5bcfe3bd414f9586be746198d8",
-  "version": "0.72.0",
+  "version": "0.74.2",
   "description": "Create and query Google-owned spatial capture projects; extract specifications and record reviewed field annotations.",
   "author": {
     "name": "PASCAL E CHARPENTIER"
   },
   "keywords": [],
-  "skills": "./skills"
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
 }
