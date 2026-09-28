@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Plus, FileText, NotebookPen } from "lucide-react";
 import { searchProjects } from "./project-schema";
+import { ChatGPTLaunch } from "./ChatGPTPanel";
 
 function visitDate(value) {
   if (!value) return "Not set";
@@ -17,13 +18,13 @@ function visitDate(value) {
 
 export default function Jobs({
   workspace,
+  bookId,
   googleConnected = false,
   drafts = [],
   archivedProjects = [],
   archivedDrafts = [],
   onCreate,
   onOpen,
-  onAsk,
   onEdit,
   onResumeDraft,
   onDeleteDraft,
@@ -53,12 +54,7 @@ export default function Jobs({
           <p>Find a project, finish a draft, or start a new one.</p>
         </div>
         <div className="actions">
-          <button
-            onClick={onAsk}
-            title="Open a ChatGPT conversation with StreamLion to ask about your projects."
-          >
-            Ask in ChatGPT
-          </button>
+          <ChatGPTLaunch bookId={bookId} className="" />
           <button
             className="primary"
             onClick={onCreate}

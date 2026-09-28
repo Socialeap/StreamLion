@@ -214,9 +214,9 @@ test("Projects shows a named unfinished draft, its count and edit/delete control
   const ui = render(
     <Jobs
       workspace={{ jobs: [], notes: [] }}
+      bookId="workbook123"
       drafts={[draft]}
       onCreate={() => {}}
-      onAsk={() => {}}
       onResumeDraft={() => {
         edited = true;
       }}
@@ -234,6 +234,12 @@ test("Projects shows a named unfinished draft, its count and edit/delete control
   assert.ok(ui.getByText("Brooklyn"));
   assert.ok(ui.getByText("Oct 1, 2026"));
   assert.ok(ui.getByText("Pending"));
+  const quickChat = ui.getByRole("link", { name: /Open StreamLion chat/ });
+  assert.match(new URL(quickChat.href).searchParams.get("hints"), /^plugin:/);
+  assert.match(
+    new URL(quickChat.href).searchParams.get("prompt"),
+    /workbook123/,
+  );
   fireEvent.click(ui.getByRole("button", { name: "Edit" }));
   fireEvent.click(ui.getByRole("button", { name: "Delete" }));
   assert.equal(edited, true);

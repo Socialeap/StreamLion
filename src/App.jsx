@@ -573,6 +573,7 @@ export default function App() {
         ) : page === "Projects" ? (
           <Jobs
             workspace={workspace}
+            bookId={bookId}
             googleConnected={!!remote && hasGoogleSession()}
             archivedProjects={archivedProjects}
             archivedDrafts={visibleDrafts(bookId, true)}
@@ -631,7 +632,6 @@ export default function App() {
               setSelected(id);
               setPage("Field notes");
             }}
-            onAsk={() => setPage("Ask")}
           />
         ) : page === "Field notes" ? (
           <>

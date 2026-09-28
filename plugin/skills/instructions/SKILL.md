@@ -5,7 +5,15 @@ description: Create StreamLion spatial capture projects from specifications, pre
 
 # StreamLion: specifications to prepared projects and field records
 
-The primary workflow is uploaded PDFs/text/email threads → source-backed project draft → reviewed Google records → StreamLion PWA → on-site annotations and questions. The user's Google Sheets/Drive hold authoritative project records. Do not create a StreamLion-hosted project database. No separate model API is required for this ChatGPT-hosted path. The PWA is https://streamlion.transcendencemedia.com/. Do not claim that the deployed PWA has a feature unless it is verified there.
+StreamLion is the user's main ChatGPT conversation for project work. Use the chat for quick questions, document intake, and field observations; open the field workspace only when the user needs to inspect or edit its forms. The user's Google Sheets/Drive hold authoritative project records. Do not create a StreamLion-hosted project database. No separate model API is required for this ChatGPT-hosted path. The PWA is https://streamlion.transcendencemedia.com/. Do not claim that the deployed PWA has a feature unless it is verified there.
+
+## Keep the conversation moving
+
+- For a short question, find the authorized StreamLion workbook, read only the relevant tab(s), and answer directly. Do not open the workspace card, request a workbook link, or ask the user to copy context when the workbook is already identifiable and accessible. Load Observations only when the question needs field notes. Validate every tab you do read using the contract below.
+- Reuse a workbook URL or ID already supplied in this conversation. In a new conversation, search narrowly for the StreamLion workbook and use it when exactly one valid match is accessible. Ask the user to choose only if several valid workbooks match, or to connect Google only if access is unavailable. Do not promise a permanent workbook connection across chats; the current MCP workspace tool has no user-specific Google access.
+- Explain a Google connector authorization in user terms: it lets ChatGPT access the user's Sheet for this conversation. The PWA's Google connection is separate. Do not make connector branding or technical setup a step in an ordinary project question.
+- When the user uploads a brief, extract and present the useful draft first. A Google workbook is needed only when they want to save or query it. Ask one focused question only for a fact required by the next action; keep unknown optional fields blank.
+- Keep responses brief and action-oriented. After a verified save, give the project name and workbook link, then let the user continue in this chat. Do not add a workspace handoff unless the user asks to review or edit there.
 
 ## Start with the user's intent
 
@@ -17,7 +25,7 @@ The primary workflow is uploaded PDFs/text/email threads → source-backed proje
 
 ## In-chat workspace prototype
 
-For a quick question, answer directly from the user's connected Google workbook using the host's Google tools. Do not show a workspace card or ask for a workbook link merely to answer a question when the workbook is already identifiable and accessible.
+For a quick question, answer directly from the user's connected Google workbook using the host's Google tools. The StreamLion MCP server currently exposes only the workspace launcher and a synthetic example; neither reads private records. Do not claim the plugin itself has read or saved Google data unless an authorized Google tool actually did so.
 
 When the user wants to review or edit in the app, call `show_streamlion_workspace`. Its card can open the existing PWA inside ChatGPT where supported, or in the browser. The card is a view launcher: it does not connect Google accounts or transfer ChatGPT's Google authorization to the PWA. Do not claim an in-chat edit is saved until the PWA confirms it.
 
@@ -79,7 +87,7 @@ Retained audio and original documents may be uploaded to the user's selected Dri
 
 ## Queries
 
-Retrieve current project heads and their related observation heads. A project index/search result is a discovery aid, not authoritative current facts. Explain source and freshness. For monetary totals, operate on the full eligible set, separate currencies, preserve unknowns, and compute using exact cents. Offered, agreed, invoiced and received are different. Do not infer a due date without the contractual trigger. If complete records cannot be fetched, label the answer as partial.
+Retrieve the current project heads needed for the question; retrieve related observation heads only when field notes matter. A project index/search result is a discovery aid, not authoritative current facts. Explain source and freshness. For monetary totals, operate on the full eligible set, separate currencies, preserve unknowns, and compute using exact cents. Offered, agreed, invoiced and received are different. Do not infer a due date without the contractual trigger. If complete records cannot be fetched, label the answer as partial.
 
 ## Finish
 
