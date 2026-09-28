@@ -65,9 +65,9 @@ export function ChatGPTLaunch({
       target="_blank"
       rel="noopener noreferrer"
       onClick={launch}
-      title="Open a ChatGPT conversation with StreamLion ready to help. Your message is drafted but not sent."
+      title="Open a ChatGPT Work chat with your message drafted. Choose StreamLion from Plugins before sending."
     >
-      Open StreamLion chat <ExternalLink size={16} aria-hidden="true" />
+      Open Work, choose StreamLion <ExternalLink size={16} aria-hidden="true" />
     </a>
   );
 }
@@ -79,11 +79,11 @@ export default function ChatGPTPanel({ project, bookId }) {
       <h2 title="Ask about your projects or dictate a site observation in ChatGPT.">
         Talk with StreamLion
       </h2>
-      <p>
-        Open the chat and ask your question or speak a site note. StreamLion
-        will already be selected and your starting message will be ready to
-        edit.
-      </p>
+      <p>Ask about a project or speak a site note in ChatGPT Work.</p>
+      <ol className="starter-steps">
+        <li>Open the Work chat with your question ready to edit.</li>
+        <li>In ChatGPT, choose Plugins → StreamLion, then send.</li>
+      </ol>
       <ChatGPTLaunch project={project} bookId={bookId} />
       <details className="quiet-details">
         <summary title="See the message prepared for ChatGPT.">

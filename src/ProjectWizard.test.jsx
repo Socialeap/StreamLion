@@ -38,7 +38,7 @@ test("project wizard starts with the ChatGPT action and reveals one field group 
       draftScope="wizard-test"
     />,
   );
-  const launch = ui.getByRole("link", { name: /Open StreamLion chat/ });
+  const launch = ui.getByRole("link", { name: /Open Work, choose StreamLion/ });
   assert.equal(new URL(launch.href).pathname, "/");
   assert.match(new URL(launch.href).searchParams.get("prompt"), /workbook123/);
   assert.equal(ui.queryByLabelText("Project name"), null);
@@ -234,7 +234,9 @@ test("Projects shows a named unfinished draft, its count and edit/delete control
   assert.ok(ui.getByText("Brooklyn"));
   assert.ok(ui.getByText("Oct 1, 2026"));
   assert.ok(ui.getByText("Pending"));
-  const quickChat = ui.getByRole("link", { name: /Open StreamLion chat/ });
+  const quickChat = ui.getByRole("link", {
+    name: /Open Work, choose StreamLion/,
+  });
   assert.match(new URL(quickChat.href).searchParams.get("hints"), /^plugin:/);
   assert.match(
     new URL(quickChat.href).searchParams.get("prompt"),
@@ -247,7 +249,7 @@ test("Projects shows a named unfinished draft, its count and edit/delete control
   cleanup();
 });
 
-test("ChatGPT link opens a Work chat with StreamLion selected and a drafted message", () => {
+test("ChatGPT link opens a Work chat with a StreamLion hint and a drafted message", () => {
   const url = new URL(chatUrl({ mode: "create", bookId: "workbook123" }));
   assert.equal(url.origin, "https://chatgpt.com");
   assert.equal(url.pathname, "/");
