@@ -17,6 +17,7 @@ function visitDate(value) {
 
 export default function Jobs({
   workspace,
+  googleConnected = false,
   drafts = [],
   archivedProjects = [],
   archivedDrafts = [],
@@ -156,7 +157,11 @@ export default function Jobs({
                           ? row.draft.scope === "local"
                             ? "Saved on this device only"
                             : "Unfinished Google project on this device"
-                          : row.reference || "No project ID"}
+                          : row.deviceOnly
+                            ? googleConnected
+                              ? "Saved on this device only · Edit to save to Google"
+                              : "Saved on this device only"
+                            : row.reference || "No project ID"}
                       </small>
                     </td>
                     <td data-label="City">{row.city || "Not set"}</td>

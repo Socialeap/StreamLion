@@ -38,6 +38,7 @@ export default function ProjectEditor({
   onConnectGoogle,
   onRefreshProjects,
   bookId,
+  googleReady = false,
   draftScope = "local",
 }) {
   const key = projectDraftKey(draftScope, project?.id || draftId || "new");
@@ -117,8 +118,7 @@ export default function ProjectEditor({
     }
   }
 
-  async function save(event) {
-    event.preventDefault();
+  async function save(asReviewed) {
     if (stale) {
       setError(
         "This project changed in Google. Download your draft, then load the current record before saving.",
@@ -131,7 +131,7 @@ export default function ProjectEditor({
       await onSave(
         validateFields(fields),
         project,
-        reviewed,
+        asReviewed,
         draftId,
         draftScope,
       );
@@ -139,6 +139,7 @@ export default function ProjectEditor({
     } catch (exception) {
       setError(exception.message);
       if (!fields.title.trim()) goTo(1);
+      else window.scrollTo?.({ top: 0, behavior: "smooth" });
     } finally {
       setBusy(false);
     }
@@ -166,15 +167,56 @@ export default function ProjectEditor({
           </h1>
           <p>One step at a time. You can leave unknown details blank.</p>
         </div>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onCancel}
-          title="Return to your project list. Your changes stay on this device."
-        >
-          Back to projects
-        </button>
+        <div className="editor-header-actions">
+          {bookId && !googleReady && (
+            <button type="button" disabled={busy} onClick={onConnectGoogle}>
+              Reconnect Google
+            </button>
+          )}
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || stale || (bookId && !googleReady)}
+            onClick={() => save(false)}
+            title={
+              bookId
+                ? "Save this draft to your selected Google workbook."
+                : "Save this draft on this device."
+            }
+          >
+            {busy
+              ? "Saving…"
+              : bookId
+                ? "Save draft to Google"
+                : "Save draft on device"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            title="Return to your project list. Your changes stay on this device."
+          >
+            Back to projects
+          </button>
+        </div>
       </header>
+      {!bookId && (
+        <p className="hint editor-save-location" role="status">
+          No Google workbook is selected. Saving a draft here keeps it on this
+          device. Connect Google to save it in your workbook.
+        </p>
+      )}
+      {bookId && !googleReady && (
+        <p className="hint editor-save-location" role="status">
+          Your Google workbook is selected, but your connection needs to be
+          renewed before you can save to it. Your edits remain on this device.
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="error editor-save-error">
+          {error}
+        </p>
+      )}
 
       <nav
         ref={progressRef}
@@ -207,7 +249,7 @@ export default function ProjectEditor({
         </ol>
       </nav>
 
-      <form onSubmit={save}>
+      <form onSubmit={(event) => event.preventDefault()}>
         <div className="wizard-body">
           <div className="wizard-heading">
             <span className="wizard-eyebrow">
@@ -239,7 +281,7 @@ export default function ProjectEditor({
                 aria-label="Where this project is saved"
               >
                 <h3>Where will this project be saved?</h3>
-                {bookId ? (
+                {bookId && googleReady ? (
                   <>
                     <p>
                       Your Google workbook is connected. It is the Google Sheet
@@ -257,6 +299,21 @@ export default function ProjectEditor({
                     <p className="hint">
                       ChatGPT may ask you to connect your Google account there
                       separately before it saves anything.
+                    </p>
+                  </>
+                ) : bookId ? (
+                  <>
+                    <p>
+                      Your Google workbook is selected on this device, but
+                      Google is not connected right now. Reconnect before saving
+                      a project to that workbook.
+                    </p>
+                    <button type="button" onClick={onConnectGoogle}>
+                      Reconnect Google to save
+                    </button>
+                    <p className="hint">
+                      You can keep preparing this project here. Your unfinished
+                      details stay on this device.
                     </p>
                   </>
                 ) : (
@@ -329,7 +386,7 @@ export default function ProjectEditor({
                   Enter details myself
                 </button>
               </div>
-              {bookId && (
+              {bookId && googleReady && (
                 <button
                   type="button"
                   className="text-action"
@@ -514,11 +571,6 @@ export default function ProjectEditor({
               {importStatus}
             </p>
           )}
-          {error && (
-            <p role="alert" className="error">
-              {error}
-            </p>
-          )}
         </div>
 
         {step > 0 && (
@@ -536,15 +588,15 @@ export default function ProjectEditor({
             </span>
             {step === STEPS.length - 1 ? (
               <button
+                type="button"
                 className="primary"
-                disabled={busy || stale}
-                title="Save this project to your current workspace."
+                disabled={
+                  busy || stale || !reviewed || (bookId && !googleReady)
+                }
+                onClick={() => save(true)}
+                title="Save the project after checking its details against the source documents."
               >
-                {busy
-                  ? "Saving…"
-                  : reviewed
-                    ? "Save reviewed project"
-                    : "Save draft project"}
+                {busy ? "Saving…" : "Save reviewed project"}
               </button>
             ) : (
               <button

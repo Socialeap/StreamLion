@@ -86,6 +86,66 @@ test("manual project details survive the steps and reach save unchanged", async 
   cleanup();
 });
 
+test("Save draft is available in the editor header before Finish", async () => {
+  localStorage.clear();
+  let saved;
+  const ui = render(
+    <ProjectEditor
+      draftScope="header-save-test"
+      bookId="workbook123"
+      googleReady
+      onSave={async (...args) => {
+        saved = args;
+      }}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Nassau Street" },
+  });
+  await act(async () => {
+    fireEvent.click(ui.getByRole("button", { name: "Save draft to Google" }));
+  });
+  assert.equal(saved[0].title, "Nassau Street");
+  assert.equal(saved[2], false);
+  cleanup();
+});
+
+test("a remembered workbook requires reconnection before saving", () => {
+  localStorage.clear();
+  let reconnect = false;
+  const ui = render(
+    <ProjectEditor
+      bookId="workbook123"
+      onSave={async () => {}}
+      onCancel={() => {}}
+      onConnectGoogle={() => {
+        reconnect = true;
+      }}
+    />,
+  );
+  assert.equal(
+    ui.getByRole("button", { name: "Save draft to Google" }).disabled,
+    true,
+  );
+  assert.match(
+    ui.getByRole("status").textContent,
+    /connection needs to be renewed/,
+  );
+  assert.match(
+    ui.getByRole("region", { name: "Where this project is saved" }).textContent,
+    /selected on this device, but Google is not connected/,
+  );
+  assert.doesNotMatch(
+    ui.getByRole("region", { name: "Where this project is saved" }).textContent,
+    /workbook is connected/,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Reconnect Google" }));
+  assert.equal(reconnect, true);
+  cleanup();
+});
+
 test("any numbered step opens directly and keeps entered details", () => {
   localStorage.clear();
   const ui = render(
