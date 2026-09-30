@@ -173,8 +173,8 @@ a:focus-visible {
   letter-spacing: -0.8px;
   padding: 0 12px 32px;
 }
-.brand svg {
-  color: var(--green);
+.brand img {
+  flex-shrink: 0;
 }
 nav {
   display: grid;
@@ -538,8 +538,9 @@ summary {
     padding: 0;
     font-size: 21px;
   }
-  .brand svg {
+  .brand img {
     width: 27px;
+    height: 27px;
   }
   .sidebar nav {
     position: fixed;

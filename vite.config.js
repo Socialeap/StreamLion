@@ -16,7 +16,7 @@ export default defineConfig({
         start_url: "/",
         icons: [
           {
-            src: "/icon.svg",
+            src: "/lion.svg",
             sizes: "any",
             type: "image/svg+xml",
             purpose: "any",
