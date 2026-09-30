@@ -38,65 +38,82 @@ function openChat(href) {
   return popup;
 }
 
-export function ChatGPTLaunch({
-  mode = "ask",
-  context = "",
-  className = "primary",
-  onCopied,
-}) {
-  const [notice, setNotice] = useState("");
+export function ChatGPTLaunch({ mode = "ask", className = "primary", label }) {
+  return (
+    <a
+      className={`button-link ${className}`}
+      href={chatUrl({ mode })}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open your ChatGPT account. This does not paste or send your project details."
+      onClick={(event) => {
+        // If the popup is blocked, preserve normal anchor navigation.
+        if (openChat(chatUrl({ mode }))) event.preventDefault();
+      }}
+    >
+      {label ||
+        (mode === "create"
+          ? "Prepare my brief in ChatGPT"
+          : "Open ChatGPT")}{" "}
+      <ExternalLink size={16} aria-hidden="true" />
+    </a>
+  );
+}
+
+function ProjectChatHandoff({ snapshot }) {
+  const [status, setStatus] = useState("");
+  const [copying, setCopying] = useState(false);
+  async function copyProject() {
+    setCopying(true);
+    setStatus("");
+    try {
+      if (!navigator.clipboard?.writeText)
+        throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(snapshot);
+      setStatus(
+        "Project details copied. Next, open ChatGPT and paste them into the message box.",
+      );
+    } catch {
+      setStatus(
+        "Could not copy. Try Copy project details again, or download the project snapshot below and attach it in ChatGPT.",
+      );
+    } finally {
+      setCopying(false);
+    }
+  }
   return (
     <>
-      <a
-        className={`button-link ${className}`}
-        href={chatUrl({ mode })}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={
-          context
-            ? "Copy this project's details and open your ChatGPT account. Paste them into the conversation."
-            : "Open your ChatGPT account with a message ready to send."
-        }
-        onClick={(event) => {
-          // Start copying while this document is focused. Open the window in
-          // the same click, without waiting and losing browser user activation.
-          const copy = context && navigator.clipboard?.writeText(context);
-          // If the popup is blocked, preserve normal anchor navigation.
-          if (openChat(chatUrl({ mode }))) event.preventDefault();
-          if (context) {
-            if (!copy) {
-              setNotice(
-                "Download the project snapshot below and attach it in ChatGPT.",
-              );
-              return;
-            }
-            copy
-              .then(() => {
-                setNotice(
-                  "Project copied. Paste it into ChatGPT, then ask your question.",
-                );
-                onCopied?.();
-              })
-              .catch(() =>
-                setNotice(
-                  "Copy was blocked. Download the project snapshot below and attach it in ChatGPT.",
-                ),
-              );
-          }
-        }}
-      >
-        {context
-          ? "Copy project & open ChatGPT"
-          : mode === "create"
-            ? "Prepare my brief in ChatGPT"
-            : "Open ChatGPT"}{" "}
-        <ExternalLink size={16} aria-hidden="true" />
-      </a>
-      {notice && (
+      <p>
+        First copy your project details, then open your own ChatGPT account.
+      </p>
+      <div className="actions">
+        <button
+          className="primary"
+          onClick={copyProject}
+          disabled={copying}
+          title="Copy this project's saved details and field notes to your clipboard."
+        >
+          {copying ? "Copying project details…" : "1. Copy project details"}
+        </button>
+        <ChatGPTLaunch className="" label="2. Open ChatGPT" />
+      </div>
+      {status && (
         <p className="hint" role="status">
-          {notice}
+          {status}
         </p>
       )}
+      <div className="fact-answer">
+        <strong>In ChatGPT: paste, ask, send</strong>
+        <p>
+          Click or tap the message box, paste your copied project details, add
+          your question, then send the message.
+        </p>
+        <p className="hint">
+          Computer: press ⌘V on Mac or Ctrl+V on Windows, or right-click and
+          choose Paste. Phone or tablet: touch and hold the message box, then
+          choose Paste.
+        </p>
+      </div>
     </>
   );
 }
@@ -108,16 +125,20 @@ export default function ChatGPTPanel({
 }) {
   const [fact, setFact] = useState("");
   let snapshot = "",
+    handoffKey = "",
     plan,
     error = "";
   try {
     if (project) {
       plan = readWorkflow(notes, project);
-      snapshot = JSON.stringify(
-        projectContext(project, plan, notes, asOf),
-        null,
-        2,
-      );
+      const context = projectContext(project, plan, notes, asOf);
+      snapshot = JSON.stringify(context, null, 2);
+      // A render-time timestamp is not a change to the selected records.
+      // Keep in-flight copying and its confirmation until the content changes.
+      handoffKey = JSON.stringify([
+        project.id,
+        { ...context, contextAsOf: undefined },
+      ]);
     }
   } catch (e) {
     error = e.message;
@@ -173,10 +194,6 @@ export default function ChatGPTPanel({
             </div>
           )}
           <h3>Need help thinking it through?</h3>
-          <p>
-            Use your own ChatGPT account. The project is copied for you; paste
-            it once and ask your question.
-          </p>
         </>
       )}
       {error ? (
@@ -184,7 +201,7 @@ export default function ChatGPTPanel({
           {error}
         </p>
       ) : (
-        project && <ChatGPTLaunch context={snapshot} />
+        project && <ProjectChatHandoff key={handoffKey} snapshot={snapshot} />
       )}
       {snapshot && (
         <details className="quiet-details">
