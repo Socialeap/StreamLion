@@ -125,16 +125,20 @@ export default function ChatGPTPanel({
 }) {
   const [fact, setFact] = useState("");
   let snapshot = "",
+    handoffKey = "",
     plan,
     error = "";
   try {
     if (project) {
       plan = readWorkflow(notes, project);
-      snapshot = JSON.stringify(
-        projectContext(project, plan, notes, asOf),
-        null,
-        2,
-      );
+      const context = projectContext(project, plan, notes, asOf);
+      snapshot = JSON.stringify(context, null, 2);
+      // A render-time timestamp is not a change to the selected records.
+      // Keep in-flight copying and its confirmation until the content changes.
+      handoffKey = JSON.stringify([
+        project.id,
+        { ...context, contextAsOf: undefined },
+      ]);
     }
   } catch (e) {
     error = e.message;
@@ -197,7 +201,7 @@ export default function ChatGPTPanel({
           {error}
         </p>
       ) : (
-        project && <ProjectChatHandoff key={snapshot} snapshot={snapshot} />
+        project && <ProjectChatHandoff key={handoffKey} snapshot={snapshot} />
       )}
       {snapshot && (
         <details className="quiet-details">

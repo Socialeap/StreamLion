@@ -106,3 +106,51 @@ test("clipboard failure allows retry and offers a file fallback without opening 
   assert.equal(attempts, 2);
   cleanup();
 });
+
+test("timestamp-only renders preserve pending copying and confirmation; edited records reset it", async () => {
+  let resolveCopy;
+  clipboard(
+    () =>
+      new Promise((resolve) => {
+        resolveCopy = resolve;
+      }),
+  );
+  const ui = render(
+    <ChatGPTPanel project={project} asOf="2026-09-30T10:00:00Z" />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "1. Copy project details" }));
+  ui.rerender(
+    <ChatGPTPanel project={{ ...project }} asOf="2026-09-30T10:00:01Z" />,
+  );
+  assert.equal(
+    ui.getByRole("button", { name: "Copying project details…" }).disabled,
+    true,
+  );
+  await act(async () => resolveCopy());
+  assert.match(ui.getByRole("status").textContent, /Project details copied/);
+  ui.rerender(
+    <ChatGPTPanel project={{ ...project }} asOf="2026-09-30T10:00:02Z" />,
+  );
+  assert.match(ui.getByRole("status").textContent, /Project details copied/);
+  ui.rerender(
+    <ChatGPTPanel
+      project={{ ...project, scope: "Updated capture work" }}
+      asOf="2026-09-30T10:00:02Z"
+    />,
+  );
+  assert.equal(ui.queryByRole("status"), null);
+  clipboard(async () => {});
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "1. Copy project details" }),
+    ),
+  );
+  ui.rerender(
+    <ChatGPTPanel
+      project={{ ...project, scope: "Updated capture work" }}
+      notes={[{ jobId: project.id, area: "Entrance", text: "New observation" }]}
+    />,
+  );
+  assert.equal(ui.queryByRole("status"), null);
+  cleanup();
+});
