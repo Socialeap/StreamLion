@@ -6,7 +6,6 @@ import {
   listProjectDrafts,
   projectDraftKey,
 } from "./drafts";
-import Building2 from "./BuildingIcon";
 import { useEffect, useRef, useState } from "react";
 import { FileText, NotebookPen, Link, MessageCircle } from "lucide-react";
 import Jobs from "./Jobs";
@@ -756,7 +755,7 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <Building2 size={30} />
+          <img src="/lion.png" width="32" height="32" alt="" aria-hidden="true" />
           <span>StreamLion</span>
         </div>
         <nav aria-label="Main">
