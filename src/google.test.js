@@ -12,6 +12,8 @@ import {
   disconnectGoogle,
   appendRevision,
   readWorkbook,
+  reserveFieldFileId,
+  retainFieldFile,
 } from "./google.js";
 const fakeToken = "synthetic-test-token";
 globalThis.window = {
@@ -31,6 +33,55 @@ globalThis.document = {
   createElement: () => ({ remove() {} }),
   head: { append: (s) => queueMicrotask(() => s.onload()) },
 };
+test("Drive field upload reconciles a lost acknowledgment by verified ID and digest without duplicating a file", async () => {
+  let file = null,
+    posts = 0;
+  const blob = new Blob(["synthetic recording"], { type: "audio/webm" });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(options.headers.Authorization, `Bearer ${fakeToken}`);
+    if (url.includes("generateIds"))
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ids: ["reserved-file"] }),
+      };
+    if (options.method === "POST") {
+      posts++;
+      const metadata = JSON.parse(
+        (await options.body.text()).split("\r\n\r\n")[1].split("\r\n--")[0],
+      );
+      file = {
+        id: metadata.id,
+        size: String(blob.size),
+        appProperties: metadata.appProperties,
+        trashed: false,
+      };
+      throw new Error("Upload acknowledgment lost");
+    }
+    return file
+      ? { ok: true, status: 200, json: async () => file }
+      : { ok: false, status: 404 };
+  };
+  await connectGoogle("test.apps.googleusercontent.com");
+  const fileId = await reserveFieldFileId();
+  const input = {
+    fileId,
+    bookId: "book",
+    noteId: "note",
+    name: "field.webm",
+    blob,
+  };
+  await assert.rejects(retainFieldFile(input), /acknowledgment lost/);
+  assert.equal(
+    await retainFieldFile(input),
+    "https://drive.google.com/file/d/reserved-file/view",
+  );
+  assert.equal(posts, 1);
+  file.appProperties.streamlionBook = "different-book";
+  await assert.rejects(retainFieldFile(input), /does not match/);
+  assert.equal(posts, 1);
+  disconnectGoogle();
+});
 test("Google adapter uses RAW, verifies a write, and reconciles a lost acknowledgment without duplicate append", async () => {
   const fields = validateFields({
       title: "=not-a-formula",

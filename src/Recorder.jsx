@@ -137,8 +137,8 @@ export default function Recorder({ jobId, area, onSave, onBusy }) {
       <div>
         <h3>Voice memo</h3>
         <p className="hint">
-          Up to 60 seconds, while this app is visible. Stored on this device;
-          transcription is not connected.
+          Up to 60 seconds while this app stays open. Listen back, then add
+          important details as a written note.
         </p>
       </div>
       {state === "idle" ? (

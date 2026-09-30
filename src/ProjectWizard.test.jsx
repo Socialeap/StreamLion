@@ -38,9 +38,9 @@ test("project wizard starts with the ChatGPT action and reveals one field group 
       draftScope="wizard-test"
     />,
   );
-  const launch = ui.getByRole("link", { name: /Open Work, choose StreamLion/ });
+  const launch = ui.getByRole("link", { name: /Prepare my brief in ChatGPT/ });
   assert.equal(new URL(launch.href).pathname, "/");
-  assert.match(new URL(launch.href).searchParams.get("prompt"), /workbook123/);
+  assert.equal(new URL(launch.href).searchParams.get("hints"), null);
   assert.equal(ui.queryByLabelText("Project name"), null);
 
   fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
@@ -49,6 +49,70 @@ test("project wizard starts with the ChatGPT action and reveals one field group 
   fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
   assert.ok(ui.getByLabelText("Street address"));
   assert.equal(ui.queryByLabelText("Project name"), null);
+  cleanup();
+});
+
+test("empty client-template selection leaves custom draft details unchanged", async () => {
+  localStorage.clear();
+  let saved;
+  const ui = render(
+    <ProjectEditor
+      draftScope="empty-template-test"
+      templates={[
+        {
+          name: "Client one",
+          project: {
+            id: "template",
+            title: "Template",
+            companyName: "Template company",
+            scope: "Template scope",
+            paymentTerms: "Template terms",
+          },
+        },
+      ]}
+      onSave={async (fields) => {
+        saved = fields;
+      }}
+      onCancel={() => {}}
+    />,
+  );
+  const templateLabel = "Start with an approved client checklist";
+  fireEvent.change(ui.getByLabelText(templateLabel), {
+    target: { value: "0" },
+  });
+  assert.equal(
+    ui.getByLabelText("Commissioning company").value,
+    "Template company",
+  );
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Custom job" },
+  });
+  fireEvent.change(ui.getByLabelText("Commissioning company"), {
+    target: { value: "Custom company" },
+  });
+  fireEvent.change(ui.getByLabelText("Go to section"), {
+    target: { value: "5" },
+  });
+  fireEvent.change(ui.getByLabelText("Scope of work"), {
+    target: { value: "Custom scope" },
+  });
+  fireEvent.change(ui.getByLabelText("Go to section"), {
+    target: { value: "6" },
+  });
+  fireEvent.change(ui.getByLabelText("Payment terms and trigger"), {
+    target: { value: "Custom terms" },
+  });
+  fireEvent.change(ui.getByLabelText("Go to section"), {
+    target: { value: "0" },
+  });
+  fireEvent.change(ui.getByLabelText(templateLabel), { target: { value: "" } });
+  assert.ok(ui.getByRole("heading", { name: "Start with your project brief" }));
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Save draft on device" })),
+  );
+  assert.equal(saved.companyName, "Custom company");
+  assert.equal(saved.scope, "Custom scope");
+  assert.equal(saved.paymentTerms, "Custom terms");
   cleanup();
 });
 
@@ -190,7 +254,7 @@ test("Step 1 explains the workbook and opens Connections when needed", () => {
   );
   assert.match(
     ui.getByRole("region", { name: "Where this project is saved" }).textContent,
-    /A workbook is the Google Sheet/,
+    /draft stays on this device/,
   );
   fireEvent.click(
     ui.getByRole("button", { name: "Connect Google and choose a workbook" }),
@@ -233,15 +297,8 @@ test("Projects shows a named unfinished draft, its count and edit/delete control
   assert.ok(ui.getByText("Nassau Street"));
   assert.ok(ui.getByText("Brooklyn"));
   assert.ok(ui.getByText("Oct 1, 2026"));
-  assert.ok(ui.getByText("Pending"));
-  const quickChat = ui.getByRole("link", {
-    name: /Open Work, choose StreamLion/,
-  });
-  assert.match(new URL(quickChat.href).searchParams.get("hints"), /^plugin:/);
-  assert.match(
-    new URL(quickChat.href).searchParams.get("prompt"),
-    /workbook123/,
-  );
+  assert.ok(ui.getByText("Needs review"));
+  assert.ok(ui.getByRole("button", { name: "Ask about a project" }));
   fireEvent.click(ui.getByRole("button", { name: "Edit" }));
   fireEvent.click(ui.getByRole("button", { name: "Delete" }));
   assert.equal(edited, true);
@@ -249,24 +306,24 @@ test("Projects shows a named unfinished draft, its count and edit/delete control
   cleanup();
 });
 
-test("ChatGPT link opens a Work chat with a StreamLion hint and a drafted message", () => {
+test("ChatGPT handoff uses ordinary chat without private plugin or customer data in the URL", () => {
   const url = new URL(chatUrl({ mode: "create", bookId: "workbook123" }));
   assert.equal(url.origin, "https://chatgpt.com");
   assert.equal(url.pathname, "/");
-  assert.equal(url.searchParams.get("surface"), "work");
-  assert.match(url.searchParams.get("hints"), /^plugin:plugin_/);
-  assert.match(url.searchParams.get("prompt"), /specifications I will upload/);
-  assert.match(url.searchParams.get("prompt"), /workbook123/);
+  assert.equal(url.searchParams.get("surface"), null);
+  assert.equal(url.searchParams.get("hints"), null);
+  assert.match(url.searchParams.get("prompt"), /brief I will upload/);
   assert.match(
-    new URL(chatUrl({ mode: "create" })).searchParams.get("prompt"),
-    /Do not save to Google yet/,
+    url.searchParams.get("prompt"),
+    /Do not add keys or save anything to Google/,
   );
   const projectUrl = chatUrl({
     project: { id: "opaque-123", title: "Private Customer Name" },
     bookId: "workbook123",
   });
-  assert.ok(projectUrl.includes("opaque-123"));
+  assert.ok(!projectUrl.includes("opaque-123"));
   assert.ok(!projectUrl.includes("Private+Customer+Name"));
+  assert.ok(!projectUrl.includes("workbook123"));
 });
 
 test("each project field has a help explanation", () => {
@@ -278,4 +335,5 @@ test("each project field has a help explanation", () => {
   );
 });
 
+test.afterEach(() => cleanup());
 test.after(() => dom.window.close());

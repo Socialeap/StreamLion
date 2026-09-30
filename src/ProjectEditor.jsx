@@ -16,6 +16,7 @@ import {
 import { readDraft, writeDraft, clearDraft, projectDraftKey } from "./drafts";
 import { download } from "./storage";
 import { ChatGPTLaunch } from "./ChatGPTPanel";
+import { reusableFields } from "./workflow";
 import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
 
 const STEPS = [
@@ -42,6 +43,7 @@ export default function ProjectEditor({
   draftScope = "local",
   savedStep = null,
   savedNotice = "",
+  templates = [],
 }) {
   const key = projectDraftKey(draftScope, project?.id || draftId || "new");
   const initial = project
@@ -167,7 +169,9 @@ export default function ProjectEditor({
   }
 
   return (
-    <section className="project-editor wizard">
+    <section
+      className={`project-editor wizard ${step === 0 && !fields.title.trim() ? "wizard-starting" : ""}`}
+    >
       <header className="page-head">
         <div>
           <h1 title="Create a project from a brief or enter the details yourself.">
@@ -184,7 +188,9 @@ export default function ProjectEditor({
           <button
             type="button"
             className="primary"
-            disabled={busy || stale || (bookId && !googleReady)}
+            disabled={
+              busy || stale || !fields.title.trim() || (bookId && !googleReady)
+            }
             onClick={() => save(false)}
             title={
               bookId
@@ -208,7 +214,7 @@ export default function ProjectEditor({
           </button>
         </div>
       </header>
-      {!bookId && (
+      {!bookId && step > 0 && (
         <p className="hint editor-save-location" role="status">
           No Google workbook is selected. Saving a draft here keeps it on this
           device. Connect Google to save it in your workbook.
@@ -233,7 +239,7 @@ export default function ProjectEditor({
 
       <nav
         ref={progressRef}
-        className="wizard-progress"
+        className={`wizard-progress ${step === 0 ? "at-start" : ""}`}
         aria-label="Project creation steps"
       >
         <ol>
@@ -262,6 +268,22 @@ export default function ProjectEditor({
         </ol>
       </nav>
 
+      {step > 0 && (
+        <label className="mobile-section-picker">
+          Go to section
+          <select
+            value={step}
+            disabled={busy}
+            onChange={(event) => goTo(Number(event.target.value))}
+          >
+            {STEPS.map((item, index) => (
+              <option key={item.label} value={index}>
+                {index + 1}. {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <form onSubmit={(event) => event.preventDefault()}>
         <div className="wizard-body">
           <div className="wizard-heading">
@@ -275,7 +297,7 @@ export default function ProjectEditor({
                 text={
                   current.group
                     ? GROUP_HELP[current.group]
-                    : "Start in ChatGPT with your brief, emails, or PDF. Connect Google if you want ChatGPT to save there."
+                    : "Choose a brief or start with the basics. You can add the other details later."
                 }
               />
             </div>
@@ -289,138 +311,119 @@ export default function ProjectEditor({
 
           {step === 0 ? (
             <div className="wizard-start">
+              <p className="wizard-intro">
+                Start from a brief or enter only what you know. You can save as
+                soon as the project has a name.
+              </p>
+              <div className="intake-choices">
+                <section>
+                  <MessageCircle size={28} aria-hidden="true" />
+                  <h3>I have a brief</h3>
+                  <p>
+                    Use your own ChatGPT to read the PDF or messages. Bring its
+                    project file back here to review.
+                  </p>
+                  <ChatGPTLaunch mode="create" />
+                </section>
+                <section>
+                  <FileText size={28} aria-hidden="true" />
+                  <h3>I'll add the basics</h3>
+                  <p>
+                    Start with a name, site, and visit. The other sections can
+                    wait until you need them.
+                  </p>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => goTo(1)}
+                    title="Start filling in the project details yourself."
+                  >
+                    Enter details myself
+                  </button>
+                </section>
+              </div>
+              {templates.length > 0 && (
+                <label>
+                  Start with an approved client checklist
+                  <select
+                    defaultValue=""
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === "") return;
+                      const index = Number(value);
+                      if (!Number.isInteger(index) || index < 0) return;
+                      const template = templates[index];
+                      if (template) {
+                        update({
+                          ...fields,
+                          ...reusableFields(template.project, true),
+                          ...(template.plan?.requirements.length
+                            ? {
+                                deliverables: template.plan.requirements
+                                  .map((item) => item.label)
+                                  .join("\n"),
+                              }
+                            : {}),
+                          sourceNotes: `Provider-approved client defaults from ${template.project.title}. Review against the current brief.`,
+                        });
+                        goTo(1);
+                      }
+                    }}
+                  >
+                    <option value="">Choose a client (optional)</option>
+                    {templates.map((template, index) => (
+                      <option key={template.project.id} value={index}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <section
                 className="workbook-guide"
                 aria-label="Where this project is saved"
               >
-                <h3>Where will this project be saved?</h3>
+                <h3>Save destination</h3>
                 {bookId && googleReady ? (
-                  <>
-                    <p>
-                      Your Google workbook is connected. It is the Google Sheet
-                      where StreamLion keeps your projects. The chat button
-                      below gives ChatGPT its link, so you do not need to find
-                      it.
-                    </p>
+                  <p>
+                    Your Google workbook is connected.{" "}
                     <a
                       href={`https://docs.google.com/spreadsheets/d/${bookId}/edit`}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Open my Google workbook ↗
+                      Open workbook ↗
                     </a>
-                    <p className="hint">
-                      ChatGPT may ask you to connect your Google account there
-                      separately before it saves anything.
-                    </p>
-                  </>
+                  </p>
                 ) : bookId ? (
-                  <>
-                    <p>
-                      Your Google workbook is selected on this device, but
-                      Google is not connected right now. Reconnect before saving
-                      a project to that workbook.
-                    </p>
+                  <p>
+                    Your workbook is selected on this device, but Google is not
+                    connected right now.{" "}
                     <button type="button" onClick={onConnectGoogle}>
                       Reconnect Google to save
                     </button>
-                    <p className="hint">
-                      You can keep preparing this project here. Your unfinished
-                      details stay on this device.
-                    </p>
-                  </>
+                  </p>
                 ) : (
-                  <>
-                    <p>
-                      This device has no Google workbook connected. A workbook
-                      is the Google Sheet that stores your projects. Connect one
-                      before asking ChatGPT to save a project there.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={onConnectGoogle}
-                      title="Open Connections to connect your Google account and create or choose the project Sheet."
-                    >
+                  <p>
+                    This draft stays on this device.{" "}
+                    <button type="button" onClick={onConnectGoogle}>
                       Connect Google and choose a workbook
                     </button>
-                    <p className="hint">
-                      You can still prepare details in ChatGPT or fill out this
-                      form now. Your unfinished project stays on this device.
-                    </p>
-                  </>
+                  </p>
                 )}
+                <p className="hint">
+                  ChatGPT prepares a file. You review it here, then StreamLion
+                  saves it to the destination above.
+                </p>
               </section>
-              <p className="wizard-intro">
-                Have a PDF, email thread, or written brief? Let StreamLion
-                prepare the details first.
-              </p>
-              <ol className="starter-steps">
-                <li>
-                  <span className="starter-icon">
-                    <MessageCircle size={22} />
-                  </span>
-                  <span>
-                    <strong>Open ChatGPT Work</strong>
-                    <small>
-                      Choose StreamLion in Plugins before sending the prepared
-                      message.
-                    </small>
-                  </span>
-                </li>
-                <li>
-                  <span className="starter-icon">
-                    <Upload size={22} />
-                  </span>
-                  <span>
-                    <strong>Attach a file or paste the text</strong>
-                    <small>
-                      Add your brief or messages in ChatGPT and check the
-                      details it finds.
-                    </small>
-                  </span>
-                </li>
-                <li>
-                  <span className="starter-icon">
-                    <FileText size={22} />
-                  </span>
-                  <span>
-                    <strong>Come back to your project</strong>
-                    <small>
-                      Open the saved project here, or review the details before
-                      saving.
-                    </small>
-                  </span>
-                </li>
-              </ol>
-              <div className="actions start-actions">
-                <ChatGPTLaunch mode="create" bookId={bookId} />
-                <button
-                  type="button"
-                  onClick={() => goTo(1)}
-                  title="Start filling in the project details yourself."
-                >
-                  Enter details myself
-                </button>
-              </div>
-              {bookId && googleReady && (
-                <button
-                  type="button"
-                  className="text-action"
-                  onClick={onRefreshProjects}
-                  title="Find projects StreamLion saved to your connected Google workbook."
-                >
-                  Already saved in Google? Show my projects{" "}
-                  <ArrowRight size={16} />
-                </button>
-              )}
               <details className="quiet-details import-details">
                 <summary title="Use this if the chat gives you project details to paste or download.">
-                  Have details from chat already?
+                  Bring back the ChatGPT project file
                 </summary>
                 <p>
-                  If StreamLion could not save directly to Google, ask it for a
-                  StreamLion project file. Paste its contents or choose the file
-                  here.
+                  Attach your brief in the ChatGPT conversation opened above.
+                  Ask for the project file, then choose it here. Review the
+                  imported details before saving.
                 </p>
                 <label htmlFor="project-import">Paste project details</label>
                 <textarea

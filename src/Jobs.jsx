@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, FileText, NotebookPen } from "lucide-react";
 import { searchProjects } from "./project-schema";
-import { ChatGPTLaunch } from "./ChatGPTPanel";
+import { WORKFLOW_AREA, readWorkflow, progressLabel } from "./workflow";
 
 function visitDate(value) {
   if (!value) return "Not set";
@@ -31,6 +31,7 @@ export default function Jobs({
   onDeleteProject,
   onRestoreProject,
   onRestoreDraft,
+  onAsk,
 }) {
   const [query, setQuery] = useState("");
   const rows = [
@@ -54,7 +55,12 @@ export default function Jobs({
           <p>Find a project, finish a draft, or start a new one.</p>
         </div>
         <div className="actions">
-          <ChatGPTLaunch bookId={bookId} className="" />
+          <button
+            onClick={onAsk}
+            title="Choose a project for quick answers or a ChatGPT conversation."
+          >
+            Ask about a project
+          </button>
           <button
             className="primary"
             onClick={onCreate}
@@ -76,7 +82,12 @@ export default function Jobs({
         <div className="metric">
           <NotebookPen />
           <div>
-            <strong>{workspace.notes.length}</strong>
+            <strong>
+              {
+                workspace.notes.filter((note) => note.area !== WORKFLOW_AREA)
+                  .length
+              }
+            </strong>
             <span>Field annotations</span>
           </div>
         </div>
@@ -103,7 +114,7 @@ export default function Jobs({
           </h2>
           <p>
             {query
-              ? "Try fewer words or ask StreamLion in ChatGPT."
+              ? "Try fewer words or clear the search."
               : "Upload your brief in ChatGPT, or start with a manual project."}
           </p>
           {!query && (
@@ -122,10 +133,11 @@ export default function Jobs({
                 <th scope="col">Visit date</th>
                 <th
                   scope="col"
-                  title="Completed means project details were reviewed. It does not mean the site work is finished."
+                  title="Source review is separate from capture, delivery, and customer acceptance."
                 >
                   Details
                 </th>
+                <th scope="col">Work</th>
                 <th scope="col">Actions</th>
               </tr>
             </thead>
@@ -143,7 +155,7 @@ export default function Jobs({
                         title={
                           unsaved
                             ? "Resume this unfinished project."
-                            : "Open this project's field notes."
+                            : "Open this project's site preparation, checklist, and delivery."
                         }
                       >
                         {row.title}
@@ -168,9 +180,22 @@ export default function Jobs({
                         title="This describes the project details, not whether the site work is finished."
                       >
                         {row.reviewState === "reviewed"
-                          ? "Completed"
-                          : "Pending"}
+                          ? "Reviewed"
+                          : "Needs review"}
                       </span>
+                    </td>
+                    <td data-label="Work">
+                      {unsaved
+                        ? "Draft"
+                        : (() => {
+                            try {
+                              return progressLabel(
+                                readWorkflow(workspace.notes, row),
+                              );
+                            } catch {
+                              return "Check checklist";
+                            }
+                          })()}
                     </td>
                     <td data-label="Actions">
                       <div className="project-row-actions">
