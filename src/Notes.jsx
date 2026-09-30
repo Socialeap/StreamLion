@@ -132,19 +132,23 @@ export default function Notes({
   draftScope = "local",
   allowAudio = true,
   onPhoto,
-  initialArea = "",
+  initialArea = null,
 }) {
   const draftKey = `${draftScope}:note:${selected}`;
   const savedDraft = readDraft(draftKey);
-  const [area, setArea] = useState(initialArea || savedDraft?.area || "");
+  const hintArea =
+    initialArea?.projectId === selected && initialArea?.scope === draftScope
+      ? initialArea.area
+      : "";
+  const [area, setArea] = useState(hintArea || savedDraft?.area || "");
   const [text, setText] = useState(savedDraft?.text || "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const d = readDraft(draftKey);
-    setArea(initialArea || d?.area || "");
+    setArea(hintArea || d?.area || "");
     setText(d?.text || "");
-  }, [draftKey, initialArea]);
+  }, [draftKey, hintArea]);
   function updateDraft(a, t) {
     setArea(a);
     setText(t);

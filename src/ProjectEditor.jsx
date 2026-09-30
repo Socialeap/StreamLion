@@ -348,7 +348,11 @@ export default function ProjectEditor({
                   <select
                     defaultValue=""
                     onChange={(event) => {
-                      const template = templates[Number(event.target.value)];
+                      const value = event.target.value;
+                      if (value === "") return;
+                      const index = Number(value);
+                      if (!Number.isInteger(index) || index < 0) return;
+                      const template = templates[index];
                       if (template) {
                         update({
                           ...fields,

@@ -26,6 +26,7 @@ const project = {
   startLocal: "2026-10-02T09:00",
   timeZone: "America/New_York",
   contact1Phone: "123",
+  driveFolderUrl: "https://drive.google.com/drive/folders/previous-visit",
 };
 test("checklist retains requests, requires exception reasons, and warns when the brief changes", () => {
   const plan = readWorkflow([], project);
@@ -91,6 +92,7 @@ test("repeat visits and client defaults never copy references, appointments, or 
     "agreedFee",
     "invoiceAmount",
     "paidAmount",
+    "driveFolderUrl",
   ]) {
     assert.equal(repeat[key], undefined);
     assert.equal(client[key], undefined);

@@ -73,7 +73,7 @@ export default function App() {
   const [siteCopy, setSiteCopy] = useState(null);
   const [verifiedAt, setVerifiedAt] = useState("");
   const [outboxBusy, setOutboxBusy] = useState(false);
-  const [areaHint, setAreaHint] = useState("");
+  const [areaHint, setAreaHint] = useState(null);
   const cacheEnabled = useRef(false);
   const cacheLoadEpoch = useRef(0);
   const [drafts, setDrafts] = useState(() =>
@@ -992,7 +992,11 @@ export default function App() {
             onEdit={() => setEditing(active)}
             onAsk={() => setPage("Ask")}
             onNotes={(area) => {
-              setAreaHint(area);
+              setAreaHint({
+                projectId: active.id,
+                scope: active.deviceOnly ? "local" : bookId,
+                area,
+              });
               setPage("Field notes");
             }}
             onSave={saveWorkflow}
@@ -1020,7 +1024,10 @@ export default function App() {
               key={`${noteControls.draftScope}:${selected}:${noteEpoch}`}
               workspace={workspace}
               selected={selected}
-              onSelect={setSelected}
+              onSelect={(id) => {
+                setAreaHint(null);
+                setSelected(id);
+              }}
               onAdd={addNote}
               onAudio={addNote}
               onPhoto={addNote}

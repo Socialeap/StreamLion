@@ -52,6 +52,70 @@ test("project wizard starts with the ChatGPT action and reveals one field group 
   cleanup();
 });
 
+test("empty client-template selection leaves custom draft details unchanged", async () => {
+  localStorage.clear();
+  let saved;
+  const ui = render(
+    <ProjectEditor
+      draftScope="empty-template-test"
+      templates={[
+        {
+          name: "Client one",
+          project: {
+            id: "template",
+            title: "Template",
+            companyName: "Template company",
+            scope: "Template scope",
+            paymentTerms: "Template terms",
+          },
+        },
+      ]}
+      onSave={async (fields) => {
+        saved = fields;
+      }}
+      onCancel={() => {}}
+    />,
+  );
+  const templateLabel = "Start with an approved client checklist";
+  fireEvent.change(ui.getByLabelText(templateLabel), {
+    target: { value: "0" },
+  });
+  assert.equal(
+    ui.getByLabelText("Commissioning company").value,
+    "Template company",
+  );
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Custom job" },
+  });
+  fireEvent.change(ui.getByLabelText("Commissioning company"), {
+    target: { value: "Custom company" },
+  });
+  fireEvent.change(ui.getByLabelText("Go to section"), {
+    target: { value: "5" },
+  });
+  fireEvent.change(ui.getByLabelText("Scope of work"), {
+    target: { value: "Custom scope" },
+  });
+  fireEvent.change(ui.getByLabelText("Go to section"), {
+    target: { value: "6" },
+  });
+  fireEvent.change(ui.getByLabelText("Payment terms and trigger"), {
+    target: { value: "Custom terms" },
+  });
+  fireEvent.change(ui.getByLabelText("Go to section"), {
+    target: { value: "0" },
+  });
+  fireEvent.change(ui.getByLabelText(templateLabel), { target: { value: "" } });
+  assert.ok(ui.getByRole("heading", { name: "Start with your project brief" }));
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Save draft on device" })),
+  );
+  assert.equal(saved.companyName, "Custom company");
+  assert.equal(saved.scope, "Custom scope");
+  assert.equal(saved.paymentTerms, "Custom terms");
+  cleanup();
+});
+
 test("manual project details survive the steps and reach save unchanged", async () => {
   localStorage.clear();
   let saved;

@@ -310,7 +310,6 @@ export function reusableFields(project, clientOnly = false) {
         "accessInstructions",
         "paymentTerms",
         "currency",
-        "driveFolderUrl",
       ];
   for (const key of keys) copy[key] = fields[key] || "";
   if (!clientOnly) copy.title = `${project.title} — repeat visit`;
