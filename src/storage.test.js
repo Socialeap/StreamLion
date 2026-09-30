@@ -6,7 +6,12 @@ import {
   saveWorkspace,
   saveAudioNote,
   getAudio,
+  saveSiteCopy,
+  loadSiteCopy,
+  removeSiteCopy,
 } from "./storage.js";
+import { makeRevision } from "./workbook.js";
+import { validateFields } from "./project-schema.js";
 test("local journal survives reload and rejects stale writes without overwriting", async () => {
   const initial = await loadWorkspace();
   const first = {
@@ -37,4 +42,32 @@ test("local journal survives reload and rejects stale writes without overwriting
     /another tab/,
   );
   assert.equal(await getAudio("orphan"), undefined);
+});
+test("site copies survive reload, are partitioned by workbook, and omit unrelated data", async () => {
+  const project = makeRevision(
+    validateFields({ title: "Offline synthetic job" }),
+    null,
+    "job",
+  );
+  const copy = await saveSiteCopy("book-a", {
+    Projects: [{ ...project, access_token: "must-not-retain" }],
+    Observations: [],
+    token: "must-not-retain",
+  });
+  assert.equal(
+    (await loadSiteCopy("book-a")).data.Projects[0].title,
+    "Offline synthetic job",
+  );
+  assert.equal(await loadSiteCopy("book-b"), null);
+  assert.equal(JSON.stringify(copy).includes("must-not-retain"), false);
+  await assert.rejects(
+    saveSiteCopy("book-b", {
+      Projects: [{ ...project, revisionId: "" }],
+      Observations: [],
+    }),
+    /identity/,
+  );
+  assert.equal(await loadSiteCopy("book-b"), null);
+  await removeSiteCopy("book-a");
+  assert.equal(await loadSiteCopy("book-a"), null);
 });

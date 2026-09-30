@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
-import { Download, Check, NotebookPen } from "lucide-react";
+import { Check, NotebookPen } from "lucide-react";
 import Recorder from "./Recorder";
-import { download, getAudio } from "./storage";
+import FieldMedia from "./FieldMedia";
+import { WORKFLOW_AREA, readWorkflow } from "./workflow";
 function Note({ note, onRevise, onReview, captureBusy }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.text);
@@ -25,32 +26,11 @@ function Note({ note, onRevise, onReview, captureBusy }) {
         <strong>{note.area}</strong>
         <span>{new Date(note.createdAt).toLocaleString()}</span>
       </div>
-      {note.audioUrl && (
-        <a href={note.audioUrl} target="_blank" rel="noreferrer">
-          Open retained audio in Drive ↗
-        </a>
+      {note.pendingBookId && (
+        <p className="waiting-label">On this device · waiting for Google</p>
       )}
-      {note.audioId ? (
-        <>
-          <p>Voice memo · awaiting transcription</p>
-          <button
-            onClick={() =>
-              action(async () => {
-                const blob = await getAudio(note.audioId);
-                if (!blob) throw new Error("Audio file is unavailable.");
-                download(
-                  blob,
-                  `streamlion-${note.id}.${blob.type.includes("mp4") ? "m4a" : "webm"}`,
-                );
-              })
-            }
-            disabled={busy}
-          >
-            <Download size={16} />
-            Download audio
-          </button>
-        </>
-      ) : editing ? (
+      {(note.audioId || note.audioUrl) && <FieldMedia note={note} />}
+      {editing ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -97,7 +77,7 @@ function Note({ note, onRevise, onReview, captureBusy }) {
                 setEditing(true);
               }}
             >
-              Correct
+              {note.text ? "Correct" : "Add written note"}
             </button>
             <button
               disabled={busy || captureBusy || note.reviewed}
@@ -125,6 +105,12 @@ function Note({ note, onRevise, onReview, captureBusy }) {
           ))}
         </details>
       )}
+      {note.sourceText && note.sourceText !== note.text && (
+        <details>
+          <summary>Original wording</summary>
+          <p className="note-text">{note.sourceText}</p>
+        </details>
+      )}
       {error && (
         <p role="alert" className="error">
           {error}
@@ -145,18 +131,20 @@ export default function Notes({
   captureBusy,
   draftScope = "local",
   allowAudio = true,
+  onPhoto,
+  initialArea = "",
 }) {
   const draftKey = `${draftScope}:note:${selected}`;
   const savedDraft = readDraft(draftKey);
-  const [area, setArea] = useState(savedDraft?.area || "");
+  const [area, setArea] = useState(initialArea || savedDraft?.area || "");
   const [text, setText] = useState(savedDraft?.text || "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const d = readDraft(draftKey);
-    setArea(d?.area || "");
+    setArea(initialArea || d?.area || "");
     setText(d?.text || "");
-  }, [draftKey]);
+  }, [draftKey, initialArea]);
   function updateDraft(a, t) {
     setArea(a);
     setText(t);
@@ -170,7 +158,23 @@ export default function Notes({
     }
   }
   const job = workspace.jobs.find((j) => j.id === selected);
-  const notes = workspace.notes.filter((n) => n.jobId === selected);
+  const notes = workspace.notes.filter(
+    (n) => n.jobId === selected && n.area !== WORKFLOW_AREA,
+  );
+  let requirementAreas = [];
+  try {
+    if (job)
+      requirementAreas = readWorkflow(workspace.notes, job).requirements.map(
+        (item) => item.area,
+      );
+  } catch {
+    /* Project home reports invalid checklist records. */
+  }
+  const areas = [
+    ...new Set(
+      [...notes.map((note) => note.area), ...requirementAreas].filter(Boolean),
+    ),
+  ];
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
@@ -223,10 +227,19 @@ export default function Notes({
               ))}
             </select>
           </label>
-          {job?.scope && (
+          {job && (
             <details className="scope">
               <summary>Scope and access instructions</summary>
-              <p className="note-text">{job.scope}</p>
+              <h3>Access</h3>
+              <p className="note-text">
+                {job.accessInstructions || "Not recorded"}
+              </p>
+              <h3>Scope</h3>
+              <p className="note-text">{job.scope || "Not recorded"}</p>
+              <h3>Requested outputs</h3>
+              <p className="note-text">{job.deliverables || "Not recorded"}</p>
+              <h3>Excluded work</h3>
+              <p className="note-text">{job.exclusions || "Not recorded"}</p>
             </details>
           )}
           <div className="field-layout">
@@ -241,7 +254,13 @@ export default function Notes({
                     placeholder="Level 1 / Office 3 / Survey wall"
                     required
                     maxLength={200}
+                    list="known-site-areas"
                   />
+                  <datalist id="known-site-areas">
+                    {areas.map((known) => (
+                      <option key={known} value={known} />
+                    ))}
+                  </datalist>
                 </label>
                 <label>
                   Note
@@ -257,7 +276,8 @@ export default function Notes({
                 </label>
                 <p className="hint">
                   Original wording and fractions are preserved. Notes are not
-                  automatically parsed into measurements.
+                  automatically parsed into measurements. You can use your phone
+                  keyboard's dictation button to speak a written note.
                 </p>
                 <button
                   className="primary full"
@@ -271,6 +291,44 @@ export default function Notes({
                   </p>
                 )}
               </form>
+              {onPhoto && (
+                <label className="field-photo-input">
+                  Add a field photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    disabled={busy || captureBusy || !selected || !area.trim()}
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      setBusy(true);
+                      setError("");
+                      onCaptureBusy(true);
+                      try {
+                        await onPhoto(
+                          {
+                            jobId: selected,
+                            area: area.trim(),
+                            fileName: file.name,
+                          },
+                          file,
+                        );
+                      } catch (e) {
+                        setError(e.message);
+                      } finally {
+                        setBusy(false);
+                        onCaptureBusy(false);
+                        event.target.value = "";
+                      }
+                    }}
+                  />
+                  <small>
+                    Choose the area first. Photos and recordings up to 5 MB are
+                    kept here before sending to Google.
+                  </small>
+                </label>
+              )}
               {allowAudio ? (
                 <Recorder
                   jobId={selected}
@@ -278,13 +336,7 @@ export default function Notes({
                   onSave={onAudio}
                   onBusy={onCaptureBusy}
                 />
-              ) : (
-                <p className="hint">
-                  Use Ask → Open Work, choose StreamLion for voice annotations.
-                  Typed annotations here save directly to this project in
-                  Google.
-                </p>
-              )}
+              ) : null}
             </section>
             <section aria-label="Saved notes" className="note-list">
               <h2>

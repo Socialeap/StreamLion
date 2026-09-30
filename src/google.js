@@ -169,6 +169,126 @@ export async function createWorkbook() {
     }),
   });
 }
+
+async function driveRequest(path, options = {}) {
+  if (!hasGoogleSession())
+    throw new Error(
+      "Reconnect Google before sending field files. Your originals stay on this device.",
+    );
+  const generation = session;
+  const response = await fetch(`https://www.googleapis.com/${path}`, {
+    ...options,
+    headers: { ...options.headers, Authorization: `Bearer ${token}` },
+  });
+  if (generation !== session)
+    throw new Error(
+      "Google account changed during this request. Reconnect before retrying.",
+    );
+  if (response.status === 401) {
+    disconnectGoogle();
+    throw new Error("Google session expired. Reconnect.");
+  }
+  return response;
+}
+
+export async function reserveFieldFileId() {
+  const response = await driveRequest(
+    "drive/v3/files/generateIds?count=1&space=drive&type=files",
+  );
+  if (!response.ok)
+    throw new Error(
+      `Google could not prepare this file (${response.status}). Retry later.`,
+    );
+  const id = (await response.json()).ids?.[0];
+  if (!/^[\w-]+$/.test(id || ""))
+    throw new Error("Google returned an invalid file ID.");
+  return id;
+}
+
+export async function retainFieldFile({ fileId, noteId, bookId, name, blob }) {
+  if (!blob?.size || blob.size > 5 * 1024 * 1024)
+    throw new Error(
+      "Choose a field photo or recording up to 5 MB. The original stays on this device.",
+    );
+  if (![fileId, noteId, bookId].every((id) => /^[\w-]+$/.test(id || "")))
+    throw new Error("Invalid field file destination.");
+  const digest = Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()),
+    ),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const probe = async () => {
+    const response = await driveRequest(
+      `drive/v3/files/${fileId}?fields=id,size,trashed,appProperties`,
+    );
+    if (response.status === 404) return false;
+    if (!response.ok)
+      throw new Error(
+        `Google could not verify this file (${response.status}). Retry later.`,
+      );
+    const file = await response.json();
+    if (
+      file.trashed ||
+      String(file.size) !== String(blob.size) ||
+      file.appProperties?.streamlionNote !== noteId ||
+      file.appProperties?.streamlionBook !== bookId ||
+      file.appProperties?.sha256 !== digest
+    )
+      throw new Error(
+        "This Drive file does not match the saved field record. Keep the original and contact support.",
+      );
+    return true;
+  };
+  if (!(await probe())) {
+    const boundary = `streamlion_${crypto.randomUUID().replaceAll("-", "")}`;
+    const metadata = {
+      id: fileId,
+      name: name || `StreamLion field record ${noteId}`,
+      mimeType: blob.type || "application/octet-stream",
+      appProperties: {
+        streamlionNote: noteId,
+        streamlionBook: bookId,
+        sha256: digest,
+      },
+    };
+    const body = new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${metadata.mimeType}\r\n\r\n`,
+      blob,
+      `\r\n--${boundary}--`,
+    ]);
+    const response = await driveRequest(
+      "upload/drive/v3/files?uploadType=multipart&fields=id",
+      {
+        method: "POST",
+        headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+        body,
+      },
+    );
+    if (!response.ok && response.status !== 409)
+      throw new Error(
+        `Google upload awaiting verification (${response.status}). Retry with the same saved file.`,
+      );
+    if (!(await probe()))
+      throw new Error(
+        "Google has not confirmed this file yet. Keep the original and retry.",
+      );
+  }
+  return `https://drive.google.com/file/d/${fileId}/view`;
+}
+
+export async function readFieldFile(url) {
+  const match = /^https:\/\/drive\.google\.com\/file\/d\/([\w-]+)\/view$/.exec(
+    url || "",
+  );
+  if (!match) throw new Error("Open this file in Drive to review it.");
+  const response = await driveRequest(`drive/v3/files/${match[1]}?alt=media`);
+  if (!response.ok)
+    throw new Error(
+      "This field file is unavailable. Check its access in Drive.",
+    );
+  return response.blob();
+}
 export async function readWorkbook(bookId) {
   return (await readWorkbookSnapshot(bookId)).heads;
 }

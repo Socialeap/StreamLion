@@ -18,6 +18,8 @@ export default function Connections({
   onDisconnect,
   onExport,
   busyCapture,
+  siteCopy,
+  onSiteCopy,
 }) {
   const [error, setError] = useState(""),
     [status, setStatus] = useState(""),
@@ -89,7 +91,7 @@ export default function Connections({
   async function open(id) {
     if (!id) return;
     const data = await readWorkbook(id);
-    onWorkbook(id, data);
+    await onWorkbook(id, data);
     setStatus("Workbook verified. Project records stay in Google.");
   }
   return (
@@ -228,6 +230,28 @@ export default function Connections({
           remain in your workbook and Drive.
         </p>
       </section>
+      {bookId && onSiteCopy && (
+        <section className="editor site-copy-control">
+          <h2>Site copy on this device</h2>
+          <p>
+            {siteCopy
+              ? `Workbook copy checked ${new Date(siteCopy.verifiedAt).toLocaleString()}. It can be read without signing in. New notes and files wait here until you reconnect.`
+              : "Keep a read-only copy for site visits with poor reception. Use your own device because it contains project details."}
+          </p>
+          <button
+            disabled={busy || busyCapture || (!siteCopy && !connected)}
+            onClick={() => onSiteCopy(!siteCopy)}
+          >
+            {siteCopy
+              ? "Remove workbook copy from this device"
+              : "Keep workbook on this device"}
+          </button>
+          <p className="hint">
+            Removing this copy does not delete queued field records or their
+            original files. Export them before clearing browser storage.
+          </p>
+        </section>
+      )}
       <section className="export">
         <h2>Local workspace backup</h2>
         <p>

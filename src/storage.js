@@ -1,5 +1,6 @@
 import { openDB } from "idb";
 import { assertWorkspace, emptyWorkspace } from "./model.js";
+import { TABS, validateRevision } from "./workbook.js";
 const db = () =>
   openDB("streamlion-local", 1, {
     upgrade(database) {
@@ -38,6 +39,58 @@ export const saveWorkspace = (data) => commit(data);
 export const saveAudioNote = (data, id, blob) => commit(data, { id, blob });
 export async function getAudio(id) {
   return (await db()).get("audio", id);
+}
+export async function loadSiteCopy(bookId) {
+  if (!bookId) return null;
+  const saved = await (await db()).get("workspace", `site-copy:${bookId}`);
+  if (!saved) return null;
+  if (
+    saved.version !== 1 ||
+    saved.bookId !== bookId ||
+    !Number.isFinite(Date.parse(saved.verifiedAt))
+  )
+    throw new Error(
+      "The site copy could not be read. Reconnect Google to replace it.",
+    );
+  for (const [tab, headers] of Object.entries(TABS)) {
+    if (!Array.isArray(saved.data?.[tab]))
+      throw new Error("The site copy is incomplete. Reconnect Google.");
+    saved.data[tab].forEach((record) => validateRevision(record, headers));
+  }
+  return saved;
+}
+export async function saveSiteCopy(bookId, data) {
+  // Deliberately retain only verified record heads, never tokens or config.
+  const cleanData = Object.fromEntries(
+    Object.entries(TABS).map(([tab, headers]) => {
+      if (!Array.isArray(data?.[tab]))
+        throw new Error("The workbook copy is incomplete.");
+      return [
+        tab,
+        data[tab].map((record) => {
+          validateRevision(record, headers);
+          return Object.fromEntries(
+            headers.map((name) => [name, record[name] ?? ""]),
+          );
+        }),
+      ];
+    }),
+  );
+  const copy = {
+    version: 1,
+    bookId,
+    verifiedAt: new Date().toISOString(),
+    data: cleanData,
+  };
+  if (JSON.stringify(copy).length > 20000000)
+    throw new Error(
+      "This workbook is too large for a site copy on this device.",
+    );
+  await (await db()).put("workspace", copy, `site-copy:${bookId}`);
+  return copy;
+}
+export async function removeSiteCopy(bookId) {
+  await (await db()).delete("workspace", `site-copy:${bookId}`);
 }
 export function download(blob, name) {
   const url = URL.createObjectURL(blob);

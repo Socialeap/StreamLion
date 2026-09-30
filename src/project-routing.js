@@ -20,6 +20,6 @@ export function noteControlsFor(project, bookId, remote) {
   const deviceOnly = !!project?.deviceOnly;
   return {
     draftScope: deviceOnly ? "local" : bookId || "local",
-    allowAudio: deviceOnly || !remote,
+    allowAudio: true,
   };
 }

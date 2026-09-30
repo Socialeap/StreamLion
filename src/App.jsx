@@ -14,16 +14,35 @@ import Notes from "./Notes";
 import ProjectEditor from "./ProjectEditor";
 import Connections from "./Connections";
 import ChatGPTPanel from "./ChatGPTPanel";
+import ProjectHome from "./ProjectHome";
+import {
+  WORKFLOW_AREA,
+  readWorkflow,
+  workflowNote,
+  reusableFields,
+  validateWorkflow,
+} from "./workflow";
+import { newFieldRecord, sendFieldRecord } from "./field-records";
 import { emptyWorkspace, reviseNote, exportWorkspace } from "./model";
 import {
   loadWorkspace,
   saveWorkspace,
   saveAudioNote,
   download,
+  getAudio,
+  loadSiteCopy,
+  saveSiteCopy,
+  removeSiteCopy,
 } from "./storage";
-import { readWorkbook, appendRevision, hasGoogleSession } from "./google";
+import {
+  readWorkbook,
+  appendRevision,
+  hasGoogleSession,
+  reserveFieldFileId,
+  retainFieldFile,
+} from "./google";
 import { makeRevision, toLocalNote, validateNote } from "./workbook";
-import { legacyFields } from "./project-schema";
+import { legacyFields, PROJECT_FIELDS } from "./project-schema";
 import {
   assertSaveDestination,
   noteControlsFor,
@@ -51,6 +70,12 @@ export default function App() {
     [syncBusy, setSyncBusy] = useState(false);
   const [bookId, setBookId] = useState(rememberedWorkbook),
     [remote, setRemote] = useState(null);
+  const [siteCopy, setSiteCopy] = useState(null);
+  const [verifiedAt, setVerifiedAt] = useState("");
+  const [outboxBusy, setOutboxBusy] = useState(false);
+  const [areaHint, setAreaHint] = useState("");
+  const cacheEnabled = useRef(false);
+  const cacheLoadEpoch = useRef(0);
   const [drafts, setDrafts] = useState(() =>
     visibleDrafts(rememberedWorkbook()),
   );
@@ -71,6 +96,63 @@ export default function App() {
       })
       .catch((e) => setError(e.message));
   }, []);
+  useEffect(() => {
+    let current = true;
+    const epoch = cacheLoadEpoch.current;
+    cacheEnabled.current = false;
+    setSiteCopy(null);
+    loadSiteCopy(bookId)
+      .then((copy) => {
+        if (current && epoch === cacheLoadEpoch.current) {
+          setSiteCopy(copy);
+          cacheEnabled.current = !!copy;
+        }
+      })
+      .catch((e) => {
+        if (current && epoch === cacheLoadEpoch.current) setError(e.message);
+      });
+    return () => {
+      current = false;
+    };
+  }, [bookId]);
+  async function acceptRemote(data, destination = bookId) {
+    setRemote(data);
+    setVerifiedAt(new Date().toISOString());
+    if (cacheEnabled.current && destination === bookId) {
+      try {
+        const copy = await saveSiteCopy(destination, data);
+        cacheLoadEpoch.current++;
+        setSiteCopy(copy);
+      } catch (e) {
+        setError(
+          `Google was verified, but its site copy could not be updated: ${e.message}`,
+        );
+      }
+    }
+  }
+  async function keepSiteCopy(keep) {
+    setSyncBusy(true);
+    setError("");
+    try {
+      if (keep) {
+        assertSaveDestination(bookId, remote);
+        if (!hasGoogleSession())
+          throw new Error("Reconnect Google to prepare a site copy.");
+        const copy = await saveSiteCopy(bookId, remote);
+        cacheLoadEpoch.current++;
+        setSiteCopy(copy);
+      } else {
+        await removeSiteCopy(bookId);
+        cacheLoadEpoch.current++;
+        setSiteCopy(null);
+      }
+      cacheEnabled.current = keep;
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSyncBusy(false);
+    }
+  }
   function visibleDrafts(scope, deleted = false) {
     return [
       ...listProjectDrafts(scope || "local", { deleted }),
@@ -80,7 +162,8 @@ export default function App() {
   function refreshDrafts(scope = bookId) {
     setDrafts(visibleDrafts(scope));
   }
-  const allProjects = visibleProjects(remote, local.jobs);
+  const visibleBook = remote || siteCopy?.data;
+  const allProjects = visibleProjects(visibleBook, local.jobs);
   const archivedProjects = allProjects.filter(
     (project) => project.reviewState === "archived" || project.deletedAt,
   );
@@ -91,10 +174,30 @@ export default function App() {
   const workspace = {
     jobs: activeProjects,
     notes: [
-      ...(remote ? remote.Observations.map(toLocalNote) : []),
-      ...local.notes,
+      ...(visibleBook ? visibleBook.Observations.map(toLocalNote) : []),
+      ...local.notes.filter(
+        (note) => !note.pendingBookId || note.pendingBookId === bookId,
+      ),
     ].filter((note) => activeIds.has(note.jobId)),
   };
+  // A verified note may still be in the local queue if its acknowledgment was
+  // interrupted. Show its local copy once, with its waiting status, until synced.
+  workspace.notes = [
+    ...new Map(workspace.notes.map((note) => [note.id, note])).values(),
+  ];
+  const waitingNotes = local.notes.filter(
+    (note) => note.pendingBookId === bookId && bookId,
+  );
+  const templates = workspace.jobs.flatMap((project) => {
+    try {
+      const plan = readWorkflow(workspace.notes, project);
+      return plan.templateName
+        ? [{ name: plan.templateName, project, plan }]
+        : [];
+    } catch {
+      return [];
+    }
+  });
   const active = workspace.jobs.find((j) => j.id === selected);
   const noteControls = noteControlsFor(active, bookId, remote);
   async function commit(change, audio) {
@@ -114,7 +217,7 @@ export default function App() {
       writing.current = false;
     }
   }
-  function connectBook(id, data) {
+  async function connectBook(id, data) {
     try {
       localStorage.setItem(selectedWorkbookKey, id);
     } catch {
@@ -125,9 +228,19 @@ export default function App() {
     setBookId(id);
     refreshDrafts(id);
     setRemote(data);
+    setVerifiedAt(new Date().toISOString());
     setSelected("");
     setEditing(null);
     setStatus("Google records refreshed");
+    try {
+      const copy = await loadSiteCopy(id);
+      cacheEnabled.current = !!copy;
+      const refreshed = copy ? await saveSiteCopy(id, data) : null;
+      cacheLoadEpoch.current++;
+      setSiteCopy(refreshed);
+    } catch (e) {
+      setError(e.message);
+    }
   }
   function disconnect(preserveSelection = false) {
     if (!preserveSelection) {
@@ -155,7 +268,7 @@ export default function App() {
     setError("");
     try {
       const data = await readWorkbook(bookId);
-      setRemote(data);
+      await acceptRemote(data);
       setStatus("Google records refreshed " + new Date().toLocaleTimeString());
     } catch (e) {
       setError(e.message);
@@ -168,7 +281,7 @@ export default function App() {
     setError("");
     try {
       const data = await readWorkbook(bookId);
-      setRemote(data);
+      await acceptRemote(data);
       setStatus("Google records refreshed " + new Date().toLocaleTimeString());
       setEditing(null);
       setPage("Projects");
@@ -214,7 +327,7 @@ export default function App() {
         revision,
         operation.expected,
       );
-      setRemote(after);
+      await acceptRemote(after);
       clearDraft(`${bookId}:pending-write`);
       pending.current = null;
       setHasPending(false);
@@ -236,7 +349,7 @@ export default function App() {
         op.revision,
         op.expected,
       );
-      setRemote(after);
+      await acceptRemote(after);
       clearDraft(`${bookId}:pending-write`);
       pending.current = null;
       setHasPending(false);
@@ -247,10 +360,31 @@ export default function App() {
         setEditing(null);
         setPage("Projects");
       } else if (op.tab === "Projects") {
+        if (
+          current.current.jobs.some((job) => job.id === op.revision.recordId)
+        ) {
+          await commit((w) => ({
+            ...w,
+            jobs: w.jobs.filter((job) => job.id !== op.revision.recordId),
+            notes: w.notes.map((note) =>
+              note.jobId === op.revision.recordId && !note.pendingBookId
+                ? { ...note, pendingBookId: bookId }
+                : note,
+            ),
+          }));
+        }
         setSelected(op.revision.recordId);
         setEditing(null);
-        setPage("Field notes");
+        setPage("Project home");
       } else {
+        if (
+          current.current.notes.some(
+            (note) =>
+              note.id === op.revision.recordId && note.pendingBookId === bookId,
+          )
+        ) {
+          await acknowledgeFieldRecord(op.revision.recordId);
+        }
         setNoteEpoch((x) => x + 1);
       }
       setStatus("Pending save verified in Google");
@@ -284,6 +418,17 @@ export default function App() {
         reviewed ? "reviewed" : "draft",
         draftKey,
       );
+      if (project?.deviceOnly) {
+        await commit((w) => ({
+          ...w,
+          jobs: w.jobs.filter((job) => job.id !== id),
+          notes: w.notes.map((note) =>
+            note.jobId === id && !note.pendingBookId
+              ? { ...note, pendingBookId: bookId }
+              : note,
+          ),
+        }));
+      }
     } else
       await commit((w) => ({
         ...w,
@@ -319,7 +464,7 @@ export default function App() {
     setSelected(id);
     if (reviewed) {
       setEditing(null);
-      setPage("Field notes");
+      setPage("Project home");
     } else {
       setEditing((previous) =>
         previous
@@ -348,7 +493,8 @@ export default function App() {
     )
       return;
     setError("");
-    if (remote && !project.deviceOnly) {
+    if (!project.deviceOnly) {
+      assertSaveDestination(bookId, remote);
       await cloudSave(
         "Projects",
         legacyFields(project),
@@ -370,7 +516,8 @@ export default function App() {
   }
   async function restoreProject(project) {
     setError("");
-    if (remote && !project.deviceOnly) {
+    if (!project.deviceOnly) {
+      assertSaveDestination(bookId, remote);
       await cloudSave("Projects", legacyFields(project), project.id, "draft");
     } else {
       await commit((w) => ({
@@ -384,39 +531,197 @@ export default function App() {
     }
     setStatus("Project restored. Review its details before using it.");
   }
-  async function addNote(note) {
-    if (remote && !allProjects.find((p) => p.id === note.jobId)?.deviceOnly) {
-      const fields = validateNote({
-        projectId: note.jobId,
-        area: note.area,
-        text: note.text,
-        sourceText: note.text,
-        audioUrl: "",
-      });
+  async function addNote(context, blob) {
+    const owner = workspace.jobs.find(
+      (project) => project.id === context.jobId,
+    );
+    if (!owner)
+      throw new Error(
+        "Choose an available project before adding field records.",
+      );
+    const destination = owner.deviceOnly ? "" : bookId;
+    const note = newFieldRecord(context, destination, blob);
+    await commit(
+      (w) => ({ ...w, notes: [...w.notes, note] }),
+      blob ? { id: note.id, blob } : null,
+    );
+    setStatus(
+      destination
+        ? "Field record kept on this device · waiting to send to Google"
+        : "Field record saved on this device",
+    );
+    if (destination && remote && hasGoogleSession() && !pending.current) {
+      setOutboxBusy(true);
+      try {
+        await sendQueuedRecord(note);
+        setStatus("Field record saved and verified in Google");
+      } catch (e) {
+        setError(
+          `${e.message} Your field record and original file are kept on this device for retry.`,
+        );
+      } finally {
+        setOutboxBusy(false);
+      }
+    }
+  }
+  async function acknowledgeFieldRecord(id) {
+    await commit((w) => ({
+      ...w,
+      notes: w.notes.filter(
+        (note) => !(note.id === id && note.pendingBookId === bookId),
+      ),
+    }));
+  }
+  async function sendQueuedRecord(record) {
+    await sendFieldRecord(record, {
+      getBlob: getAudio,
+      reserveId: reserveFieldFileId,
+      retainFile: retainFieldFile,
+      persist: (note) =>
+        commit((w) => ({
+          ...w,
+          notes: w.notes.map((item) => (item.id === note.id ? note : item)),
+        })),
+      save: (fields, id, reviewState) =>
+        cloudSave("Observations", fields, id, reviewState),
+      acknowledge: acknowledgeFieldRecord,
+    });
+  }
+  async function syncFieldRecords() {
+    setOutboxBusy(true);
+    setError("");
+    try {
+      if (!remote || !hasGoogleSession())
+        throw new Error(
+          "Reconnect Google before sending waiting field records.",
+        );
+      if (pending.current)
+        throw new Error(
+          "Verify the pending Google save first, then send the waiting field records.",
+        );
+      const queue = current.current.notes.filter(
+        (note) => note.pendingBookId === bookId,
+      );
+      for (const record of queue) {
+        if (
+          !remote.Projects.some(
+            (project) =>
+              project.recordId === record.jobId &&
+              project.reviewState !== "archived",
+          )
+        )
+          throw new Error(
+            "A queued record belongs to a project that is no longer active in this workbook. Keep its backup and restore the project before sending.",
+          );
+        await sendQueuedRecord(record);
+      }
+      setStatus("Field records saved and verified in Google");
+    } catch (e) {
+      setError(
+        `${e.message} Unsent records and originals remain on this device.`,
+      );
+    } finally {
+      setOutboxBusy(false);
+    }
+  }
+  async function saveWorkflow(plan, expectedText) {
+    const owner = workspace.jobs.find((project) => project.id === selected);
+    if (!owner) throw new Error("Choose a project first.");
+    const previous = workflowNote(workspace.notes, owner.id);
+    if (previous?.pendingBookId)
+      throw new Error(
+        "Send the waiting field records first so this checklist has a verified Google destination.",
+      );
+    if ((previous?.text || "") !== expectedText)
+      throw new Error(
+        "This checklist changed. Reload and review before saving.",
+      );
+    const text = JSON.stringify(validateWorkflow(plan));
+    const id = previous?.id || crypto.randomUUID();
+    if (!owner.deviceOnly) {
+      assertSaveDestination(bookId, remote);
       await cloudSave(
         "Observations",
-        fields,
-        pending.current?.revision.recordId || crypto.randomUUID(),
-        "draft",
+        validateNote({
+          projectId: owner.id,
+          area: WORKFLOW_AREA,
+          text,
+          sourceText: previous?.sourceText || previous?.text || text,
+          audioUrl: "",
+        }),
+        id,
+        "reviewed",
       );
     } else
       await commit((w) => ({
         ...w,
-        notes: [
-          ...w.notes,
-          {
-            ...note,
-            id: crypto.randomUUID(),
-            createdAt: new Date().toISOString(),
-            reviewed: false,
-            revisions: [],
-          },
-        ],
+        notes: previous
+          ? w.notes.map((note) =>
+              note.id === id
+                ? {
+                    ...reviseNote(note, text, new Date().toISOString()),
+                    reviewed: true,
+                  }
+                : note,
+            )
+          : [
+              ...w.notes,
+              {
+                id,
+                jobId: owner.id,
+                area: WORKFLOW_AREA,
+                text,
+                sourceText: text,
+                createdAt: new Date().toISOString(),
+                reviewed: true,
+                revisions: [],
+              },
+            ],
       }));
   }
+  function startRepeat(project) {
+    const id = `draft-${crypto.randomUUID()}`,
+      scope = bookId || "local";
+    const blank = Object.fromEntries(
+      PROJECT_FIELDS.map((field) => [field.key, ""]),
+    );
+    try {
+      const plan = readWorkflow(workspace.notes, project);
+      writeDraft(projectDraftKey(scope, id), {
+        fields: {
+          ...blank,
+          ...reusableFields(project),
+          ...(plan.requirements.length
+            ? {
+                deliverables: plan.requirements
+                  .map((item) => item.label)
+                  .join("\n"),
+              }
+            : {}),
+          ...(plan.siteLessons
+            ? {
+                notes: `Prior visit lessons (review for this visit): ${plan.siteLessons}`,
+              }
+            : {}),
+          sourceNotes: `Repeat visit based on ${project.title}${project.reference ? ` (${project.reference})` : ""}. Review against the new instructions.`,
+        },
+        base: JSON.stringify(blank),
+      });
+      setEditing({ draftId: id, draftScope: scope });
+    } catch {
+      setError(
+        "This device could not create the repeat-visit draft. Download the original project details as a backup.",
+      );
+    }
+  }
   async function updateNote(id, text, review) {
+    if (pending.current?.revision.recordId === id)
+      throw new Error(
+        "Verify this pending Google save before changing its field record. Your current wording is kept.",
+      );
     const n = workspace.notes.find((n) => n.id === id);
-    if (remote && !local.notes.some((note) => note.id === id))
+    if (!local.notes.some((note) => note.id === id)) {
+      assertSaveDestination(bookId, remote);
       await cloudSave(
         "Observations",
         validateNote({
@@ -429,7 +734,7 @@ export default function App() {
         id,
         review ? "reviewed" : "draft",
       );
-    else
+    } else
       await commit((w) => ({
         ...w,
         notes: w.notes.map((n) =>
@@ -441,27 +746,7 @@ export default function App() {
         ),
       }));
   }
-  async function addAudio(context, blob) {
-    const id = crypto.randomUUID();
-    await commit(
-      (w) => ({
-        ...w,
-        notes: [
-          ...w.notes,
-          {
-            ...context,
-            id,
-            audioId: id,
-            text: "",
-            reviewed: false,
-            revisions: [],
-          },
-        ],
-      }),
-      { id, blob },
-    );
-  }
-  const disabled = captureBusy || syncBusy;
+  const disabled = captureBusy || syncBusy || outboxBusy;
   const navigate = (p) => {
     refreshDrafts();
     setEditing(null);
@@ -490,7 +775,7 @@ export default function App() {
                 {
                   Projects: "Find, review, or create a project.",
                   "Field notes": "Record what happened at a site.",
-                  Ask: "Choose a project, then open ChatGPT Work and select StreamLion.",
+                  Ask: "Get quick answers from your project or discuss it in your own ChatGPT account.",
                   Connections:
                     "Connect your Google account and choose a workbook.",
                 }[label]
@@ -558,10 +843,14 @@ export default function App() {
           <div className="sync-bar">
             <span>
               Google-owned records ·{" "}
-              {hasGoogleSession() ? "connected" : "reconnect needed"}
+              {remote && hasGoogleSession()
+                ? "connected"
+                : siteCopy
+                  ? `site copy checked ${new Date(siteCopy.verifiedAt).toLocaleString()}`
+                  : "reconnect needed"}
             </span>
             <button
-              disabled={disabled || !!editing}
+              disabled={disabled || !!editing || !hasGoogleSession()}
               onClick={async () => {
                 await refresh(); /* Keep unresolved writes until the same operation is retried. */
               }}
@@ -569,6 +858,31 @@ export default function App() {
               Refresh from Google
             </button>
           </div>
+        )}
+        {waitingNotes.length > 0 && (
+          <section className="outbox-bar" aria-label="Waiting field records">
+            <span>
+              {waitingNotes.length} field record
+              {waitingNotes.length === 1 ? "" : "s"} safely on this device ·
+              waiting for Google
+            </span>
+            <button
+              disabled={
+                disabled || !remote || !hasGoogleSession() || hasPending
+              }
+              onClick={syncFieldRecords}
+            >
+              {outboxBusy ? "Sending…" : "Send waiting records to Google"}
+            </button>
+            {(!remote || !hasGoogleSession()) && (
+              <button
+                disabled={disabled}
+                onClick={() => navigate("Connections")}
+              >
+                Reconnect Google
+              </button>
+            )}
+          </section>
         )}
         {error && (
           <p role="alert" className="error">
@@ -591,6 +905,7 @@ export default function App() {
             onCancel={() => {
               refreshDrafts();
               setEditing(null);
+              setPage("Projects");
             }}
             onConnectGoogle={() => {
               refreshDrafts();
@@ -598,12 +913,14 @@ export default function App() {
               setPage("Connections");
             }}
             onRefreshProjects={showProjectsFromGoogle}
+            templates={templates}
           />
         ) : page === "Projects" ? (
           <Jobs
             workspace={workspace}
             bookId={bookId}
             googleConnected={!!remote && hasGoogleSession()}
+            onAsk={() => setPage("Ask")}
             archivedProjects={archivedProjects}
             archivedDrafts={visibleDrafts(bookId, true)}
             drafts={drafts}
@@ -659,8 +976,27 @@ export default function App() {
             }
             onOpen={(id) => {
               setSelected(id);
+              setPage("Project home");
+            }}
+          />
+        ) : page === "Project home" && active ? (
+          <ProjectHome
+            key={`${bookId || "local"}:${active.id}`}
+            project={active}
+            notes={workspace.notes}
+            scope={active.deviceOnly ? "local" : bookId}
+            connected={!!remote && hasGoogleSession()}
+            siteCopy={siteCopy}
+            onSiteCopy={keepSiteCopy}
+            onBack={() => setPage("Projects")}
+            onEdit={() => setEditing(active)}
+            onAsk={() => setPage("Ask")}
+            onNotes={(area) => {
+              setAreaHint(area);
               setPage("Field notes");
             }}
+            onSave={saveWorkflow}
+            onRepeat={() => startRepeat(active)}
           />
         ) : page === "Field notes" ? (
           <>
@@ -668,6 +1004,12 @@ export default function App() {
               <div className="actions project-toolbar">
                 <button disabled={disabled} onClick={() => setEditing(active)}>
                   Edit project details
+                </button>
+                <button
+                  disabled={disabled}
+                  onClick={() => setPage("Project home")}
+                >
+                  Project home
                 </button>
                 <button disabled={disabled} onClick={() => setPage("Ask")}>
                   Ask about this project
@@ -680,7 +1022,9 @@ export default function App() {
               selected={selected}
               onSelect={setSelected}
               onAdd={addNote}
-              onAudio={addAudio}
+              onAudio={addNote}
+              onPhoto={addNote}
+              initialArea={areaHint}
               onRevise={(id, text) => updateNote(id, text, false)}
               onReview={(id) => updateNote(id, null, true)}
               captureBusy={disabled}
@@ -696,7 +1040,9 @@ export default function App() {
                 <h1 title="Open a conversation about a project or a site note.">
                   Ask StreamLion
                 </h1>
-                <p>Choose a project, then open Work and select StreamLion.</p>
+                <p>
+                  Quick answers here. Your own ChatGPT for a deeper discussion.
+                </p>
               </div>
             </header>
             <label>
@@ -706,7 +1052,7 @@ export default function App() {
                 onChange={(e) => setSelected(e.target.value)}
                 title="Choose a project, or leave All projects selected to ask a general question."
               >
-                <option value="">All projects</option>
+                <option value="">Choose a project</option>
                 {workspace.jobs.map((j) => (
                   <option key={j.id} value={j.id}>
                     {j.title}
@@ -714,7 +1060,18 @@ export default function App() {
                 ))}
               </select>
             </label>
-            <ChatGPTPanel project={active} bookId={bookId} />
+            <ChatGPTPanel
+              key={selected}
+              project={active}
+              notes={workspace.notes}
+              asOf={
+                !active?.deviceOnly
+                  ? remote
+                    ? verifiedAt
+                    : siteCopy?.verifiedAt
+                  : new Date().toISOString()
+              }
+            />
           </>
         ) : (
           <Connections
@@ -722,6 +1079,8 @@ export default function App() {
             onWorkbook={connectBook}
             onDisconnect={disconnect}
             busyCapture={disabled}
+            siteCopy={siteCopy}
+            onSiteCopy={keepSiteCopy}
             onExport={() =>
               download(
                 new Blob([exportWorkspace(local)], {

@@ -36,7 +36,7 @@ test("note controls follow the selected project's owner in a mixed workspace", (
   );
   assert.deepEqual(noteControlsFor({}, "workbook-id", remote), {
     draftScope: "workbook-id",
-    allowAudio: false,
+    allowAudio: true,
   });
 });
 
