@@ -755,7 +755,7 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/lion.svg" width="32" height="32" alt="" aria-hidden="true" />
+          <img src="/lion.png" width="32" height="32" alt="" aria-hidden="true" />
           <span>StreamLion</span>
         </div>
         <nav aria-label="Main">
