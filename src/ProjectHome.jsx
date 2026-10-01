@@ -67,6 +67,7 @@ function ProjectHomeContent({
   onNotes,
   onSave,
   onRepeat,
+  onFolderBusy,
   scope,
   connected,
   siteCopy,
@@ -366,6 +367,7 @@ function ProjectHomeContent({
           <button onClick={onEdit}>Edit details</button>
           {!project.deviceOnly && scope && (
             <ProjectFolderButton
+              onBusy={onFolderBusy}
               bookId={scope}
               project={project}
               disabled={!connected || busy}

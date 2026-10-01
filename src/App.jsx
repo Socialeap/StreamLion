@@ -1146,6 +1146,7 @@ export default function App() {
             connected={!!remote && hasGoogleSession()}
             siteCopy={siteCopy}
             onSiteCopy={keepSiteCopy}
+            onFolderBusy={setSyncBusy}
             onBack={() => setPage("Projects")}
             onEdit={() => setEditing(active)}
             onAsk={() => setPage("Ask")}
