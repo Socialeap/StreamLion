@@ -1,6 +1,10 @@
 # Google setup and release
 
-## Owner setup (required before connected PWA testing)
+## Persistent automatic connection (new production upgrade)
+
+Follow [persistent-google-activation.md](persistent-google-activation.md) for the required migration, Cloudflare vault binding/secrets, Google callback, deployment receipt, and phone acceptance. This adds automatic session renewal and workbook restoration after one initial connection. Until explicitly activated, the browser-token setup below continues to work. The new backend requires an owner activation handoff; a frontend redeployment alone is insufficient.
+
+## Existing browser connection (available until persistent sign-in is activated)
 
 1. In your Google Cloud project, enable Google Sheets API, Google Drive API and Google Picker API.
 2. Configure Google Auth Platform Branding, Audience and Data access for StreamLion. Choose External for providers outside your own Google Workspace, keep the app in Testing for the pilot, add each pilot Google account as a test user, and declare only `https://www.googleapis.com/auth/drive.file`. Supply your support contact and appropriate privacy information. Testing authorizations expire after seven days; production availability and branding verification must be checked before selling access.
@@ -20,4 +24,4 @@ Use fixtures/project-intake.json and a synthetic source brief first. Import the 
 
 ## Release ownership
 
-The owner configures Google Cloud and the three encrypted Cloudflare Pages settings above. Cloudflare Pages builds and publishes the merged GitHub `main` branch; the Pages Function at `/api/google-config` makes only those public identifiers available to the browser. Then the owner performs the Google roundtrip and phone checks above. There is no database migration, model API or DNS change in this release. No Lovable action is required.
+The owner configures Google Cloud and the three encrypted Cloudflare Pages settings above. Cloudflare Pages builds and publishes the merged GitHub `main` branch; the Pages Function at `/api/google-config` makes only those public identifiers available to the browser. Then the owner performs the Google roundtrip and phone checks above. There is no database migration, model API or DNS change in this release. No Lovable action is required for the existing browser-only setup. The persistent upgrade requires the separate backend activation described above.

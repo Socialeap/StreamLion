@@ -42,6 +42,8 @@ import {
 } from "./storage";
 import {
   readWorkbook,
+  restoreGoogleSession,
+  rememberGoogleWorkbook,
   appendRevision,
   hasGoogleSession,
   reserveFieldFileId,
@@ -74,6 +76,8 @@ export default function App() {
     [editing, setEditing] = useState(null),
     [captureBusy, setCaptureBusy] = useState(false),
     [syncBusy, setSyncBusy] = useState(false);
+  const navigation = useRef({ page, selected, editing });
+  navigation.current = { page, selected, editing };
   const [bookId, setBookId] = useState(rememberedWorkbook),
     [remote, setRemote] = useState(null);
   const [siteCopy, setSiteCopy] = useState(null);
@@ -88,17 +92,71 @@ export default function App() {
   const pending = useRef(null);
   const [hasPending, setHasPending] = useState(false);
   const [noteEpoch, setNoteEpoch] = useState(0);
+  const [restoreError, setRestoreError] = useState("");
+  const restoreEpoch = useRef(0);
+  async function restoreConnection() {
+    const epoch = ++restoreEpoch.current;
+    setRestoreError("");
+    setStatus("Restoring Google connection…");
+    try {
+      const connection = await restoreGoogleSession();
+      if (epoch !== restoreEpoch.current) return;
+      if (!connection.enabled || !connection.connected) {
+        setStatus(
+          bookId ? "Selected workbook · reconnect Google" : "Device workspace",
+        );
+        return;
+      }
+      // The backend's account-scoped selection is authoritative. Never use an
+      // old device-wide workbook as the destination for a new Google account.
+      setBookId(connection.bookId);
+      try {
+        localStorage.setItem(selectedWorkbookKey, connection.bookId);
+      } catch {
+        /* local cache optional */
+      }
+      setRemote(null);
+      if (connection.bookId !== bookId) setSiteCopy(null);
+      refreshDrafts(connection.bookId);
+      if (!connection.bookId) {
+        setStatus("Google connected · choose a workbook");
+        setPage("Connections");
+        return;
+      }
+      const data = await readWorkbook(connection.bookId);
+      if (epoch !== restoreEpoch.current) return;
+      await connectBook(connection.bookId, data, true);
+    } catch (e) {
+      if (epoch === restoreEpoch.current) {
+        setRestoreError(e.message);
+        setStatus("Saved connection unavailable · retry in Connections");
+      }
+    }
+  }
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("google");
+    if (result === "cancelled" || result === "failed")
+      setError(
+        "Google sign-in was not completed. Your drafts are preserved; try again in Connections.",
+      );
+    if (result) window.history.replaceState(null, "", window.location.pathname);
+    restoreConnection();
+    return () => {
+      restoreEpoch.current++;
+    };
+  }, []);
+  useEffect(() => {
+    if (!restoreError || captureBusy || syncBusy) return;
+    const retry = () => restoreConnection();
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [restoreError, captureBusy, syncBusy]);
   useEffect(() => {
     loadWorkspace()
       .then((w) => {
         current.current = w;
         setLocal(w);
         setReady(true);
-        setStatus(
-          rememberedWorkbook()
-            ? "Reconnect Google to load your selected workbook"
-            : "Device workspace",
-        );
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -204,6 +262,15 @@ export default function App() {
       return [];
     }
   });
+  useEffect(() => {
+    if (selected && bookId && remote) {
+      try {
+        localStorage.setItem(`streamlion-last-project:${bookId}`, selected);
+      } catch {
+        /* optional */
+      }
+    }
+  }, [selected, bookId, remote]);
   const active = workspace.jobs.find((j) => j.id === selected);
   const noteControls = noteControlsFor(active, bookId, remote);
   async function commit(change, audio) {
@@ -223,7 +290,8 @@ export default function App() {
       writing.current = false;
     }
   }
-  async function connectBook(id, data) {
+  async function connectBook(id, data, restoring = false) {
+    if (!restoring) await rememberGoogleWorkbook(id);
     try {
       localStorage.setItem(selectedWorkbookKey, id);
     } catch {
@@ -235,8 +303,33 @@ export default function App() {
     refreshDrafts(id);
     setRemote(data);
     setVerifiedAt(new Date().toISOString());
-    setSelected("");
-    setEditing(null);
+    if (!restoring) {
+      setSelected("");
+      setEditing(null);
+    }
+    if (restoring) {
+      try {
+        const savedProject = localStorage.getItem(
+          `streamlion-last-project:${id}`,
+        );
+        if (
+          !navigation.current.selected &&
+          data.Projects.some(
+            (project) =>
+              project.recordId === savedProject && !project.deletedAt,
+          )
+        ) {
+          setSelected(savedProject);
+          if (
+            navigation.current.page === "Projects" &&
+            !navigation.current.editing
+          )
+            setPage("Project home");
+        }
+      } catch {
+        /* selection storage is optional */
+      }
+    }
     setStatus("Google records refreshed");
     try {
       const copy = await loadSiteCopy(id);
@@ -249,6 +342,8 @@ export default function App() {
     }
   }
   function disconnect(preserveSelection = false) {
+    restoreEpoch.current++;
+    setRestoreError("");
     if (!preserveSelection) {
       pending.current = null;
       setHasPending(false);
@@ -1162,6 +1257,8 @@ export default function App() {
         ) : (
           <Connections
             bookId={bookId}
+            onRestore={restoreConnection}
+            restoreError={restoreError}
             onWorkbook={connectBook}
             onDisconnect={disconnect}
             busyCapture={disabled}

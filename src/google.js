@@ -10,6 +10,94 @@ const SCOPE = "https://www.googleapis.com/auth/drive.file";
 let token = "",
   expiresAt = 0,
   session = 0;
+let persistentSession = null;
+let restorePromise = null;
+export async function restoreGoogleSession() {
+  if (restorePromise) return restorePromise;
+  const generation = session;
+  restorePromise = (async () => {
+    const response = await fetch("/api/google/session", {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: AbortSignal.timeout(20000),
+    });
+    if (response.status === 401) {
+      if (generation === session) disconnectGoogle();
+      return { enabled: true, connected: false };
+    }
+    if (!response.ok)
+      throw new Error(
+        "Could not restore Google. Check your connection and retry in Connections.",
+      );
+    const data = await response.json();
+    if (
+      typeof data.enabled !== "boolean" ||
+      typeof data.connected !== "boolean" ||
+      (data.connected && (!data.subject || typeof data.bookId !== "string"))
+    )
+      throw new Error(
+        "Google returned an invalid connection. Retry in Connections.",
+      );
+    if (generation !== session) throw new Error("Google connection changed.");
+    persistentSession = data.connected ? data : null;
+    return data;
+  })();
+  try {
+    return await restorePromise;
+  } finally {
+    restorePromise = null;
+  }
+}
+export function googleAccount() {
+  return persistentSession?.account || "";
+}
+async function sessionRequest(path, options = {}) {
+  const generation = session;
+  const response = await fetch("/api/google/" + path, {
+    ...options,
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: {
+      ...options.headers,
+      "X-StreamLion-Account": persistentSession?.subject || "",
+    },
+  });
+  if (generation !== session)
+    throw new Error("Google connection changed during this request.");
+  if (response.status === 401) {
+    disconnectGoogle();
+    throw new Error(
+      "Google connection expired. Reconnect in Connections; your draft is preserved.",
+    );
+  }
+  return response;
+}
+export async function rememberGoogleWorkbook(bookId) {
+  if (!persistentSession) return;
+  const response = await sessionRequest("workbook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bookId }),
+  });
+  if (!response.ok)
+    throw new Error(
+      "Could not remember this workbook. Retry before switching projects.",
+    );
+  persistentSession = { ...persistentSession, bookId };
+}
+export async function forgetGoogleConnection() {
+  if (persistentSession) {
+    const response = await sessionRequest("disconnect", { method: "POST" });
+    if (!response.ok)
+      throw new Error(
+        "Could not disconnect Google. Check your connection and retry.",
+      );
+  }
+  disconnectGoogle();
+}
+export function startPersistentGoogle() {
+  window.location.assign("/api/google/start");
+}
 const scripts = new Map();
 export function loadScript(src) {
   if (!scripts.has(src))
@@ -30,12 +118,13 @@ export function loadScript(src) {
   return scripts.get(src);
 }
 export function disconnectGoogle() {
+  persistentSession = null;
   token = "";
   expiresAt = 0;
   session++;
 }
 export function hasGoogleSession() {
-  return !!token && Date.now() < expiresAt;
+  return !!persistentSession || (!!token && Date.now() < expiresAt);
 }
 export async function connectGoogle(clientId) {
   if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId))
@@ -74,16 +163,18 @@ async function request(path, options = {}) {
       "Google session expired. Reconnect in Connections; your draft is preserved.",
     );
   const generation = session;
-  const response = await fetch(
-    "https://sheets.googleapis.com/v4/spreadsheets" + path,
-    {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    },
-  );
+  const response = persistentSession
+    ? await sessionRequest("sheets?path=" + encodeURIComponent(path), {
+        ...options,
+        headers: { "Content-Type": "application/json" },
+      })
+    : await fetch("https://sheets.googleapis.com/v4/spreadsheets" + path, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
   if (generation !== session)
     throw new Error("Google account changed during this request.");
   if (response.status === 401) {
@@ -112,13 +203,20 @@ export async function pickWorkbook({ apiKey, appId }) {
     }),
   );
   const generation = session;
+  let pickerToken = token;
+  if (persistentSession) {
+    const response = await sessionRequest("picker-token", { method: "POST" });
+    if (!response.ok)
+      throw new Error("Google Picker is temporarily unavailable. Retry.");
+    pickerToken = (await response.json()).accessToken;
+  }
   return new Promise((resolve, reject) => {
     const view = new window.google.picker.DocsView(
       window.google.picker.ViewId.SPREADSHEETS,
     ).setMode(window.google.picker.DocsViewMode.LIST);
     const picker = new window.google.picker.PickerBuilder()
       .addView(view)
-      .setOAuthToken(token)
+      .setOAuthToken(pickerToken)
       .setDeveloperKey(apiKey)
       .setAppId(appId)
       .setOrigin(window.location.origin)
@@ -176,10 +274,12 @@ async function driveRequest(path, options = {}) {
       "Reconnect Google before sending field files. Your originals stay on this device.",
     );
   const generation = session;
-  const response = await fetch(`https://www.googleapis.com/${path}`, {
-    ...options,
-    headers: { ...options.headers, Authorization: `Bearer ${token}` },
-  });
+  const response = persistentSession
+    ? await sessionRequest("drive?path=" + encodeURIComponent(path), options)
+    : await fetch(`https://www.googleapis.com/${path}`, {
+        ...options,
+        headers: { ...options.headers, Authorization: `Bearer ${token}` },
+      });
   if (generation !== session)
     throw new Error(
       "Google account changed during this request. Reconnect before retrying.",
