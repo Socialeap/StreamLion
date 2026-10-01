@@ -104,7 +104,13 @@ function json(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers });
 }
 function redirect(url, cookies = []) {
-  const h = new Headers({ ...headers, Location: url });
+  // Navigation responses must not inherit the API download/sandbox headers.
+  const h = new Headers({
+    "Cache-Control": headers["Cache-Control"],
+    "Referrer-Policy": headers["Referrer-Policy"],
+    "X-Content-Type-Options": headers["X-Content-Type-Options"],
+    Location: url,
+  });
   for (const c of cookies) h.append("Set-Cookie", c);
   return new Response(null, { status: 303, headers: h });
 }
@@ -388,21 +394,17 @@ export async function handleGoogle({ request, env, params }) {
       return redirect(target.toString(), [setCookie(FLOW, flow, 600)]);
     }
     if (route === "callback" && request.method === "GET") {
+      const clearFlow = setCookie(FLOW, "", 0);
       let flow;
       try {
         flow = await unseal(env, cookie(request, FLOW), "oauth-flow");
       } catch {
-        return json(
-          { error: "Sign-in expired. Return to StreamLion and try again." },
-          400,
-        );
+        return redirect(origin(env) + "/?google=expired", [clearFlow]);
       }
-      if (
-        flow.expiresAt < Date.now() ||
-        flow.state !== url.searchParams.get("state")
-      )
-        return json({ error: "Sign-in could not be verified." }, 400);
-      const clearFlow = setCookie(FLOW, "", 0);
+      if (flow.expiresAt < Date.now())
+        return redirect(origin(env) + "/?google=expired", [clearFlow]);
+      if (flow.state !== url.searchParams.get("state"))
+        return redirect(origin(env) + "/?google=failed", [clearFlow]);
       if (url.searchParams.has("error"))
         return redirect(origin(env) + "/?google=cancelled", [clearFlow]);
       const response = await tokenExchange(env, {
@@ -634,6 +636,14 @@ export async function handleGoogle({ request, env, params }) {
     }
     return json({ error: "Unknown Google operation." }, 404);
   } catch (e) {
+    if (
+      route === "callback" &&
+      request.method === "GET" &&
+      url.origin === origin(env)
+    )
+      return redirect(origin(env) + "/?google=failed", [
+        setCookie(FLOW, "", 0),
+      ]);
     const status =
       e.message === "reconnect"
         ? 401

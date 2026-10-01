@@ -137,10 +137,17 @@ export default function App() {
   }
   useEffect(() => {
     const result = new URLSearchParams(window.location.search).get("google");
-    if (result === "cancelled" || result === "failed")
+    if (result === "expired") {
+      setError(
+        "Google sign-in timed out. Your drafts are safe. Click Connect Google and finish signing in within 10 minutes.",
+      );
+      setPage("Connections");
+    } else if (result === "cancelled" || result === "failed") {
       setError(
         "Google sign-in was not completed. Your drafts are preserved; try again in Connections.",
       );
+      setPage("Connections");
+    }
     if (result) window.history.replaceState(null, "", window.location.pathname);
     restoreConnection();
     return () => {
