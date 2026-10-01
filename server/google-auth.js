@@ -1,3 +1,4 @@
+import { FOLDER_MIME } from "../src/drive-folders.js";
 import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
 const SESSION = "__Host-streamlion-session";
 const FLOW = "__Host-streamlion-oauth";
@@ -222,11 +223,73 @@ export function upstreamURL(service, path, method) {
   const drive =
     (method === "GET" &&
       /^drive\/v3\/files\/(?:generateIds|[\w-]+)$/.test(clean)) ||
-    (method === "POST" && clean === "upload/drive/v3/files");
+    (method === "GET" && clean === "drive/v3/files") ||
+    (method === "POST" &&
+      ["upload/drive/v3/files", "drive/v3/files"].includes(clean)) ||
+    (method === "PATCH" && /^drive\/v3\/files\/[\w-]+$/.test(clean));
   if (!(service === "sheets" ? sheets : drive)) throw new Error("bad_request");
   const url = new URL(root + path);
   if (url.origin !== new URL(root).origin) throw new Error("bad_request");
   return url;
+}
+export function validateDriveMutation(url, method, body) {
+  if (method === "GET" || url.pathname === "/upload/drive/v3/files") return;
+  let data;
+  try {
+    data = JSON.parse(decoder.decode(body));
+  } catch {
+    throw new Error("bad_request");
+  }
+  const validId = (value) =>
+    typeof value === "string" && /^[\w-]{1,100}$/.test(value);
+  if (method === "PATCH") {
+    const allowed = ["addParents", "removeParents", "fields"];
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      Object.keys(data).length ||
+      [...url.searchParams.keys()].some((key) => !allowed.includes(key)) ||
+      !validId(url.searchParams.get("addParents")) ||
+      (url.searchParams.has("removeParents") &&
+        !url.searchParams.get("removeParents").split(",").every(validId))
+    )
+      throw new Error("bad_request");
+    return;
+  }
+  if (
+    method !== "POST" ||
+    url.pathname !== "/drive/v3/files" ||
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data) ||
+    Object.keys(data).some(
+      (key) =>
+        !["id", "name", "mimeType", "parents", "appProperties"].includes(key),
+    ) ||
+    !validId(data.id) ||
+    typeof data.name !== "string" ||
+    !data.name ||
+    data.name.length > 180 ||
+    data.mimeType !== FOLDER_MIME ||
+    (data.parents != null &&
+      (!Array.isArray(data.parents) ||
+        data.parents.length !== 1 ||
+        !validId(data.parents[0]))) ||
+    !["workspace", "project-files", "project"].includes(
+      data.appProperties?.streamlionRole,
+    ) ||
+    Object.keys(data.appProperties).some(
+      (key) =>
+        !["streamlionRole", "streamlionBook", "streamlionProject"].includes(
+          key,
+        ),
+    ) ||
+    Object.values(data.appProperties).some(
+      (value) => typeof value !== "string" || !/^[\w-]{1,100}$/.test(value),
+    )
+  )
+    throw new Error("bad_request");
 }
 async function limitedBody(request, limit = 6 * 1024 * 1024) {
   const reader = request.body?.getReader();
@@ -387,11 +450,13 @@ export async function handleGoogle({ request, env, params }) {
         },
         sessionHash,
       );
+      const folder =
+        previous?.google_subject === identity.sub ? previous.folder_id : "";
       const workbook =
         previous?.google_subject === identity.sub ? previous.workbook_id : "";
       const statements = [
         env.GOOGLE_SESSIONS.prepare(
-          "INSERT INTO streamlion_google_sessions_v1 (session_hash, google_subject, email, credentials, workbook_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO streamlion_google_sessions_v1 (session_hash, google_subject, email, credentials, workbook_id, expires_at, folder_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
         ).bind(
           sessionHash,
           identity.sub,
@@ -399,6 +464,7 @@ export async function handleGoogle({ request, env, params }) {
           encrypted,
           workbook,
           Date.now() + MAX_AGE * 1000,
+          folder || "",
         ),
         env.GOOGLE_SESSIONS.prepare(
           "DELETE FROM streamlion_google_sessions_v1 WHERE expires_at <= ?",
@@ -426,6 +492,7 @@ export async function handleGoogle({ request, env, params }) {
         account: row.email,
         subject: row.google_subject,
         bookId: row.workbook_id,
+        folderId: row.folder_id,
       });
     }
     if (!row) return json({ error: "Reconnect Google to continue." }, 401);
@@ -446,15 +513,17 @@ export async function handleGoogle({ request, env, params }) {
       response.headers.set("Set-Cookie", setCookie(SESSION, "", 0));
       return response;
     }
-    if (route === "workbook" && request.method === "POST") {
+    if (["workbook", "folder"].includes(route) && request.method === "POST") {
+      const isFolder = route === "folder";
       const body = await limitedBody(request, 4096);
       let bookId;
       try {
-        ({ bookId } = JSON.parse(decoder.decode(body)));
+        const selection = JSON.parse(decoder.decode(body));
+        bookId = isFolder ? selection.folderId : selection.bookId;
       } catch {
         throw new Error("bad_request");
       }
-      if (!/^[\w-]+$/.test(bookId || ""))
+      if (!/^[\w-]{1,100}$/.test(bookId || ""))
         return json({ error: "Invalid workbook." }, 400);
       const capacity = await reserveGoogleRequest(
         env.GOOGLE_SESSIONS,
@@ -473,7 +542,9 @@ export async function handleGoogle({ request, env, params }) {
         return limited;
       }
       const check = await googleFetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${bookId}?fields=spreadsheetId`,
+        isFolder
+          ? `https://www.googleapis.com/drive/v3/files/${bookId}?fields=id,mimeType,trashed,capabilities(canAddChildren)`
+          : `https://sheets.googleapis.com/v4/spreadsheets/${bookId}?fields=spreadsheetId`,
         {
           headers: { Authorization: `Bearer ${await accessToken(env, row)}` },
           redirect: "error",
@@ -484,19 +555,30 @@ export async function handleGoogle({ request, env, params }) {
           { error: "Workbook access could not be verified." },
           check.status === 403 || check.status === 404 ? 403 : 503,
         );
+      if (isFolder) {
+        const file = await check.json();
+        if (
+          file.mimeType !== FOLDER_MIME ||
+          file.trashed ||
+          !file.capabilities?.canAddChildren
+        )
+          return json({ error: "Choose a writable Drive folder." }, 403);
+      }
       const saved = await env.GOOGLE_SESSIONS.prepare(
-        "UPDATE streamlion_google_sessions_v1 SET workbook_id = ? WHERE session_hash = ? AND expires_at > ?",
+        isFolder
+          ? "UPDATE streamlion_google_sessions_v1 SET folder_id = ? WHERE session_hash = ? AND expires_at > ?"
+          : "UPDATE streamlion_google_sessions_v1 SET workbook_id = ? WHERE session_hash = ? AND expires_at > ?",
       )
         .bind(bookId, row.session_hash, Date.now())
         .run();
       if (!saved.meta.changes) return json({ error: "Reconnect Google." }, 401);
-      return json({ bookId });
+      return json(isFolder ? { folderId: bookId } : { bookId });
     }
     if (route === "picker-token" && request.method === "POST")
       return json({ accessToken: await accessToken(env, row) });
     if (
       (route === "sheets" || route === "drive") &&
-      ["GET", "POST"].includes(request.method)
+      ["GET", "POST", "PATCH"].includes(request.method)
     ) {
       const target = upstreamURL(
         route,
@@ -506,7 +588,9 @@ export async function handleGoogle({ request, env, params }) {
       if (Number(request.headers.get("Content-Length")) > 6 * 1024 * 1024)
         return json({ error: "File too large." }, 413);
       const body =
-        request.method === "POST" ? await limitedBody(request) : undefined;
+        request.method !== "GET" ? await limitedBody(request) : undefined;
+      if (route === "drive")
+        validateDriveMutation(target, request.method, body);
       if (body?.byteLength > 6 * 1024 * 1024)
         return json({ error: "File too large." }, 413);
       const capacity = await reserveGoogleRequest(

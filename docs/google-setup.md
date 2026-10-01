@@ -25,3 +25,13 @@ Use fixtures/project-intake.json and a synthetic source brief first. Import the 
 ## Release ownership
 
 The owner configures Google Cloud and the three encrypted Cloudflare Pages settings above. Cloudflare Pages builds and publishes the merged GitHub `main` branch; the Pages Function at `/api/google-config` makes only those public identifiers available to the browser. Then the owner performs the Google roundtrip and phone checks above. There is no database migration, model API or DNS change in this release. The owner activates this setup directly through Google Cloud and Cloudflare. The persistent upgrade requires the separate backend activation described above.
+
+## One home in Drive
+
+After connecting, use **Connections → Set up StreamLion folder**, or choose an existing folder. **Create workbook** also sets up the folder and places a new **StreamLion Projects** workbook there. One workbook holds many projects. **Switch workbook** selects another existing workbook through Google Picker.
+
+The selected folder and workbook are restored together by the saved Google session in the same browser. Existing workbooks stay where they are; **Move selected workbook here** is optional and confirms the folder's sharing implications. Changing folders affects new files only.
+
+In a saved Google project, **Open project folder** opens its dedicated folder under **Project files**. Newly retained photos and voice memos go there. Repeat visits get their own folder; project names are labels, while workbook and record IDs prevent files from mixing. Previous file links remain valid. No separate index workbook is needed.
+
+See [central-folder-release.md](central-folder-release.md) for the required migration and live acceptance.

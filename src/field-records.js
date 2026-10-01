@@ -70,6 +70,7 @@ export async function sendFieldRecord(
       fileId: note.driveFileId,
       noteId: note.id,
       bookId: note.pendingBookId,
+      projectId: note.jobId,
       name: note.fileName,
       blob,
     });

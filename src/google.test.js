@@ -14,6 +14,11 @@ import {
   readWorkbook,
   reserveFieldFileId,
   retainFieldFile,
+  createWorkbook,
+  moveWorkbookToFolder,
+  restoreGoogleSession,
+  googleFolderId,
+  rememberGoogleFolder,
 } from "./google.js";
 const fakeToken = "synthetic-test-token";
 globalThis.window = {
@@ -269,5 +274,130 @@ test("concurrent workbook reads share one request pair and subsequent reads fetc
   );
   assert.equal((await readWorkbook("book")).Projects[0].title, "Newly saved");
   assert.equal(reads, 4);
+  disconnectGoogle();
+});
+
+test("new workbook is moved once and new field files use a folder isolated to their project", async () => {
+  const files = new Map();
+  let next = 0,
+    moves = 0;
+  const reply = (data, status = 200) =>
+    new Response(JSON.stringify(data), { status });
+  globalThis.fetch = async (target, options = {}) => {
+    const url = new URL(target);
+    if (url.hostname === "sheets.googleapis.com") {
+      files.set("new-book", {
+        id: "new-book",
+        mimeType: "application/vnd.google-apps.spreadsheet",
+        parents: ["root"],
+      });
+      return reply({ spreadsheetId: "new-book" });
+    }
+    if (url.pathname.endsWith("/generateIds"))
+      return reply({ ids: ["reserved-" + next++] });
+    if (url.pathname === "/upload/drive/v3/files") {
+      const metadata = JSON.parse(
+        (await options.body.text()).split("\r\n\r\n")[1].split("\r\n--")[0],
+      );
+      files.set(metadata.id, { ...metadata, size: String(blob.size) });
+      return reply({ id: metadata.id });
+    }
+    if (options.method === "PATCH") {
+      moves++;
+      const id = url.pathname.split("/").at(-1);
+      const file = files.get(id);
+      file.parents = [url.searchParams.get("addParents")];
+      return reply(file);
+    }
+    if (options.method === "POST") {
+      const data = JSON.parse(options.body);
+      files.set(data.id, { ...data, capabilities: { canAddChildren: true } });
+      return reply({ id: data.id });
+    }
+    if (url.pathname === "/drive/v3/files") {
+      const q = url.searchParams.get("q");
+      return reply({
+        files: [...files.values()]
+          .filter(
+            (file) =>
+              file.mimeType === "application/vnd.google-apps.folder" &&
+              Object.entries(file.appProperties).every(([k, v]) =>
+                q.includes(`key='${k}' and value='${v}'`),
+              ) &&
+              (!q.includes(" in parents") ||
+                file.parents?.some((parent) =>
+                  q.includes(`'${parent}' in parents`),
+                )),
+          )
+          .map(({ id }) => ({ id })),
+      });
+    }
+    const file = files.get(url.pathname.split("/").at(-1));
+    return file ? reply(file) : reply({}, 404);
+  };
+  const blob = new Blob(["field photo"], { type: "image/jpeg" });
+  await connectGoogle("test.apps.googleusercontent.com");
+  const book = await createWorkbook();
+  await moveWorkbookToFolder(book.spreadsheetId);
+  await moveWorkbookToFolder(book.spreadsheetId);
+  assert.equal(moves, 1);
+  assert.deepEqual(files.get("new-book").parents, [googleFolderId()]);
+  const id = await reserveFieldFileId();
+  await retainFieldFile({
+    fileId: id,
+    noteId: "note-a",
+    bookId: book.spreadsheetId,
+    projectId: "project-a",
+    projectTitle: "Synthetic visit",
+    name: "photo.jpg",
+    blob,
+  });
+  const image = files.get(id),
+    folder = files.get(image.parents[0]);
+  assert.equal(folder.appProperties.streamlionProject, "project-a");
+  assert.equal(folder.appProperties.streamlionBook, "new-book");
+  const parent = files.get(folder.parents[0]);
+  assert.equal(parent.name, "Project files");
+  assert.deepEqual(parent.parents, [googleFolderId()]);
+  disconnectGoogle();
+});
+test("saved folder restores from account-scoped session and a cancelled selection cannot cross into another account", async () => {
+  disconnectGoogle();
+  let account = "account-a",
+    release;
+  globalThis.fetch = async (path) =>
+    path === "/api/google/session"
+      ? new Response(
+          JSON.stringify({
+            enabled: true,
+            connected: true,
+            subject: account,
+            bookId: "book",
+            folderId: account === "account-a" ? "folder-a" : "",
+          }),
+        )
+      : {
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((resolve) => {
+              release = () =>
+                resolve({
+                  id: "folder-selected",
+                  mimeType: "application/vnd.google-apps.folder",
+                  capabilities: { canAddChildren: true },
+                });
+            }),
+        };
+  await restoreGoogleSession();
+  assert.equal(googleFolderId(), "folder-a");
+  const selection = rememberGoogleFolder("folder-selected");
+  while (!release) await new Promise((resolve) => setTimeout(resolve, 0));
+  disconnectGoogle();
+  account = "account-b";
+  await restoreGoogleSession();
+  release();
+  await assert.rejects(selection, /account changed/);
+  assert.equal(googleFolderId(), "");
   disconnectGoogle();
 });

@@ -681,7 +681,13 @@ export default function App() {
     await sendFieldRecord(record, {
       getBlob: getAudio,
       reserveId: reserveFieldFileId,
-      retainFile: retainFieldFile,
+      retainFile: (file) =>
+        retainFieldFile({
+          ...file,
+          projectTitle:
+            workspace.jobs.find((job) => job.id === file.projectId)?.title ||
+            "Project",
+        }),
       persist: (note) =>
         commit((w) => ({
           ...w,
@@ -1289,6 +1295,7 @@ export default function App() {
             busyCapture={disabled}
             siteCopy={siteCopy}
             onSiteCopy={keepSiteCopy}
+            onConnectionBusy={setSyncBusy}
             onBackupBusy={setSyncBusy}
             onBackupRestored={async () => {
               const restored = await loadWorkspace();

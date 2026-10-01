@@ -8,6 +8,7 @@ import {
   unseal,
   hash,
   upstreamURL,
+  validateDriveMutation,
 } from "../../server/google-auth.js";
 
 function fixture() {
@@ -22,6 +23,15 @@ function fixture() {
     readFileSync(
       new URL(
         "../../migrations/0002_google_request_limits.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  db.exec(
+    readFileSync(
+      new URL(
+        "../../migrations/0003_google_workspace_folder.sql",
         import.meta.url,
       ),
       "utf8",
@@ -72,7 +82,7 @@ function fixture() {
       sessionHash,
     );
     db.prepare(
-      "INSERT INTO streamlion_google_sessions_v1 VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO streamlion_google_sessions_v1 (session_hash,google_subject,email,credentials,workbook_id,expires_at) VALUES (?, ?, ?, ?, ?, ?)",
     ).run(
       sessionHash,
       subject,
@@ -192,61 +202,75 @@ test("callback rejects mismatched state without calling Google", async () => {
   assert.equal(response.status, 400);
 });
 
-test("callback isolates a switched account's workbook and invalidates the old session", async () => {
-  const f = fixture();
-  const id = await f.session();
-  const start = await f.request("start");
-  const flowCookie = start.headers.get("Set-Cookie").split(";")[0];
-  const flow = await unseal(f.env, flowCookie.split("=")[1], "oauth-flow");
-  const original = globalThis.fetch;
-  globalThis.fetch = async (url) =>
-    new Response(
-      JSON.stringify(
-        String(url).includes("/token")
-          ? {
-              access_token: "new-token",
-              refresh_token: "new-refresh",
-              expires_in: 3600,
-              scope: "openid email https://www.googleapis.com/auth/drive.file",
-            }
-          : {
-              sub: "account-b",
-              email: "second@example.com",
-              email_verified: true,
+for (const subject of ["account-a", "account-b"])
+  test(`callback ${subject === "account-a" ? "preserves" : "isolates"} workbook and folder selection and replaces the old session`, async () => {
+    const f = fixture();
+    const id = await f.session();
+    f.db.exec(
+      "UPDATE streamlion_google_sessions_v1 SET folder_id = 'folder-a'",
+    );
+    const start = await f.request("start");
+    const flowCookie = start.headers.get("Set-Cookie").split(";")[0];
+    const flow = await unseal(f.env, flowCookie.split("=")[1], "oauth-flow");
+    const original = globalThis.fetch;
+    globalThis.fetch = async (url) =>
+      new Response(
+        JSON.stringify(
+          String(url).includes("/token")
+            ? {
+                access_token: "new-token",
+                refresh_token: "new-refresh",
+                expires_in: 3600,
+                scope:
+                  "openid email https://www.googleapis.com/auth/drive.file",
+              }
+            : {
+                sub: subject,
+                email: "second@example.com",
+                email_verified: true,
+              },
+        ),
+      );
+    try {
+      const response = await handleGoogle({
+        env: f.env,
+        params: { path: ["callback"] },
+        request: new Request(
+          `https://app.example/api/google/callback?state=${flow.state}&code=synthetic-code`,
+          {
+            headers: {
+              Cookie: flowCookie + `; __Host-streamlion-session=${id}`,
             },
-      ),
-    );
-  try {
-    const response = await handleGoogle({
-      env: f.env,
-      params: { path: ["callback"] },
-      request: new Request(
-        `https://app.example/api/google/callback?state=${flow.state}&code=synthetic-code`,
-        {
-          headers: { Cookie: flowCookie + `; __Host-streamlion-session=${id}` },
-        },
-      ),
-    });
-    assert.equal(response.status, 303);
-    const rows = f.db
-      .prepare("SELECT * FROM streamlion_google_sessions_v1")
-      .all();
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].google_subject, "account-b");
-    assert.equal(rows[0].workbook_id, "");
-    assert.equal((await f.request("session", { cookie: id })).status, 200);
-    assert.equal(
-      (await (await f.request("session", { cookie: id })).json()).connected,
-      false,
-    );
-    assert.match(
-      response.headers.get("Set-Cookie"),
-      /__Host-streamlion-session=/,
-    );
-  } finally {
-    globalThis.fetch = original;
-  }
-});
+          },
+        ),
+      });
+      assert.equal(response.status, 303);
+      const rows = f.db
+        .prepare("SELECT * FROM streamlion_google_sessions_v1")
+        .all();
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].google_subject, subject);
+      assert.equal(
+        rows[0].workbook_id,
+        subject === "account-a" ? "book-a" : "",
+      );
+      assert.equal(
+        rows[0].folder_id,
+        subject === "account-a" ? "folder-a" : "",
+      );
+      assert.equal((await f.request("session", { cookie: id })).status, 200);
+      assert.equal(
+        (await (await f.request("session", { cookie: id })).json()).connected,
+        false,
+      );
+      assert.match(
+        response.headers.get("Set-Cookie"),
+        /__Host-streamlion-session=/,
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 
 test("session restores metadata, never exposes tokens, and rejects cross-origin/account mutations", async () => {
   const { request, session } = fixture();
@@ -258,6 +282,7 @@ test("session restores metadata, never exposes tokens, and rejects cross-origin/
     account: "provider@example.com",
     subject: "account-a",
     bookId: "book-a",
+    folderId: "",
   });
   assert.equal(response.headers.get("Cache-Control"), "no-store, max-age=0");
   assert.equal(
@@ -575,4 +600,98 @@ test("workbook selection shares the project quota and preserves the previous des
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("folder destination is verified before persistence and restores with the same session", async () => {
+  const f = fixture();
+  const id = await f.session();
+  const original = globalThis.fetch;
+  let writable = false;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        id: "folder-a",
+        mimeType: "application/vnd.google-apps.folder",
+        capabilities: { canAddChildren: writable },
+      }),
+    );
+  try {
+    const select = () =>
+      f.request("folder", {
+        method: "POST",
+        cookie: id,
+        body: JSON.stringify({ folderId: "folder-a" }),
+      });
+    assert.equal((await select()).status, 403);
+    assert.equal(
+      f.db.prepare("SELECT folder_id FROM streamlion_google_sessions_v1").get()
+        .folder_id,
+      "",
+    );
+    writable = true;
+    assert.equal((await select()).status, 200);
+    assert.equal(
+      (await (await f.request("session", { cookie: id })).json()).folderId,
+      "folder-a",
+    );
+    assert.equal(
+      (
+        await f.request("folder", {
+          method: "POST",
+          cookie: id,
+          account: "account-b",
+          body: JSON.stringify({ folderId: "folder-b" }),
+        })
+      ).status,
+      401,
+    );
+    assert.equal(
+      f.db.prepare("SELECT folder_id FROM streamlion_google_sessions_v1").get()
+        .folder_id,
+      "folder-a",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test("folder proxy accepts only folder creation and parent-only moves, never sharing, trashing or replacing file content", () => {
+  const body = (data) => new TextEncoder().encode(JSON.stringify(data));
+  const folder = {
+    id: "new-folder",
+    name: "StreamLion",
+    mimeType: "application/vnd.google-apps.folder",
+    appProperties: { streamlionRole: "workspace" },
+  };
+  const create = upstreamURL("drive", "drive/v3/files?fields=id", "POST");
+  validateDriveMutation(create, "POST", body(folder));
+  for (const data of [
+    { ...folder, mimeType: "text/plain" },
+    { ...folder, permissions: [{}] },
+    { ...folder, parents: ["a", "b"] },
+    { ...folder, id: "../x" },
+    { ...folder, trashed: true },
+  ])
+    assert.throws(
+      () => validateDriveMutation(create, "POST", body(data)),
+      /bad_request/,
+    );
+  const move = upstreamURL(
+    "drive",
+    "drive/v3/files/book?addParents=folder&removeParents=previous&fields=id,parents",
+    "PATCH",
+  );
+  validateDriveMutation(move, "PATCH", body({}));
+  assert.throws(
+    () => validateDriveMutation(move, "PATCH", body({ trashed: true })),
+    /bad_request/,
+  );
+  assert.throws(
+    () =>
+      validateDriveMutation(
+        upstreamURL("drive", "drive/v3/files/book?fields=id", "PATCH"),
+        "PATCH",
+        body({}),
+      ),
+    /bad_request/,
+  );
 });
