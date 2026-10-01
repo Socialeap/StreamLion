@@ -21,6 +21,7 @@ test("field file retries retain the same identities after an unknown Sheets outc
     },
     retainFile: async (value) => {
       assert.equal(note.driveFileId, value.fileId);
+      assert.equal(value.projectId, note.jobId);
       uploaded++;
       return "https://drive.google.com/file/d/drive-file/view";
     },

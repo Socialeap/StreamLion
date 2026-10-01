@@ -1,3 +1,4 @@
+import ProjectFolderButton from "./ProjectFolderButton.jsx";
 import { useEffect, useState } from "react";
 import { MapPin, Phone, Check, ArrowRight } from "lucide-react";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
@@ -363,6 +364,13 @@ function ProjectHomeContent({
         </div>
         <div className="actions">
           <button onClick={onEdit}>Edit details</button>
+          {!project.deviceOnly && scope && (
+            <ProjectFolderButton
+              bookId={scope}
+              project={project}
+              disabled={!connected || busy}
+            />
+          )}
           <button onClick={onBack}>All projects</button>
         </div>
       </header>

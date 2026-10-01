@@ -6,6 +6,7 @@ import {
   assertUnchanged,
   validateRevision,
 } from "./workbook.js";
+import { folderAdapter } from "./drive-folders.js";
 import { fetchRead } from "./network.js";
 const SCOPE = "https://www.googleapis.com/auth/drive.file";
 let token = "",
@@ -13,6 +14,37 @@ let token = "",
   session = 0;
 let persistentSession = null;
 let restorePromise = null;
+let selectedFolder = "";
+let folders = newFolderAdapter();
+function assertGoogleGeneration(generation) {
+  if (generation !== session)
+    throw new Error(
+      "Google account changed. Reopen the project before retrying.",
+    );
+}
+function newFolderAdapter() {
+  const generation = session;
+  const check = () => {
+    if (generation !== session)
+      throw new Error(
+        "Google account changed. Reopen the project before retrying.",
+      );
+  };
+  return folderAdapter(
+    async (...args) => {
+      check();
+      const result = await driveRequest(...args);
+      check();
+      return result;
+    },
+    async () => {
+      check();
+      const id = await reserveFieldFileId();
+      check();
+      return id;
+    },
+  );
+}
 export async function restoreGoogleSession() {
   if (restorePromise) return restorePromise;
   const generation = session;
@@ -50,13 +82,21 @@ export async function restoreGoogleSession() {
           typeof data.subject !== "string" ||
           !data.subject ||
           typeof data.bookId !== "string" ||
-          !/^[\w-]{0,100}$/.test(data.bookId)))
+          !/^[\w-]{0,100}$/.test(data.bookId) ||
+          (data.folderId != null &&
+            (typeof data.folderId !== "string" ||
+              !/^[\w-]{0,100}$/.test(data.folderId)))))
     )
       throw new Error(
         "Google returned an invalid connection. Retry in Connections.",
       );
     if (generation !== session) throw new Error("Google connection changed.");
+    if (data.connected && persistentSession?.subject !== data.subject) {
+      session++;
+      folders = newFolderAdapter();
+    }
     persistentSession = data.connected ? data : null;
+    selectedFolder = data.connected ? data.folderId || "" : "";
     return data;
   })();
   try {
@@ -64,6 +104,92 @@ export async function restoreGoogleSession() {
   } finally {
     restorePromise = null;
   }
+}
+export function googleFolderId() {
+  return selectedFolder;
+}
+export async function rememberGoogleFolder(id) {
+  const generation = session;
+  await folders.metadata(id);
+  assertGoogleGeneration(generation);
+  if (persistentSession) {
+    const response = await sessionRequest("folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folderId: id }),
+    });
+    if (!response.ok)
+      throw new Error(
+        "Could not remember this folder. Try again before adding files.",
+      );
+    persistentSession = { ...persistentSession, folderId: id };
+  }
+  assertGoogleGeneration(generation);
+  selectedFolder = id;
+  return id;
+}
+export async function ensureGoogleFolder() {
+  const generation = session;
+  if (selectedFolder) {
+    await folders.metadata(selectedFolder);
+    assertGoogleGeneration(generation);
+    return selectedFolder;
+  }
+  const folder = await folders.ensure("StreamLion", "workspace");
+  assertGoogleGeneration(generation);
+  return rememberGoogleFolder(folder.id);
+}
+export async function projectFolder(bookId, projectId, title = "Project") {
+  if (
+    !/^[\w-]{1,100}$/.test(bookId || "") ||
+    !/^[\w-]{1,100}$/.test(projectId || "")
+  )
+    throw new Error("Save this project before opening its folder.");
+  const generation = session;
+  const adapter = folders;
+  const root = await ensureGoogleFolder();
+  assertGoogleGeneration(generation);
+  const files = await adapter.ensure("Project files", "project-files", root);
+  return (
+    await adapter.ensure(
+      `${title} — ${projectId}`,
+      "project",
+      files.id,
+      bookId,
+      projectId,
+    )
+  ).id;
+}
+export async function moveWorkbookToFolder(bookId) {
+  if (!/^[\w-]{1,100}$/.test(bookId || ""))
+    throw new Error("Choose a workbook first.");
+  const generation = session;
+  const folderId = await ensureGoogleFolder();
+  assertGoogleGeneration(generation);
+  const check = await driveRequest(
+    `drive/v3/files/${bookId}?fields=id,mimeType,parents`,
+  );
+  if (!check.ok)
+    throw new Error("Could not check workbook location. Try again.");
+  const file = await check.json();
+  assertGoogleGeneration(generation);
+  if (file.mimeType !== "application/vnd.google-apps.spreadsheet")
+    throw new Error("Choose a Google workbook.");
+  if (file.parents?.includes(folderId)) return;
+  const params = new URLSearchParams({
+    addParents: folderId,
+    fields: "id,parents",
+    ...(file.parents?.length && { removeParents: file.parents.join(",") }),
+  });
+  const response = await driveRequest(`drive/v3/files/${bookId}?${params}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!response.ok || !(await response.json()).parents?.includes(folderId))
+    throw new Error(
+      "Workbook move has not been confirmed. Your workbook still exists; retry moving it.",
+    );
 }
 export function googleAccount() {
   return persistentSession?.account || "";
@@ -136,9 +262,11 @@ export function loadScript(src) {
 }
 export function disconnectGoogle() {
   persistentSession = null;
+  selectedFolder = "";
   token = "";
   expiresAt = 0;
   session++;
+  folders = newFolderAdapter();
 }
 export function hasGoogleSession() {
   return !!persistentSession || (!!token && Date.now() < expiresAt);
@@ -208,7 +336,7 @@ async function request(path, options = {}) {
     );
   return response.json();
 }
-export async function pickWorkbook({ apiKey, appId }) {
+export async function pickWorkbook({ apiKey, appId }, folder = false) {
   if (!hasGoogleSession()) throw new Error("Connect Google first.");
   if (!apiKey || !/^\d+$/.test(appId))
     throw new Error(
@@ -231,8 +359,11 @@ export async function pickWorkbook({ apiKey, appId }) {
   }
   return new Promise((resolve, reject) => {
     const view = new window.google.picker.DocsView(
-      window.google.picker.ViewId.SPREADSHEETS,
+      folder
+        ? window.google.picker.ViewId.FOLDERS
+        : window.google.picker.ViewId.SPREADSHEETS,
     ).setMode(window.google.picker.DocsViewMode.LIST);
+    if (folder) view.setIncludeFolders(true).setSelectFolderEnabled(true);
     const picker = new window.google.picker.PickerBuilder()
       .addView(view)
       .setOAuthToken(pickerToken)
@@ -250,6 +381,9 @@ export async function pickWorkbook({ apiKey, appId }) {
   });
 }
 export async function createWorkbook() {
+  const generation = session;
+  await ensureGoogleFolder();
+  assertGoogleGeneration(generation);
   const sheets = Object.entries(TABS).map(([title, headers], sheetId) => ({
     properties: {
       sheetId,
@@ -324,7 +458,15 @@ export async function reserveFieldFileId() {
   return id;
 }
 
-export async function retainFieldFile({ fileId, noteId, bookId, name, blob }) {
+export async function retainFieldFile({
+  fileId,
+  noteId,
+  bookId,
+  projectId,
+  projectTitle,
+  name,
+  blob,
+}) {
   if (!blob?.size || blob.size > 5 * 1024 * 1024)
     throw new Error(
       "Choose a field photo or recording up to 5 MB. The original stays on this device.",
@@ -352,6 +494,9 @@ export async function retainFieldFile({ fileId, noteId, bookId, name, blob }) {
       String(file.size) !== String(blob.size) ||
       file.appProperties?.streamlionNote !== noteId ||
       file.appProperties?.streamlionBook !== bookId ||
+      (projectId &&
+        file.appProperties?.streamlionProject &&
+        file.appProperties.streamlionProject !== projectId) ||
       file.appProperties?.sha256 !== digest
     )
       throw new Error(
@@ -360,14 +505,19 @@ export async function retainFieldFile({ fileId, noteId, bookId, name, blob }) {
     return true;
   };
   if (!(await probe())) {
+    const folderId = projectId
+      ? await projectFolder(bookId, projectId, projectTitle)
+      : "";
     const boundary = `streamlion_${crypto.randomUUID().replaceAll("-", "")}`;
     const metadata = {
       id: fileId,
+      ...(folderId && { parents: [folderId] }),
       name: name || `StreamLion field record ${noteId}`,
       mimeType: blob.type || "application/octet-stream",
       appProperties: {
         streamlionNote: noteId,
         streamlionBook: bookId,
+        ...(projectId && { streamlionProject: projectId }),
         sha256: digest,
       },
     };

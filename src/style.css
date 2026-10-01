@@ -928,3 +928,10 @@ fieldset .form-row {gap:0 18px;}
   body:has(.measurement-saved) main { padding: 0; }
   .measurement-saved { break-inside: avoid; }
 }
+
+.google-folder {
+  margin-block: 1.25rem;
+  padding-block: 1.25rem;
+  border-block: 1px solid var(--border, #dde5e0);
+}
+.google-folder h3 { margin-top: 0; }

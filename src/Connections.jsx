@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import BackupPanel from "./BackupPanel.jsx";
 import SupportPanel from "./SupportPanel.jsx";
 import { fetchRead } from "./network.js";
@@ -7,6 +7,10 @@ import {
   forgetGoogleConnection,
   startPersistentGoogle,
   googleAccount,
+  googleFolderId,
+  ensureGoogleFolder,
+  rememberGoogleFolder,
+  moveWorkbookToFolder,
   createWorkbook,
   pickWorkbook,
   readWorkbook,
@@ -28,6 +32,7 @@ export default function Connections({
   onSiteCopy,
   onBackupBusy,
   onBackupRestored,
+  onConnectionBusy,
 }) {
   const [error, setError] = useState(""),
     [status, setStatus] = useState(""),
@@ -37,6 +42,11 @@ export default function Connections({
     [configAttempt, setConfigAttempt] = useState(0),
     [googleConfig, setGoogleConfig] = useState(null);
   const connected = hasGoogleSession();
+  const [folderId, setFolderId] = useState(googleFolderId());
+  const createdWorkbook = useRef(null);
+  useEffect(() => {
+    setFolderId(googleFolderId());
+  }, [connected, bookId]);
 
   useEffect(() => {
     let current = true;
@@ -90,13 +100,16 @@ export default function Connections({
 
   async function act(fn) {
     setBusy(true);
+    onConnectionBusy?.(true);
     setError("");
     try {
       await fn();
     } catch (e) {
       setError(e.message);
     } finally {
+      setFolderId(googleFolderId());
       setBusy(false);
+      onConnectionBusy?.(false);
     }
   }
   async function open(id) {
@@ -174,6 +187,7 @@ export default function Connections({
             }
             onClick={() =>
               act(async () => {
+                createdWorkbook.current = null;
                 if (googleConfig.persistentEnabled) {
                   startPersistentGoogle();
                   return;
@@ -196,8 +210,11 @@ export default function Connections({
             disabled={busy || busyCapture || !connected}
             onClick={() =>
               act(async () => {
-                const b = await createWorkbook();
+                const b = createdWorkbook.current || (await createWorkbook());
+                createdWorkbook.current = b;
+                await moveWorkbookToFolder(b.spreadsheetId);
                 await open(b.spreadsheetId);
+                createdWorkbook.current = null;
               })
             }
           >
@@ -216,13 +233,14 @@ export default function Connections({
               act(async () => open(await pickWorkbook(googleConfig)))
             }
           >
-            Choose workbook
+            {bookId && connected ? "Switch workbook" : "Choose workbook"}
           </button>
           {connected && (
             <button
               disabled={busy || busyCapture}
               onClick={() =>
                 act(async () => {
+                  createdWorkbook.current = null;
                   await forgetGoogleConnection();
                   onDisconnect();
                   setStatus(
@@ -235,6 +253,107 @@ export default function Connections({
             </button>
           )}
         </div>
+        {connected && (
+          <section className="google-folder" aria-label="StreamLion folder">
+            <h3 title="Your home for StreamLion workbooks and project files in Google Drive.">
+              StreamLion folder
+            </h3>
+            <p>
+              {folderId
+                ? "This folder will reopen with your saved Google connection. New workbooks and project files go here."
+                : "Set up one home for your workbooks and project files. Creating a workbook also sets this up for you."}
+            </p>
+            {folderId && (
+              <p>
+                <a
+                  href={`https://drive.google.com/drive/folders/${folderId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open StreamLion folder ↗
+                </a>
+              </p>
+            )}
+            <div className="actions">
+              {!folderId && (
+                <button
+                  disabled={busy || busyCapture}
+                  onClick={() =>
+                    act(async () => {
+                      setFolderId(await ensureGoogleFolder());
+                      setStatus(
+                        "StreamLion folder is ready. Choose an existing workbook or create one here.",
+                      );
+                    })
+                  }
+                >
+                  Set up StreamLion folder
+                </button>
+              )}
+              <button
+                disabled={
+                  busy ||
+                  busyCapture ||
+                  configLoading ||
+                  !googleConfig?.apiKey ||
+                  !googleConfig?.appId
+                }
+                onClick={() =>
+                  act(async () => {
+                    const id = await pickWorkbook(googleConfig, true);
+                    if (id) {
+                      await rememberGoogleFolder(id);
+                      setFolderId(id);
+                      setStatus(
+                        "Folder saved. Existing workbooks and files stay where they are.",
+                      );
+                    }
+                  })
+                }
+              >
+                {folderId ? "Change folder" : "Use an existing folder"}
+              </button>
+              {folderId && bookId && (
+                <button
+                  disabled={busy || busyCapture}
+                  onClick={() =>
+                    act(async () => {
+                      if (
+                        !window.confirm(
+                          "Move the selected workbook into your StreamLion folder? It will inherit that folder’s sharing settings. Existing project files stay where they are.",
+                        )
+                      )
+                        return;
+                      await moveWorkbookToFolder(bookId);
+                      setStatus("Workbook is in your StreamLion folder.");
+                    })
+                  }
+                >
+                  Move selected workbook here
+                </button>
+              )}
+            </div>
+            <p className="hint">
+              Use the workbook chooser to open an existing Sheet, even if it is
+              already in this folder. Changing folders does not move previous
+              project files.
+            </p>
+          </section>
+        )}
+        {createdWorkbook.current && error && (
+          <p>
+            A workbook was created. Retry Create workbook to finish its setup,
+            or{" "}
+            <a
+              href={`https://docs.google.com/spreadsheets/d/${createdWorkbook.current.spreadsheetId}/edit`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              open it in Google
+            </a>
+            .
+          </p>
+        )}
         {bookId && !connected && (
           <p role="status" className="hint">
             Your workbook is remembered on this device. Reconnect Google to load

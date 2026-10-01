@@ -8,6 +8,7 @@ test("daily cleanup removes expired authorization and old quota rows without tou
   for (const name of [
     "0001_google_sessions.sql",
     "0002_google_request_limits.sql",
+    "0003_google_workspace_folder.sql",
   ])
     sqlite.exec(
       readFileSync(
@@ -17,7 +18,7 @@ test("daily cleanup removes expired authorization and old quota rows without tou
     );
   const now = 200000000;
   const insert = sqlite.prepare(
-    "INSERT INTO streamlion_google_sessions_v1 VALUES (?,?,?,?,?,?)",
+    "INSERT INTO streamlion_google_sessions_v1 (session_hash,google_subject,email,credentials,workbook_id,expires_at) VALUES (?,?,?,?,?,?)",
   );
   insert.run("expired", "a", "a@example.com", "encrypted", "book-a", now);
   insert.run("active", "b", "b@example.com", "encrypted", "book-b", now + 1000);

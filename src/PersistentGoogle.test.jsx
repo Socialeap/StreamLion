@@ -127,6 +127,13 @@ test("a transient startup error can be retried without asking the user to author
         "server-book",
       ),
     );
+    // Connection actions lock navigation until workbook verification finishes.
+    await waitFor(() =>
+      assert.equal(
+        ui.getByRole("button", { name: "Projects", exact: true }).disabled,
+        false,
+      ),
+    );
     fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
     await ui.findByRole("button", { name: "Automatically restored job" });
     cleanup();
