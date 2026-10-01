@@ -1,3 +1,4 @@
+import { measurementText, measurementNeedsReview } from "./measurements.js";
 import { legacyFields, intakeFor } from "./project-schema.js";
 
 // A versioned observation uses the existing workbook headers and revision rules.
@@ -161,7 +162,7 @@ export function beforeLeaving(project, plan, notes) {
     (note) =>
       note.jobId === project.id &&
       note.area !== WORKFLOW_AREA &&
-      (!note.reviewed || note.pendingBookId),
+      (!note.reviewed || note.pendingBookId || measurementNeedsReview(note)),
   );
   if (pending.length)
     items.push({
@@ -247,7 +248,7 @@ export function deliverySummary(project, plan, notes) {
     "Field findings:",
     ...fieldNotes.map(
       (note) =>
-        `- ${note.area}${note.reviewed ? " (reviewed)" : " (needs review)"}${note.pendingBookId ? " — waiting to reach Google" : ""}: ${note.text}${note.sourceText && note.sourceText !== note.text ? `\n  Original wording: ${note.sourceText}` : ""}`,
+        `- ${note.area}${note.reviewed ? " (reviewed)" : " (needs review)"}${note.pendingBookId ? " — waiting to reach Google" : ""}: ${measurementText(note)}${note.sourceText && note.sourceText !== note.text ? `\n  Original wording: ${measurementText({ text: note.sourceText })}` : ""}`,
     ),
     "",
     "Files and references:",
@@ -328,8 +329,8 @@ export function projectContext(project, plan, notes, at) {
       )
       .map((note) => ({
         area: note.area,
-        text: note.text,
-        originalText: note.sourceText || note.text,
+        text: measurementText(note),
+        originalText: measurementText({ text: note.sourceText || note.text }),
         audioOrPhotoLink: note.audioUrl || "",
         waitingForGoogle: !!note.pendingBookId,
       })),

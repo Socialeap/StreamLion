@@ -61,6 +61,7 @@ function ProjectHomeContent({
   initial,
   onEdit,
   onAsk,
+  onMeasurements,
   onBack,
   onNotes,
   onSave,
@@ -518,6 +519,9 @@ function ProjectHomeContent({
               <button className="primary" onClick={() => onNotes("")}>
                 Add a field record
               </button>
+              {onMeasurements && (
+                <button onClick={onMeasurements}>Measurements</button>
+              )}
               <button onClick={onAsk}>Ask about this project</button>
             </div>
             {checklist}
