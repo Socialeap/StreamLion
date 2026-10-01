@@ -7,9 +7,16 @@ import {
   projectDraftKey,
 } from "./drafts";
 import { useEffect, useRef, useState } from "react";
-import { FileText, NotebookPen, Link, MessageCircle } from "lucide-react";
+import {
+  FileText,
+  NotebookPen,
+  Link,
+  MessageCircle,
+  Ruler,
+} from "lucide-react";
 import Jobs from "./Jobs";
 import Notes from "./Notes";
+import Measurements from "./MeasurementCapture.jsx";
 import ProjectEditor from "./ProjectEditor";
 import Connections from "./Connections";
 import ChatGPTPanel from "./ChatGPTPanel";
@@ -713,12 +720,16 @@ export default function App() {
       );
     }
   }
-  async function updateNote(id, text, review) {
+  async function updateNote(id, text, review, expectedText) {
     if (pending.current?.revision.recordId === id)
       throw new Error(
         "Verify this pending Google save before changing its field record. Your current wording is kept.",
       );
     const n = workspace.notes.find((n) => n.id === id);
+    if (!n || (expectedText !== undefined && n.text !== expectedText))
+      throw new Error(
+        "This record changed. Reopen and review the latest version before correcting it.",
+      );
     if (!local.notes.some((note) => note.id === id)) {
       assertSaveDestination(bookId, remote);
       await cloudSave(
@@ -738,9 +749,12 @@ export default function App() {
         ...w,
         notes: w.notes.map((n) =>
           n.id === id
-            ? review
-              ? { ...n, reviewed: true }
-              : reviseNote(n, text, new Date().toISOString())
+            ? {
+                ...(text !== null
+                  ? reviseNote(n, text, new Date().toISOString())
+                  : n),
+                reviewed: !!review,
+              }
             : n,
         ),
       }));
@@ -755,18 +769,26 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/lion.png" width="32" height="32" alt="" aria-hidden="true" />
+          <img
+            src="/lion.png"
+            width="32"
+            height="32"
+            alt=""
+            aria-hidden="true"
+          />
           <span>StreamLion</span>
         </div>
         <nav aria-label="Main">
           {[
             [FileText, "Projects"],
             [NotebookPen, "Field notes"],
+            [Ruler, "Measurements"],
             [MessageCircle, "Ask"],
             [Link, "Connections"],
           ].map(([Icon, label]) => (
             <button
               key={label}
+              aria-label={label}
               disabled={disabled}
               className={page === label ? "active" : ""}
               onClick={() => navigate(label)}
@@ -774,6 +796,8 @@ export default function App() {
                 {
                   Projects: "Find, review, or create a project.",
                   "Field notes": "Record what happened at a site.",
+                  Measurements:
+                    "Dictate or type exact dimensions and organize them by room.",
                   Ask: "Get quick answers from your project or discuss it in your own ChatGPT account.",
                   Connections:
                     "Connect your Google account and choose a workbook.",
@@ -781,7 +805,16 @@ export default function App() {
               }
             >
               <Icon size={20} />
-              {label}
+              {label === "Measurements" ? (
+                <>
+                  <span className="measure-nav-full">Measurements</span>
+                  <span className="measure-nav-short" aria-hidden="true">
+                    Measure
+                  </span>
+                </>
+              ) : (
+                label
+              )}
             </button>
           ))}
         </nav>
@@ -990,6 +1023,7 @@ export default function App() {
             onBack={() => setPage("Projects")}
             onEdit={() => setEditing(active)}
             onAsk={() => setPage("Ask")}
+            onMeasurements={() => setPage("Measurements")}
             onNotes={(area) => {
               setAreaHint({
                 projectId: active.id,
@@ -1001,6 +1035,46 @@ export default function App() {
             onSave={saveWorkflow}
             onRepeat={() => startRepeat(active)}
           />
+        ) : page === "Measurements" ? (
+          <>
+            <label>
+              Project to measure
+              <select
+                value={selected}
+                disabled={disabled}
+                onChange={(e) => setSelected(e.target.value)}
+              >
+                <option value="">Choose a project</option>
+                {workspace.jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {active ? (
+              <Measurements
+                key={`${noteControls.draftScope}:${selected}`}
+                project={active}
+                notes={workspace.notes}
+                scope={noteControls.draftScope}
+                disabled={disabled}
+                onSave={(context, id, base) =>
+                  id
+                    ? updateNote(id, context.text, context.reviewed, base)
+                    : addNote(context)
+                }
+              />
+            ) : (
+              <section className="empty">
+                <h1>Measure a project</h1>
+                <p>
+                  Choose a saved project above. Its rooms and measurements stay
+                  attached to that job.
+                </p>
+              </section>
+            )}
+          </>
         ) : page === "Field notes" ? (
           <>
             {active && (
@@ -1013,6 +1087,12 @@ export default function App() {
                   onClick={() => setPage("Project home")}
                 >
                   Project home
+                </button>
+                <button
+                  disabled={disabled}
+                  onClick={() => setPage("Measurements")}
+                >
+                  Measurements
                 </button>
                 <button disabled={disabled} onClick={() => setPage("Ask")}>
                   Ask about this project

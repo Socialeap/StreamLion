@@ -81,6 +81,39 @@ test("offline Google site copy opens project home and keeps new field notes pinn
   fireEvent.click(ui.getByRole("button", { name: "2. On site" }));
   fireEvent.click(ui.getByRole("button", { name: "Add a field record" }));
   assert.ok(await ui.findByText("10 ft 4 3/32 in"));
+  fireEvent.click(
+    ui.getAllByRole("button", { name: "Measurements", exact: true })[0],
+  );
+  fireEvent.change(ui.getByLabelText("Room or exterior area"), {
+    target: { value: "Office 2" },
+  });
+  fireEvent.change(ui.getByLabelText("Dictate or type measurements"), {
+    target: { value: "Length 10 ft 4 1/32 in. Width 3.05 m." },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Organize measurements" }));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Save unreviewed measurements" }),
+  );
+  await waitFor(async () => {
+    const notes = (await loadWorkspace()).notes;
+    assert.equal(notes.length, 2);
+    assert.equal(notes[1].pendingBookId, "book-a");
+    const measurement = JSON.parse(notes[1].text);
+    assert.equal(measurement.room, "Office 2");
+    assert.equal(measurement.entries[0].display, "10′ 4 1/32″");
+    assert.equal(measurement.entries[1].display, "3.05 m");
+  });
+  cleanup();
+  ui = render(<App />);
+  fireEvent.click(
+    await ui.findByRole("button", { name: "Synthetic site copy" }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "2. On site" }));
+  fireEvent.click(
+    ui.getAllByRole("button", { name: "Measurements", exact: true })[0],
+  );
+  assert.ok(ui.getByRole("heading", { name: "Office 2" }));
+  assert.ok(ui.getByText(/Width: 3.05 m/));
   fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
   window.confirm = () => true;
   fireEvent.click(ui.getByRole("button", { name: "Delete", exact: true }));

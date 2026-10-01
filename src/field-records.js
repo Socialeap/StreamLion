@@ -33,7 +33,7 @@ export function newFieldRecord(context, bookId = "", blob) {
     sourceText: text,
     id,
     createdAt: new Date().toISOString(),
-    reviewed: false,
+    reviewed: context.reviewed === true,
     revisions: [],
     ...(bookId ? { pendingBookId: bookId } : {}),
     ...(blob

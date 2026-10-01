@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
 import { Check, NotebookPen } from "lucide-react";
 import Recorder from "./Recorder";
+import { measurementText, isMeasurementRecord } from "./measurements.js";
 import FieldMedia from "./FieldMedia";
 import { WORKFLOW_AREA, readWorkflow } from "./workflow";
 function Note({ note, onRevise, onReview, captureBusy }) {
@@ -9,6 +10,10 @@ function Note({ note, onRevise, onReview, captureBusy }) {
   const [text, setText] = useState(note.text);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const dimensional = isMeasurementRecord(note);
+  function readable(value) {
+    return measurementText({ text: value, area: note.area });
+  }
   async function action(fn) {
     setBusy(true);
     setError("");
@@ -68,31 +73,37 @@ function Note({ note, onRevise, onReview, captureBusy }) {
         </form>
       ) : (
         <>
-          <p className="note-text">{note.text}</p>
-          <div className="actions">
-            <button
-              disabled={busy || captureBusy}
-              onClick={() => {
-                setText(note.text);
-                setEditing(true);
-              }}
-            >
-              {note.text ? "Correct" : "Add written note"}
-            </button>
-            <button
-              disabled={busy || captureBusy || note.reviewed}
-              onClick={() => action(() => onReview(note.id))}
-            >
-              {note.reviewed ? (
-                <>
-                  <Check size={16} />
-                  Reviewed
-                </>
-              ) : (
-                "Mark reviewed"
-              )}
-            </button>
-          </div>
+          <p className="note-text">{readable(note.text)}</p>
+          {dimensional ? (
+            <p className="hint">
+              Use Measurements to correct or review this batch.
+            </p>
+          ) : (
+            <div className="actions">
+              <button
+                disabled={busy || captureBusy}
+                onClick={() => {
+                  setText(note.text);
+                  setEditing(true);
+                }}
+              >
+                {note.text ? "Correct" : "Add written note"}
+              </button>
+              <button
+                disabled={busy || captureBusy || note.reviewed}
+                onClick={() => action(() => onReview(note.id))}
+              >
+                {note.reviewed ? (
+                  <>
+                    <Check size={16} />
+                    Reviewed
+                  </>
+                ) : (
+                  "Mark reviewed"
+                )}
+              </button>
+            </div>
+          )}
         </>
       )}
       {note.revisions?.length > 0 && (
@@ -100,7 +111,7 @@ function Note({ note, onRevise, onReview, captureBusy }) {
           <summary>{note.revisions.length} earlier version(s)</summary>
           {note.revisions.map((r, i) => (
             <p key={i} className="note-text">
-              {r.text}
+              {readable(r.text)}
             </p>
           ))}
         </details>
@@ -108,7 +119,7 @@ function Note({ note, onRevise, onReview, captureBusy }) {
       {note.sourceText && note.sourceText !== note.text && (
         <details>
           <summary>Original wording</summary>
-          <p className="note-text">{note.sourceText}</p>
+          <p className="note-text">{readable(note.sourceText)}</p>
         </details>
       )}
       {error && (
