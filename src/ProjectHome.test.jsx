@@ -147,3 +147,70 @@ test("verified checklist retry clears only matching local edits and keeps newer 
   cleanup();
 });
 test.after(() => dom.window.close());
+
+test("project folder work holds the parent update gate until the Drive request settles", async () => {
+  const { restoreGoogleSession, disconnectGoogle } =
+    await import("./google.js");
+  const originalFetch = globalThis.fetch;
+  const originalOpen = window.open;
+  let settle;
+  const pending = new Promise((resolve) => {
+    settle = resolve;
+  });
+  const json = (value) => new Response(JSON.stringify(value));
+  globalThis.fetch = async (url) =>
+    url === "/api/google/session"
+      ? json({
+          enabled: true,
+          connected: true,
+          subject: "account",
+          bookId: "book",
+          folderId: "root",
+        })
+      : pending;
+  window.open = () => null;
+  function Host() {
+    const [busy, setBusy] = React.useState(false);
+    return (
+      <>
+        <button disabled={busy}>Update app</button>
+        <ProjectHome
+          project={{ id: "job", title: "Synthetic", reviewState: "draft" }}
+          notes={[]}
+          scope="book"
+          connected={true}
+          onFolderBusy={setBusy}
+        />
+      </>
+    );
+  }
+  try {
+    localStorage.clear();
+    await restoreGoogleSession();
+    const ui = render(<Host />);
+    fireEvent.click(ui.getByRole("button", { name: "Open project folder" }));
+    assert.equal(ui.getByRole("button", { name: "Update app" }).disabled, true);
+    assert.equal(
+      ui.getByRole("button", { name: "Opening folder…" }).disabled,
+      true,
+    );
+    await act(async () => {
+      settle(new Response("", { status: 403 }));
+    });
+    assert.equal(
+      ui.getByRole("button", { name: "Update app" }).disabled,
+      false,
+    );
+    assert.equal(
+      ui.getByRole("button", { name: "Open project folder" }).disabled,
+      false,
+    );
+    assert.match(ui.getByRole("alert").textContent, /folder is unavailable/);
+  } finally {
+    cleanup();
+    disconnectGoogle();
+    globalThis.fetch = originalFetch;
+    window.open = originalOpen;
+    localStorage.clear();
+  }
+});
