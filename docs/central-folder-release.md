@@ -45,3 +45,12 @@ Folder creation reconciles a failed acknowledgement using a reserved Drive ID, a
 Source tests and synthetic browser QA cover routing, account isolation, restoration, reserved-ID retry and narrow mutation validation. Live Google acceptance remains a separate launch gate.
 
 Rollback: deploy the previous approved Pages revision while leaving the additive column and marker intact. Do not rotate credentials or delete Google records as rollback steps.
+
+## Staging receipt — October 1, 2026
+
+- Approved implementation source: `0f8d11483f0c115341c2143193cbd68371438e21`. Both migration markers were absent in the production preflight.
+- Applied committed migration 3 through Wrangler D1 remote file execution: three statements succeeded. Platform bookmark: `00000009-00000006-000050f7-f458d3adab528592ca414104ed5de2b0`.
+- Re-read metadata verified `folder_id TEXT NOT NULL DEFAULT ''`, the exact marker table definition and marker version `1`. No credential rows were inspected and existing sessions were retained.
+- The additive schema is staged. Frontend / Pages Function activation is still pending approved merge and deployment. Do not apply the migration again.
+- Source gates: 117 tests, frontend build, Functions compilation with `nodejs_compat`, and production dependency audit passed. Synthetic desktop and actual 390 × 844 browser layout passed; folder setup, reload restoration, new workbook creation and project-folder navigation were exercised.
+- Production unauthenticated verification remains blocked here by HTTP 403 on `/release.json`; the owner's reported revision and workbook connection are separate evidence. Real Google folder Picker / file placement and physical device acceptance remain NOT RUN.

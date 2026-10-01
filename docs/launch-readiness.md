@@ -40,7 +40,7 @@ Validation receipt: **117 tests passed**; production bundle and Pages Functions 
 ## Central folder follow-up
 
 - Source and synthetic desktop workflow verified: create/select one central folder, remember its ID with the account's session, create new workbooks there, restore it on reload, and isolate project-file folders by workbook and stable project record ID.
-- Migration `0003_google_workspace_folder.sql` must be staged from the committed approved implementation before automatic deployment; the new Pages Function behavior and frontend deployment remain pending merge. Follow [central-folder-release.md](central-folder-release.md). No new secrets or OAuth scopes are required.
+- Migration `0003_google_workspace_folder.sql` is staged and verified in production (folder column plus marker version `1`). The new Pages Function behavior and frontend deployment remain pending approved merge. Follow [central-folder-release.md](central-folder-release.md). No new secrets or OAuth scopes are required.
 - Existing workbook relocation is an explicit action with a sharing reminder. Existing attachments are not moved. Folder membership does not authorize access to all child workbooks: select each existing workbook through Picker.
 - Live folder Picker, Google file placement, restored selection and phone behavior are NOT RUN for this follow-up. Synthetic browser checks are not production proof.
 
