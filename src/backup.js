@@ -2,6 +2,7 @@ import { openLocalDatabase } from "./storage.js";
 import { assertWorkspace, emptyWorkspace } from "./model.js";
 import { TABS, validateRevision } from "./workbook.js";
 import { PROJECT_FIELDS } from "./project-schema.js";
+import { validateWorkflow } from "./workflow.js";
 
 export const BACKUP_LIMIT = 100 * 1024 * 1024;
 const draftPrefix = "streamlion-draft-v1:";
@@ -65,6 +66,16 @@ function validateDraft(entry) {
           value.clarifyingIssue >= value.issues.length))
     )
       throw new Error("Invalid backup measurement draft.");
+  } else if (type === "checklist") {
+    if (!object(value.plan) || typeof value.base !== "string")
+      throw new Error("Invalid backup checklist draft.");
+    try {
+      // Check the shape without requiring an unfinished plan to be saveable.
+      validateWorkflow(value.plan, { draft: true });
+      if (value.base) validateWorkflow(parseBackupJSON(value.base));
+    } catch {
+      throw new Error("Invalid backup checklist draft.");
+    }
   } else if (type === "pending-write") {
     if (!TABS[value.tab] || typeof value.signature !== "string")
       throw new Error("Invalid backup pending save.");
@@ -164,7 +175,7 @@ function validatePayload(payload) {
       throw new Error("Invalid backup draft.");
     if (entry.key.startsWith(draftPrefix)) {
       if (
-        !/^streamlion-draft-v1:(local|[\w-]{1,100}):(?:(?:project|note|measurements):[\w-]{1,100}|pending-write)$/.test(
+        !/^streamlion-draft-v1:(local|[\w-]{1,100}):(?:(?:project|note|measurements|checklist):[\w-]{1,100}|pending-write)$/.test(
           entry.key,
         )
       )
