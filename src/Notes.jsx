@@ -12,7 +12,7 @@ function Note({ note, onRevise, onReview, captureBusy }) {
   const [busy, setBusy] = useState(false);
   const dimensional = isMeasurementRecord(note);
   function readable(value) {
-    return measurementText({ text: value, area: note.area });
+    return measurementText(value === note.text ? note : { text: value });
   }
   async function action(fn) {
     setBusy(true);

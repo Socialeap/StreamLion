@@ -21,6 +21,60 @@ const { render, fireEvent, act, cleanup } =
   await import("@testing-library/react");
 const { default: Notes } = await import("./Notes.jsx");
 const { writeDraft } = await import("./drafts.js");
+test("a prose note in a Measurements area keeps correction and review controls", async () => {
+  localStorage.clear();
+  let revised, reviewed;
+  const ui = render(
+    <Notes
+      workspace={{
+        jobs: [{ id: "A", title: "Kitchen job" }],
+        notes: [
+          {
+            id: "prose",
+            jobId: "A",
+            area: "Measurements · Kitchen",
+            text: "Check the rear wall after the cabinet moves.",
+            reviewed: false,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }}
+      selected="A"
+      onSelect={() => {}}
+      onAdd={async () => {}}
+      onAudio={() => {}}
+      onRevise={async (id, text) => {
+        revised = { id, text };
+      }}
+      onReview={async (id) => {
+        reviewed = id;
+      }}
+      onCaptureBusy={() => {}}
+      captureBusy={false}
+    />,
+  );
+  assert.ok(ui.getByText("Check the rear wall after the cabinet moves."));
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "Mark reviewed", exact: true }),
+    ),
+  );
+  assert.equal(reviewed, "prose");
+  fireEvent.click(ui.getByRole("button", { name: "Correct", exact: true }));
+  fireEvent.change(ui.getByLabelText("Corrected note"), {
+    target: { value: "Cabinet moved; remeasure the wall." },
+  });
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "Save correction", exact: true }),
+    ),
+  );
+  assert.deepEqual(revised, {
+    id: "prose",
+    text: "Cabinet moved; remeasure the wall.",
+  });
+  cleanup();
+});
 test("draft follows its original project across switches and remounts", async () => {
   localStorage.clear();
   let saved;

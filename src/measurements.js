@@ -1,6 +1,16 @@
 // Exact, bounded text parsing. Speech-to-text is supplied by the device keyboard.
 // Never infer a missing unit, room boundary, direction, or geometric area.
 export const MEASUREMENT_KIND = "streamlion.measurements";
+const metricUnitNames =
+  "millimeters|millimetres|millimeter|millimetre|centimeters|centimetres|centimeter|centimetre|meters|metres|meter|metre";
+const metricUnits = `${metricUnitNames}|mm|cm|m`;
+const singleUnitPattern = new RegExp(
+  `^(.*?)\\s*(inches|inch|in|${metricUnits})$`,
+);
+const descriptionUnitPattern = new RegExp(
+  `\\b(?:feet|foot|ft|inches|inch|mm|cm|${metricUnitNames})\\b|[′″]`,
+  "i",
+);
 const labels = {
   l: "Length",
   length: "Length",
@@ -216,10 +226,7 @@ function parseValue(raw) {
     if (!amount.n) throw new Error("Check the zero reading.");
     return { amount, baseUnit: "in", display: `${mixed(f)}′ ${mixed(inch)}″` };
   }
-  const single =
-    /^(.*?)\s*(inches|inch|in|millimeters|millimetres|millimeter|millimetre|mm|centimeters|centimetres|centimeter|centimetre|cm|meters|metres|meter|metre|m)$/.exec(
-      value,
-    );
+  const single = singleUnitPattern.exec(value);
   if (!single)
     throw new Error(
       "Add explicit units: feet/inches, mm, cm, or m. Nothing was guessed.",
@@ -313,9 +320,7 @@ export function parseMeasurements(raw, previous = []) {
             .replace(/^\(|\)$/g, "")
         : "";
       if (
-        /\b(?:feet|foot|ft|inches|inch|mm|cm|meters|metres)\b|[′″]/i.test(
-          detail,
-        ) ||
+        descriptionUnitPattern.test(detail) ||
         /\b\d+(?:\.\d+)?(?:\s+\d+\/\d+)?\s+(?:in|m|feet|inches)\b/i.test(
           normalizeReading(detail),
         )
@@ -435,11 +440,22 @@ export function measurementSet(value) {
   return value;
 }
 export function isMeasurementRecord(note) {
+  // Area names are user-entered. Only a payload marker establishes its type.
+  // Retained originals identify genuine records whose current JSON was damaged.
   return (
-    !!note.area?.startsWith("Measurements · ") ||
-    (!!note.text?.trimStart().startsWith("{") &&
-      note.text.includes(MEASUREMENT_KIND))
+    hasMeasurementMarker(note.text) ||
+    hasMeasurementMarker(note.sourceText) ||
+    !!note.revisions?.some((revision) => hasMeasurementMarker(revision.text))
   );
+}
+function hasMeasurementMarker(text) {
+  if (typeof text !== "string" || !text.trimStart().startsWith("{"))
+    return false;
+  try {
+    return JSON.parse(text)?.kind === MEASUREMENT_KIND;
+  } catch {
+    return /"kind"\s*:\s*"streamlion\.measurements"/.test(text);
+  }
 }
 export function readMeasurement(note) {
   if (!isMeasurementRecord(note)) return null;

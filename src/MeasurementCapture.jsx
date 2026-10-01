@@ -18,6 +18,7 @@ const empty = () => ({
   entries: [],
   issues: [],
   checked: false,
+  clarifyingIssue: null,
   enteredAt: new Date().toISOString(),
   editingId: null,
   base: "",
@@ -70,7 +71,8 @@ export default function Measurements({
     try {
       if (!draft.room.trim())
         throw new Error("Choose a room or exterior area first.");
-      if (/^undo last entry[.!]?$/i.test(input.trim())) {
+      const clarifying = draft.clarifyingIssue != null;
+      if (!clarifying && /^undo last entry[.!]?$/i.test(input.trim())) {
         if (!draft.entries.length)
           throw new Error("There is no unsaved entry to undo.");
         retain(
@@ -86,7 +88,7 @@ export default function Measurements({
         /^change (?:the )?(length|width|height|ceiling|depth|segment|diagonal)\s+(?:to\s+)?(.+?)[.!]?$/i.exec(
           input.trim(),
         );
-      if (change) {
+      if (change && !clarifying) {
         const targets = draft.entries.filter(
           (e) => e.label.toLowerCase() === change[1].toLowerCase(),
         );
@@ -117,6 +119,10 @@ export default function Measurements({
         return;
       }
       const parsed = parseMeasurements(input, draft.entries);
+      if (clarifying && (parsed.issues.length || !parsed.entries.length))
+        throw new Error(
+          parsed.issues[0]?.message || "Organize a valid replacement first.",
+        );
       if (draft.entries.length + parsed.entries.length > 24)
         throw new Error(
           "Save this batch before adding more measurements (up to 24 per batch).",
@@ -129,7 +135,10 @@ export default function Measurements({
           ...draft,
           raw,
           entries: [...draft.entries, ...parsed.entries],
-          issues: [...draft.issues, ...parsed.issues],
+          issues: clarifying
+            ? draft.issues.filter((_, index) => index !== draft.clarifyingIssue)
+            : [...draft.issues, ...parsed.issues],
+          clarifyingIssue: null,
           checked: false,
         },
         "",
@@ -341,6 +350,12 @@ export default function Measurements({
             placeholder="Length 12 feet 4 3/8 inches. Width 10 feet 6 inches. Ceiling 8 feet 9 inches to underside of beam."
           />
         </label>
+        {draft.clarifyingIssue != null && (
+          <p className="hint">
+            The unclear original stays flagged until a valid replacement is
+            organized.
+          </p>
+        )}
         <div className="actions">
           <button
             className="primary"
@@ -450,7 +465,7 @@ export default function Measurements({
                 retain(
                   {
                     ...draft,
-                    issues: draft.issues.filter((_, index) => index !== i),
+                    clarifyingIssue: i,
                     checked: false,
                   },
                   issue.raw,

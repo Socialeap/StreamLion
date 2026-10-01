@@ -8,6 +8,7 @@ import {
   connectedTotals,
   readMeasurement,
   measurementNeedsReview,
+  isMeasurementRecord,
 } from "./measurements.js";
 import { projectContext, readWorkflow, deliverySummary } from "./workflow.js";
 import { newFieldRecord } from "./field-records.js";
@@ -20,6 +21,64 @@ const makeSet = (raw) => ({
   enteredAt: "2026-09-30T12:00:00Z",
   raw,
   ...parseMeasurements(raw),
+});
+
+test("every accepted full metric spelling exposes an extra dimension in descriptions", () => {
+  for (const unit of [
+    "millimeter",
+    "millimeters",
+    "millimetre",
+    "millimetres",
+    "centimeter",
+    "centimeters",
+    "centimetre",
+    "centimetres",
+    "meter",
+    "meters",
+    "metre",
+    "metres",
+    "mm",
+    "cm",
+    "m",
+  ]) {
+    assert.equal(parseMeasurements(`Length 6 ${unit}`).issues.length, 0, unit);
+    for (const amount of ["6", "six"]) {
+      const parsed = parseMeasurements(`Length 12 ft then ${amount} ${unit}`);
+      assert.equal(parsed.entries.length, 0, `${amount} ${unit}`);
+      assert.match(parsed.issues[0].message, /Another dimension/, unit);
+    }
+  }
+  assert.equal(
+    parseMeasurements("Length 12 ft to wall in office").issues.length,
+    0,
+  );
+});
+
+test("area prefixes do not classify prose while genuine malformed payloads remain flagged", () => {
+  for (const text of [
+    "Check the tape reading again.",
+    "A streamlion.measurements note is not an organized batch.",
+    JSON.stringify({ description: MEASUREMENT_KIND }),
+  ]) {
+    const note = { area: "Measurements · Kitchen", text };
+    assert.equal(isMeasurementRecord(note), false);
+    assert.equal(readMeasurement(note), null);
+    assert.equal(measurementText(note), text);
+    assert.equal(measurementNeedsReview(note), false);
+  }
+  const damaged = {
+    area: "Kitchen",
+    text: '{"kind":"streamlion.measurements","version":1,',
+  };
+  assert.equal(isMeasurementRecord(damaged), true);
+  assert.throws(() => readMeasurement(damaged), /Unreadable/);
+  assert.equal(measurementNeedsReview(damaged), true);
+  const overwritten = {
+    text: "Accidentally replaced the JSON",
+    sourceText: JSON.stringify(makeSet("Width 10 ft")),
+  };
+  assert.equal(isMeasurementRecord(overwritten), true);
+  assert.equal(measurementNeedsReview(overwritten), true);
 });
 
 test("dictated imperial batches retain exact fractions, descriptions and originals", () => {

@@ -183,3 +183,60 @@ test("saved corrections retain their expected base and changed records block sta
   );
   cleanup();
 });
+
+test("clearing or invalidating a clarification keeps review blocked across reload until valid replacement", async () => {
+  localStorage.clear();
+  let saved;
+  const props = {
+    project,
+    notes: [],
+    scope: "local",
+    onSave: async (context) => {
+      saved = context;
+    },
+  };
+  let ui = render(<Measurements {...props} />);
+  fireEvent.change(ui.getByLabelText("Room or exterior area"), {
+    target: { value: "Kitchen" },
+  });
+  dictate(ui, "Width 10 ft. Height 8.");
+  fireEvent.click(ui.getByRole("button", { name: "Correct this wording" }));
+  fireEvent.change(ui.getByLabelText("Dictate or type measurements"), {
+    target: { value: "" },
+  });
+  assert.ok(ui.getByText("Needs clarification"));
+  assert.equal(
+    ui.getByLabelText("I checked these readings against the tape.").disabled,
+    true,
+  );
+  cleanup();
+  ui = render(<Measurements {...props} />);
+  assert.ok(ui.getByText("Needs clarification"));
+  assert.equal(
+    ui.getByLabelText("I checked these readings against the tape.").disabled,
+    true,
+  );
+  dictate(ui, "Height eight");
+  assert.ok(ui.getByText("Needs clarification"));
+  assert.ok(ui.getByRole("alert"));
+  assert.equal(
+    ui.getByLabelText("I checked these readings against the tape.").disabled,
+    true,
+  );
+  dictate(ui, "Height eight feet");
+  assert.equal(ui.queryByText("Needs clarification"), null);
+  assert.ok(ui.getByText("Width: 10′ 0″"));
+  assert.ok(ui.getByText("Height: 8′ 0″"));
+  fireEvent.click(
+    ui.getByLabelText("I checked these readings against the tape."),
+  );
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "Save reviewed measurements" }),
+    ),
+  );
+  assert.equal(saved.reviewed, true);
+  assert.equal(JSON.parse(saved.text).issues.length, 0);
+  assert.ok(JSON.parse(saved.text).raw.includes("Height 8"));
+  cleanup();
+});
