@@ -34,11 +34,12 @@ const json = (value) =>
   new Response(JSON.stringify(value), {
     headers: { "Content-Type": "application/json" },
   });
-function workbookFetch(paths) {
+function workbookFetch(paths, reviewState = "draft") {
   const project = makeRevision(
     validateFields({ title: "Automatically restored job", city: "Brooklyn" }),
     null,
     "saved-project",
+    reviewState,
   );
   return async (url, options = {}) => {
     paths.push(url);
@@ -138,6 +139,32 @@ test("a remembered Google project reopens after its workbook has been verified",
   try {
     const ui = render(<App />);
     await ui.findByRole("heading", { name: "Automatically restored job" });
+    cleanup();
+  } finally {
+    globalThis.fetch = original;
+    disconnectGoogle();
+    localStorage.clear();
+  }
+});
+test("a remembered archived project leaves the restored workbook on the Projects list", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = workbookFetch([], "archived");
+  localStorage.setItem("streamlion-last-project:server-book", "saved-project");
+  try {
+    const ui = render(<App />);
+    await ui.findByRole("button", { name: "Refresh from Google" });
+    assert.ok(ui.getByRole("heading", { name: "Projects", exact: true }));
+    assert.equal(
+      ui.queryByRole("heading", { name: "Connections", exact: true }),
+      null,
+    );
+    assert.equal(
+      ui.queryByRole("heading", {
+        name: "Automatically restored job",
+        exact: true,
+      }),
+      null,
+    );
     cleanup();
   } finally {
     globalThis.fetch = original;
