@@ -6,8 +6,12 @@ export const navigationFallbackDenylist = [
   /^\/mcp(?:[/?]|$)/,
   /^\/privacy\.html(?:\?|$)/,
   /^\/release\.json(?:\?|$)/,
+  /^\/welcome(?:\.html)?(?:[/?]|$)/,
 ];
 export default defineConfig({
+  build: {
+    rollupOptions: { input: { app: "index.html", welcome: "welcome.html" } },
+  },
   define: {
     __STREAMLION_REVISION__: JSON.stringify(
       process.env.CF_PAGES_COMMIT_SHA || "development",
