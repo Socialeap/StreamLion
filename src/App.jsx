@@ -318,7 +318,9 @@ export default function App() {
           !navigation.current.selected &&
           data.Projects.some(
             (project) =>
-              project.recordId === savedProject && !project.deletedAt,
+              project.recordId === savedProject &&
+              project.reviewState !== "archived" &&
+              !project.deletedAt,
           )
         ) {
           setSelected(savedProject);
