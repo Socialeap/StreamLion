@@ -8,6 +8,7 @@ const db = () =>
       database.createObjectStore("audio");
     },
   });
+export const openLocalDatabase = db;
 export async function loadWorkspace() {
   return assertWorkspace(
     (await (await db()).get("workspace", "current")) || emptyWorkspace(),

@@ -18,6 +18,15 @@ function fixture() {
       "utf8",
     ),
   );
+  db.exec(
+    readFileSync(
+      new URL(
+        "../../migrations/0002_google_request_limits.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   const wrap = (sql, values = []) => ({
     bind: (...args) => wrap(sql, args),
     first: async () => db.prepare(sql).get(...values) || null,
@@ -112,6 +121,42 @@ test("vault encryption binds ciphertext to its session and never stores plaintex
     "synthetic-refresh",
   );
   await assert.rejects(unseal(env, row.credentials, "different-session"));
+});
+
+test("sign-in attempts are limited across requests without storing a raw network address or issuing another authorization cookie", async (t) => {
+  t.mock.method(Date, "now", () => 120000);
+  const { env, db } = fixture();
+  async function start() {
+    return handleGoogle({
+      env,
+      params: { path: ["start"] },
+      request: new Request("https://app.example/api/google/start", {
+        headers: { "CF-Connecting-IP": "192.0.2.123" },
+      }),
+    });
+  }
+  for (let count = 0; count < 5; count++)
+    assert.equal((await start()).status, 303);
+  const limited = await start();
+  assert.equal(limited.status, 429);
+  assert.ok(Number(limited.headers.get("Retry-After")) >= 1);
+  assert.equal(limited.headers.has("Set-Cookie"), false);
+  const scopes = db
+    .prepare("SELECT scope FROM streamlion_google_request_limits_v1")
+    .all();
+  assert.equal(JSON.stringify(scopes).includes("192.0.2.123"), false);
+  assert.equal(
+    JSON.stringify(scopes).includes(env.GOOGLE_TOKEN_ENCRYPTION_KEY),
+    false,
+  );
+  assert.equal(
+    db
+      .prepare(
+        "SELECT used FROM streamlion_google_request_limits_v1 WHERE scope='project:signin:start'",
+      )
+      .get().used,
+    5,
+  );
 });
 
 test("OAuth start uses PKCE, offline access, fixed callback and secure short-lived flow cookie", async () => {
@@ -458,4 +503,76 @@ test("persistent mode fails closed when configuration is missing", async () => {
     enabled: false,
     connected: false,
   });
+});
+test("expired sessions are removed on lookup and malformed or oversized selections never call Google", async () => {
+  const f = fixture();
+  const id = await f.session();
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("Google must not be called");
+  };
+  try {
+    assert.equal(
+      (await f.request("workbook", { cookie: id, method: "POST", body: "{" }))
+        .status,
+      400,
+    );
+    assert.equal(
+      (
+        await f.request("workbook", {
+          cookie: id,
+          method: "POST",
+          body: "x".repeat(4097),
+        })
+      ).status,
+      413,
+    );
+    f.db
+      .prepare("UPDATE streamlion_google_sessions_v1 SET expires_at = 0")
+      .run();
+    assert.equal(
+      (await (await f.request("session", { cookie: id })).json()).connected,
+      false,
+    );
+    assert.equal(
+      f.db
+        .prepare("SELECT COUNT(*) AS count FROM streamlion_google_sessions_v1")
+        .get().count,
+      0,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test("workbook selection shares the project quota and preserves the previous destination on rejection", async () => {
+  const f = fixture();
+  const id = await f.session();
+  const window = Math.floor(Date.now() / 60000) * 60000;
+  f.db
+    .prepare("INSERT INTO streamlion_google_request_limits_v1 VALUES (?,?,?)")
+    .run("project:read", window, 200);
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response("{}");
+  };
+  try {
+    const response = await f.request("workbook", {
+      cookie: id,
+      method: "POST",
+      body: JSON.stringify({ bookId: "another-book" }),
+    });
+    assert.equal(response.status, 429);
+    assert.ok(Number(response.headers.get("Retry-After")) > 0);
+    assert.equal(calls, 0);
+    assert.equal(
+      f.db
+        .prepare("SELECT workbook_id FROM streamlion_google_sessions_v1")
+        .get().workbook_id,
+      "book-a",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });

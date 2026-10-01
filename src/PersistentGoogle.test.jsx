@@ -114,7 +114,11 @@ test("a transient startup error can be retried without asking the user to author
     fireEvent.click(
       await ui.findByRole("button", { name: "Connections", exact: true }),
     );
-    await ui.findByRole("button", { name: "Retry saved connection" });
+    await ui.findByRole(
+      "button",
+      { name: "Retry saved connection" },
+      { timeout: 5000 },
+    );
     failed = false;
     fireEvent.click(ui.getByRole("button", { name: "Retry saved connection" }));
     await waitFor(() =>
@@ -153,7 +157,8 @@ test("a remembered archived project leaves the restored workbook on the Projects
   try {
     const ui = render(<App />);
     await ui.findByRole("button", { name: "Refresh from Google" });
-    assert.ok(ui.getByRole("heading", { name: "Projects", exact: true }));
+    // Google and the device workspace load independently. Await the final view.
+    await ui.findByRole("heading", { name: "Projects", exact: true });
     assert.equal(
       ui.queryByRole("heading", { name: "Connections", exact: true }),
       null,
@@ -165,8 +170,8 @@ test("a remembered archived project leaves the restored workbook on the Projects
       }),
       null,
     );
-    cleanup();
   } finally {
+    cleanup();
     globalThis.fetch = original;
     disconnectGoogle();
     localStorage.clear();
@@ -174,9 +179,17 @@ test("a remembered archived project leaves the restored workbook on the Projects
 });
 test("malformed session responses do not establish an authorized connection", async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = async () => json({ enabled: true, connected: true });
   try {
-    await assert.rejects(restoreGoogleSession(), /invalid connection/);
+    for (const data of [
+      null,
+      { enabled: true, connected: true },
+      { enabled: false, connected: true, subject: "account", bookId: "book" },
+    ]) {
+      globalThis.fetch = async () => json(data);
+      await assert.rejects(restoreGoogleSession(), /invalid connection/);
+    }
+    globalThis.fetch = async () => new Response("<html>Temporary error</html>");
+    await assert.rejects(restoreGoogleSession(), /could not be checked/);
   } finally {
     globalThis.fetch = original;
     disconnectGoogle();

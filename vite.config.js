@@ -2,8 +2,26 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 export default defineConfig({
+  define: {
+    __STREAMLION_REVISION__: JSON.stringify(
+      process.env.CF_PAGES_COMMIT_SHA || "development",
+    ),
+  },
   plugins: [
     react(),
+    {
+      name: "streamlion-release-stamp",
+      generateBundle() {
+        this.emitFile({
+          type: "asset",
+          fileName: "release.json",
+          source: JSON.stringify({
+            service: "streamlion",
+            revision: process.env.CF_PAGES_COMMIT_SHA || "development",
+          }),
+        });
+      },
+    },
     VitePWA({
       registerType: "prompt",
       manifest: {

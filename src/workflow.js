@@ -20,7 +20,8 @@ export function scopeSignature(project) {
   return String(hash >>> 0);
 }
 
-export function validateWorkflow(value) {
+export function validateWorkflow(value, { draft = false } = {}) {
+  // Backups preserve unfinished wording; saving still requires complete details.
   if (
     !value ||
     value.kind !== KIND ||
@@ -41,13 +42,12 @@ export function validateWorkflow(value) {
       !/^[\w-]{1,100}$/.test(item.id) ||
       ids.has(item.id) ||
       typeof item.label !== "string" ||
-      !item.label.trim() ||
-      item.label.length > 500 ||
+      (!draft && (!item.label.trim() || item.label.length > 500)) ||
       typeof item.area !== "string" ||
-      item.area.length > 200 ||
+      (!draft && item.area.length > 200) ||
       !STATES.includes(item.state) ||
       typeof item.reason !== "string" ||
-      item.reason.length > 1000 ||
+      (!draft && item.reason.length > 1000) ||
       !Array.isArray(item.evidence) ||
       item.evidence.length > 20 ||
       item.evidence.some(
@@ -57,7 +57,11 @@ export function validateWorkflow(value) {
       throw new Error(
         "Check the requirement, area, and evidence before saving.",
       );
-    if (["blocked", "not-needed"].includes(item.state) && !item.reason.trim())
+    if (
+      !draft &&
+      ["blocked", "not-needed"].includes(item.state) &&
+      !item.reason.trim()
+    )
       throw new Error("Explain why this requirement is blocked or not needed.");
     ids.add(item.id);
   }
@@ -70,10 +74,10 @@ export function validateWorkflow(value) {
   ])
     if (
       typeof value[key] !== "string" ||
-      value[key].length > (key === "siteLessons" ? 2000 : 200)
+      (!draft && value[key].length > (key === "siteLessons" ? 2000 : 200))
     )
       throw new Error("Invalid checklist details.");
-  if (JSON.stringify(value).length > 11500)
+  if (!draft && JSON.stringify(value).length > 11500)
     throw new Error(
       "This checklist is full. Shorten the descriptions before saving; nothing has been discarded.",
     );

@@ -236,3 +236,38 @@ for (const tab of ["Projects", "Observations"]) {
     disconnectGoogle();
   });
 }
+test("concurrent workbook reads share one request pair and subsequent reads fetch fresh data", async () => {
+  const tables = { Projects: [PROJECT_HEADERS], Observations: [NOTE_HEADERS] };
+  let reads = 0;
+  globalThis.fetch = async (url) => {
+    reads++;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    return {
+      ok: true,
+      json: async () =>
+        url.includes("values:batchGet")
+          ? { valueRanges: Object.values(tables).map((values) => ({ values })) }
+          : {
+              sheets: Object.keys(tables).map((title) => ({
+                properties: { title, gridProperties: { rowCount: 1000 } },
+              })),
+            },
+    };
+  };
+  await connectGoogle("test.apps.googleusercontent.com");
+  await Promise.all([
+    readWorkbook("book"),
+    readWorkbook("book"),
+    readWorkbook("book"),
+  ]);
+  assert.equal(reads, 2);
+  tables.Projects.push(
+    rowFor(
+      makeRevision(validateFields({ title: "Newly saved" }), null, "fresh-job"),
+      PROJECT_HEADERS,
+    ),
+  );
+  assert.equal((await readWorkbook("book")).Projects[0].title, "Newly saved");
+  assert.equal(reads, 4);
+  disconnectGoogle();
+});

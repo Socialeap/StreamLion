@@ -1,3 +1,4 @@
+import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
 const SESSION = "__Host-streamlion-session";
 const FLOW = "__Host-streamlion-oauth";
 const SCOPE = "openid email https://www.googleapis.com/auth/drive.file";
@@ -27,15 +28,22 @@ function origin(env) {
     throw new Error("configuration");
   return url.origin;
 }
-function configured(env) {
-  return (
+export function googleConfigurationReady(env) {
+  if (!(
     env.ENABLE_PERSISTENT_GOOGLE === "true" &&
     env.GOOGLE_SESSIONS &&
     env.GOOGLE_CLIENT_SECRET &&
     env.GOOGLE_TOKEN_ENCRYPTION_KEY &&
     env.VITE_GOOGLE_CLIENT_ID &&
     env.GOOGLE_AUTH_ORIGIN
-  );
+  ))
+    return false;
+  try {
+    origin(env);
+    return unb64(env.GOOGLE_TOKEN_ENCRYPTION_KEY).length === 32;
+  } catch {
+    return false;
+  }
 }
 async function key(env) {
   const bytes = unb64(env.GOOGLE_TOKEN_ENCRYPTION_KEY);
@@ -106,10 +114,18 @@ async function getSession(request, env) {
   const id = cookie(request, SESSION);
   if (!/^[A-Za-z0-9_-]{43}$/.test(id)) return null;
   const row = await env.GOOGLE_SESSIONS.prepare(
-    "SELECT * FROM streamlion_google_sessions_v1 WHERE session_hash = ? AND expires_at > ?",
+    "SELECT * FROM streamlion_google_sessions_v1 WHERE session_hash = ?",
   )
-    .bind(await hash(id), Date.now())
+    .bind(await hash(id))
     .first();
+  if (row && row.expires_at <= Date.now()) {
+    await env.GOOGLE_SESSIONS.prepare(
+      "DELETE FROM streamlion_google_sessions_v1 WHERE session_hash = ? AND expires_at <= ?",
+    )
+      .bind(row.session_hash, Date.now())
+      .run();
+    return null;
+  }
   return row;
 }
 function googleFetch(url, options) {
@@ -212,7 +228,7 @@ export function upstreamURL(service, path, method) {
   if (url.origin !== new URL(root).origin) throw new Error("bad_request");
   return url;
 }
-async function limitedBody(request) {
+async function limitedBody(request, limit = 6 * 1024 * 1024) {
   const reader = request.body?.getReader();
   if (!reader) return undefined;
   const chunks = [];
@@ -222,7 +238,7 @@ async function limitedBody(request) {
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 6 * 1024 * 1024) {
+      if (size > limit) {
         await reader.cancel();
         throw new Error("too_large");
       }
@@ -246,7 +262,7 @@ export async function handleGoogle({ request, env, params }) {
     return route === "session"
       ? json({ enabled: false, connected: false })
       : json({ error: "Persistent connection is not enabled." }, 503);
-  if (!configured(env))
+  if (!googleConfigurationReady(env))
     return json({ error: "Google connection setup is incomplete." }, 503);
   try {
     if (url.origin !== origin(env))
@@ -256,6 +272,30 @@ export async function handleGoogle({ request, env, params }) {
       );
     if (request.method !== "GET" && !sameOrigin(request, env))
       return json({ error: "Request origin rejected." }, 403);
+    if (
+      (route === "start" || route === "callback") &&
+      request.method === "GET"
+    ) {
+      // Cloudflare supplies this header. Keep only a keyed hash, never raw IPs.
+      const identity = await hash(
+        `signin:${env.GOOGLE_TOKEN_ENCRYPTION_KEY}:${request.headers.get("CF-Connecting-IP") || "unknown"}`,
+      );
+      const capacity = await reserveSignIn(
+        env.GOOGLE_SESSIONS,
+        identity,
+        route,
+      );
+      if (!capacity.allowed) {
+        const limited = json(
+          {
+            error: "Too many sign-in attempts. Wait a minute, then try again.",
+          },
+          429,
+        );
+        limited.headers.set("Retry-After", String(capacity.retryAfter));
+        return limited;
+      }
+    }
     if (route === "start" && request.method === "GET") {
       const stamp = await env.GOOGLE_SESSIONS.prepare(
         "SELECT version FROM streamlion_auth_schema_v1 WHERE version = 1",
@@ -407,9 +447,31 @@ export async function handleGoogle({ request, env, params }) {
       return response;
     }
     if (route === "workbook" && request.method === "POST") {
-      const { bookId } = await request.json();
+      const body = await limitedBody(request, 4096);
+      let bookId;
+      try {
+        ({ bookId } = JSON.parse(decoder.decode(body)));
+      } catch {
+        throw new Error("bad_request");
+      }
       if (!/^[\w-]+$/.test(bookId || ""))
         return json({ error: "Invalid workbook." }, 400);
+      const capacity = await reserveGoogleRequest(
+        env.GOOGLE_SESSIONS,
+        row.google_subject,
+        "GET",
+      );
+      if (!capacity.allowed) {
+        const limited = json(
+          {
+            error:
+              "Google is busy. Wait a moment, then retry choosing your workbook.",
+          },
+          429,
+        );
+        limited.headers.set("Retry-After", String(capacity.retryAfter));
+        return limited;
+      }
       const check = await googleFetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${bookId}?fields=spreadsheetId`,
         {
@@ -447,6 +509,22 @@ export async function handleGoogle({ request, env, params }) {
         request.method === "POST" ? await limitedBody(request) : undefined;
       if (body?.byteLength > 6 * 1024 * 1024)
         return json({ error: "File too large." }, 413);
+      const capacity = await reserveGoogleRequest(
+        env.GOOGLE_SESSIONS,
+        row.google_subject,
+        request.method,
+      );
+      if (!capacity.allowed) {
+        const limited = json(
+          {
+            error:
+              "Google is busy. Your draft is kept. Wait a moment, then retry.",
+          },
+          429,
+        );
+        limited.headers.set("Retry-After", String(capacity.retryAfter));
+        return limited;
+      }
       const response = await googleFetch(target, {
         method: request.method,
         headers: {
@@ -464,6 +542,9 @@ export async function handleGoogle({ request, env, params }) {
           ...headers,
           "Content-Type":
             response.headers.get("Content-Type") || "application/octet-stream",
+          ...(response.headers.has("Retry-After")
+            ? { "Retry-After": response.headers.get("Retry-After") }
+            : {}),
         },
       });
     }
@@ -484,7 +565,9 @@ export async function handleGoogle({ request, env, params }) {
             ? "Reconnect Google to continue."
             : status === 400
               ? "Invalid Google request."
-              : "Google is temporarily unavailable. Your connection and drafts are preserved. Retry shortly.",
+              : status === 413
+                ? "This request is too large. Keep the original file and use a smaller attachment."
+                : "Google is temporarily unavailable. Your connection and drafts are preserved. Retry shortly.",
       },
       status,
     );
