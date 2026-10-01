@@ -157,7 +157,8 @@ test("a remembered archived project leaves the restored workbook on the Projects
   try {
     const ui = render(<App />);
     await ui.findByRole("button", { name: "Refresh from Google" });
-    assert.ok(ui.getByRole("heading", { name: "Projects", exact: true }));
+    // Google and the device workspace load independently. Await the final view.
+    await ui.findByRole("heading", { name: "Projects", exact: true });
     assert.equal(
       ui.queryByRole("heading", { name: "Connections", exact: true }),
       null,
@@ -169,8 +170,8 @@ test("a remembered archived project leaves the restored workbook on the Projects
       }),
       null,
     );
-    cleanup();
   } finally {
+    cleanup();
     globalThis.fetch = original;
     disconnectGoogle();
     localStorage.clear();
