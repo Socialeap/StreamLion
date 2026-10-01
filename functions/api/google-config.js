@@ -7,6 +7,9 @@ export function onRequestGet({ env }) {
     clientId: env.VITE_GOOGLE_CLIENT_ID || "",
     apiKey: env.VITE_GOOGLE_PICKER_API_KEY || "",
     appId: env.VITE_GOOGLE_PROJECT_NUMBER || "",
+    ...(env.ENABLE_PERSISTENT_GOOGLE === "true"
+      ? { persistentEnabled: true }
+      : {}),
   };
 
   return new Response(JSON.stringify(config), {

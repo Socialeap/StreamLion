@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   connectGoogle,
-  disconnectGoogle,
+  forgetGoogleConnection,
+  startPersistentGoogle,
+  googleAccount,
   createWorkbook,
   pickWorkbook,
   readWorkbook,
@@ -18,6 +20,8 @@ export default function Connections({
   onDisconnect,
   onExport,
   busyCapture,
+  onRestore,
+  restoreError,
   siteCopy,
   onSiteCopy,
 }) {
@@ -27,8 +31,8 @@ export default function Connections({
     [configLoading, setConfigLoading] = useState(true),
     [configLoadError, setConfigLoadError] = useState(false),
     [configAttempt, setConfigAttempt] = useState(0),
-    [googleConfig, setGoogleConfig] = useState(null),
-    [connected, setConnected] = useState(hasGoogleSession());
+    [googleConfig, setGoogleConfig] = useState(null);
+  const connected = hasGoogleSession();
 
   useEffect(() => {
     let current = true;
@@ -56,6 +60,7 @@ export default function Connections({
             clientId: config.clientId,
             apiKey: config.apiKey,
             appId: config.appId,
+            persistentEnabled: config.persistentEnabled === true,
           });
         }
       } catch {
@@ -85,7 +90,6 @@ export default function Connections({
       setError(e.message);
     } finally {
       setBusy(false);
-      setConnected(hasGoogleSession());
     }
   }
   async function open(id) {
@@ -106,8 +110,8 @@ export default function Connections({
         <h2>Google Sheets & Drive</h2>
         <p>
           Connect to create a workbook or select an existing StreamLion
-          workbook. Authorization expires; reconnect when asked. Tokens stay in
-          memory.
+          workbook. Your Google connection and selected workbook will reopen
+          automatically when persistent sign-in is enabled.
         </p>
         {configLoading && <p role="status">Loading Google connection…</p>}
         {!configLoading && configLoadError && (
@@ -139,6 +143,22 @@ export default function Connections({
               still connect Google and create a workbook.
             </p>
           )}
+        {googleAccount() && <p>Connected as {googleAccount()}</p>}
+        {restoreError && (
+          <div role="alert">
+            <p>{restoreError}</p>
+            <button
+              disabled={busy || busyCapture}
+              onClick={() =>
+                act(async () => {
+                  await onRestore();
+                })
+              }
+            >
+              Retry saved connection
+            </button>
+          </div>
+        )}
         <div className="actions">
           <button
             className="primary"
@@ -147,6 +167,10 @@ export default function Connections({
             }
             onClick={() =>
               act(async () => {
+                if (googleConfig.persistentEnabled) {
+                  startPersistentGoogle();
+                  return;
+                }
                 onDisconnect(true);
                 await connectGoogle(googleConfig.clientId);
                 if (bookId) {
@@ -157,7 +181,9 @@ export default function Connections({
               })
             }
           >
-            Connect Google
+            {connected && googleConfig?.persistentEnabled
+              ? "Switch Google account"
+              : "Connect Google"}
           </button>
           <button
             disabled={busy || busyCapture || !connected}
@@ -188,14 +214,15 @@ export default function Connections({
           {connected && (
             <button
               disabled={busy || busyCapture}
-              onClick={() => {
-                disconnectGoogle();
-                onDisconnect();
-                setConnected(false);
-                setStatus(
-                  "Disconnected. Google records removed from this view; device drafts remain available when you reconnect to their workbook.",
-                );
-              }}
+              onClick={() =>
+                act(async () => {
+                  await forgetGoogleConnection();
+                  onDisconnect();
+                  setStatus(
+                    "Disconnected. Google records removed from this view; device drafts remain available when you reconnect to their workbook.",
+                  );
+                })
+              }
             >
               Disconnect
             </button>
