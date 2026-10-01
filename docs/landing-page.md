@@ -2,11 +2,17 @@
 
 ## Surface and offer
 
-`welcome.html` is a separate Vite entry. The existing app remains at `/`.
-Local preview: `/welcome.html`. Cloudflare Pages serves the public page at
-`/welcome` and redirects the HTML extension to that path, as described in
+`api/welcome.html` is a separate static Vite entry. The existing app remains at `/`.
+Local preview: `/api/welcome.html`. The public URL is `/api/welcome`.
+Cloudflare Pages redirects the HTML extension to the extensionless path, as described in
 [Cloudflare's route matching documentation](https://developers.cloudflare.com/pages/configuration/serving-pages/#route-matching).
-Both paths are excluded from the PWA's workspace navigation fallback.
+
+The `/api/` prefix is already excluded by the previously deployed service worker.
+This static page needs no API handler. Its first navigation therefore reaches
+Cloudflare even before an installed workspace updates its worker. Do not advertise
+`/welcome`: older workers intercept that route before a server redirect can run.
+The new worker retains its `/welcome` exclusion, but that alone cannot repair an
+already-installed worker. Use `/api/welcome` for launch links and bookmarks.
 
 The offer is $39.95 USD for a one-time purchase. The proposed launch discount
 is 25% for the first 100 completed purchases: $29.96 USD, saving $9.99 after
@@ -45,7 +51,7 @@ No Lovable action is required; StreamLion uses GitHub, Cloudflare and Google
 Cloud.
 
 After PR merge, the ordinary Cloudflare Pages Git deployment publishes the
-landing entry. Verify `/welcome`, both CTA locations, `/` app access and
+landing entry. Verify `/api/welcome`, both CTA locations, `/` app access and
 `/privacy.html` on the deployed revision, including from an existing installed
 PWA. Local design and interaction checks are not a production deployment
 receipt or physical-phone test.

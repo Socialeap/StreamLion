@@ -18,6 +18,9 @@ test("the installed PWA sends sign-in and policy navigation to their real routes
     "/api/google/start",
     "/api/google/callback?state=synthetic",
     "/api/health",
+    "/api/welcome",
+    "/api/welcome.html",
+    "/api/welcome?source=launch",
     "/mcp?session=synthetic",
     "/privacy.html",
     "/privacy.html?review=1",
@@ -31,4 +34,24 @@ test("the installed PWA sends sign-in and policy navigation to their real routes
     assert.equal(matches(path), false, path);
   for (const path of ["/", "/?embedded=1", "/index.html"])
     assert.equal(matches(path), true, path);
+});
+
+// Navigation contract shipped before the landing page (main ea002ab).
+// Exercise that worker, rather than assuming users already received the new one.
+test("the public landing entry bypasses the previously deployed worker on its first visit", async () => {
+  globalThis.self = { __WB_DISABLE_DEV_LOGS: true };
+  const { NavigationRoute } = await import("workbox-routing/NavigationRoute.js");
+  const oldRoute = new NavigationRoute(() => {}, { denylist: [
+    /^\/api(?:[/?]|$)/,
+    /^\/mcp(?:[/?]|$)/,
+    /^\/privacy\.html(?:\?|$)/,
+    /^\/release\.json(?:\?|$)/,
+  ] });
+  const matches = path => oldRoute.match({
+    url: new URL(path, "https://app.example"), request: { mode: "navigate" },
+  });
+  for (const path of ["/api/welcome", "/api/welcome.html", "/api/welcome?source=launch", "/api/welcome.html?source=launch"])
+    assert.equal(matches(path), false, path);
+  assert.equal(matches("/welcome"), true, "old worker reproduces the reported interception");
+  assert.equal(matches("/"), true, "workspace remains available offline");
 });
