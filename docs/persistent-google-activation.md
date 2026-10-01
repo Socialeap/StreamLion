@@ -4,7 +4,7 @@
 
 This release adds a Cloudflare Pages Function (`functions/api/google/[[path]].js`), server authorization logic (`server/google-auth.js`), and a D1 migration (`migrations/0001_google_sessions.sql`). It requires owner Google settings and server-only Cloudflare secrets. It does not activate itself on merge. The existing browser connection remains available until `ENABLE_PERSISTENT_GOOGLE=true`. Once enabled, missing configuration fails closed instead of falling back to browser sign-in.
 
-The owner operates Cloudflare and Google Cloud. Lovable may perform a source/preflight handoff but must not provision Supabase or substitute a backend. No paid upgrades, auto-recharge, LLM calls, or real provider searches are authorized. Activation spend ceiling: $0 incremental; if the account's plan or limits cannot support that, stop and report the required owner decision. Fail closed when configuration or the allowance check cannot be established. No claim of free operation at arbitrary scale is made.
+The owner operates Cloudflare and Google Cloud directly. StreamLion does not use Lovable; it has no development or backend role. Do not generate Lovable handoffs or substitute a backend. No paid upgrades, auto-recharge, LLM calls, or real provider searches are authorized. Activation spend ceiling: $0 incremental; if the account's plan or limits cannot support that, stop and report the required owner decision. Fail closed when configuration or the allowance check cannot be established. No claim of free operation at arbitrary scale is made.
 
 ## 1. Google Cloud (owner)
 

@@ -27,7 +27,16 @@ const { saveSiteCopy, loadWorkspace } = await import("./storage.js");
 const { makeRevision } = await import("./workbook.js");
 const { validateFields } = await import("./project-schema.js");
 
-test("offline Google site copy opens project home and keeps new field notes pinned to that workbook across reload", async () => {
+test("offline Google site copy opens project home and keeps new field notes pinned to that workbook across reload", async (t) => {
+  // Exercise a known offline failure, independent of Node's URL/fetch behavior.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new TypeError("Device is offline");
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    cleanup();
+  });
   localStorage.setItem("streamlion-selected-workbook-v1", "book-a");
   await saveSiteCopy("book-a", {
     Projects: [
@@ -47,7 +56,11 @@ test("offline Google site copy opens project home and keeps new field notes pinn
   });
   let ui = render(<App />);
   fireEvent.click(
-    await ui.findByRole("button", { name: "Synthetic site copy" }),
+    await ui.findByRole(
+      "button",
+      { name: "Synthetic site copy" },
+      { timeout: 5000 },
+    ),
   );
   assert.ok(ui.getByText("Meet the manager"));
   assert.match(
@@ -76,7 +89,11 @@ test("offline Google site copy opens project home and keeps new field notes pinn
   cleanup();
   ui = render(<App />);
   fireEvent.click(
-    await ui.findByRole("button", { name: "Synthetic site copy" }),
+    await ui.findByRole(
+      "button",
+      { name: "Synthetic site copy" },
+      { timeout: 5000 },
+    ),
   );
   fireEvent.click(ui.getByRole("button", { name: "2. On site" }));
   fireEvent.click(ui.getByRole("button", { name: "Add a field record" }));
@@ -106,7 +123,11 @@ test("offline Google site copy opens project home and keeps new field notes pinn
   cleanup();
   ui = render(<App />);
   fireEvent.click(
-    await ui.findByRole("button", { name: "Synthetic site copy" }),
+    await ui.findByRole(
+      "button",
+      { name: "Synthetic site copy" },
+      { timeout: 5000 },
+    ),
   );
   fireEvent.click(ui.getByRole("button", { name: "2. On site" }));
   fireEvent.click(
