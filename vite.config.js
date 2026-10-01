@@ -1,6 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+export const navigationFallbackDenylist = [
+  /^\/api(?:[/?]|$)/,
+  /^\/mcp(?:[/?]|$)/,
+  /^\/privacy\.html(?:\?|$)/,
+  /^\/release\.json(?:\?|$)/,
+];
 export default defineConfig({
   define: {
     __STREAMLION_REVISION__: JSON.stringify(
@@ -47,7 +53,12 @@ export default defineConfig({
           },
         ],
       },
-      workbox: { globPatterns: ["**/*.{js,css,html,svg,png,webmanifest}"] },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,svg,png,webmanifest}"],
+        // Sign-in redirects and standalone policy/release pages must reach their
+        // actual routes rather than receiving the offline workspace shell.
+        navigateFallbackDenylist: navigationFallbackDenylist,
+      },
     }),
   ],
 });
