@@ -1,5 +1,7 @@
 # v0.2 implementation checks — 2026-09-23
 
+Historical receipt only. Current source, live configuration and outstanding launch gates are tracked in [launch-readiness.md](launch-readiness.md).
+
 - `npm test`: 19 tests passed, including recorder permission/recovery regressions, exact intake values, revision conflicts, retry idempotency, draft isolation and protection of newer drafts after delayed save acknowledgments.
 - Final Google range-read adjustment: Google adapter test rerun successfully; reads use actual sheet grid height and include populated extra columns for schema validation.
 - `npm run build`: production bundle and PWA service worker generated successfully.

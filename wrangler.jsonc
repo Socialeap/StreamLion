@@ -2,5 +2,18 @@
   "name": "streamlion",
   "pages_build_output_dir": "./dist",
   "compatibility_date": "2026-09-23",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "env": {
+    "production": {
+      "d1_databases": [
+        {
+          "binding": "GOOGLE_SESSIONS",
+          "database_name": "streamlion-google-sessions",
+          "database_id": "f9945b40-00ca-4662-9113-585927e31ec0",
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
+    "preview": { "d1_databases": [] },
+  },
 }

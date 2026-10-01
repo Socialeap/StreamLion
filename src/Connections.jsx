@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import BackupPanel from "./BackupPanel.jsx";
+import SupportPanel from "./SupportPanel.jsx";
+import { fetchRead } from "./network.js";
 import {
   connectGoogle,
   forgetGoogleConnection,
@@ -18,12 +21,13 @@ export default function Connections({
   bookId,
   onWorkbook,
   onDisconnect,
-  onExport,
   busyCapture,
   onRestore,
   restoreError,
   siteCopy,
   onSiteCopy,
+  onBackupBusy,
+  onBackupRestored,
 }) {
   const [error, setError] = useState(""),
     [status, setStatus] = useState(""),
@@ -36,13 +40,15 @@ export default function Connections({
 
   useEffect(() => {
     let current = true;
+    const controller = new AbortController();
     async function loadGoogleConfig() {
       setConfigLoading(true);
       setConfigLoadError(false);
       try {
-        const response = await fetch("/api/google-config", {
+        const response = await fetchRead("/api/google-config", {
           cache: "no-store",
           headers: { Accept: "application/json" },
+          signal: controller.signal,
         });
         if (!response.ok) throw new Error("Google settings unavailable");
         const config = await response.json();
@@ -78,6 +84,7 @@ export default function Connections({
     loadGoogleConfig();
     return () => {
       current = false;
+      controller.abort();
     };
   }, [configAttempt]);
 
@@ -109,9 +116,9 @@ export default function Connections({
       <section className="editor">
         <h2>Google Sheets & Drive</h2>
         <p>
-          Connect to create a workbook or select an existing StreamLion
-          workbook. Your Google connection and selected workbook will reopen
-          automatically when persistent sign-in is enabled.
+          {googleConfig?.persistentEnabled
+            ? "Connect Google once, then choose where your projects will be saved. We'll reopen your saved workbook when you return."
+            : "Connect Google and choose or create the workbook for your projects."}
         </p>
         {configLoading && <p role="status">Loading Google connection…</p>}
         {!configLoading && configLoadError && (
@@ -252,9 +259,8 @@ export default function Connections({
         )}
         {status && <p role="status">{status}</p>}
         <p className="hint">
-          The app requests access to files you create or explicitly select.
-          ChatGPT connects to Google separately. Record history and sources
-          remain in your workbook and Drive.
+          Your projects and field records stay in your Google workbook and
+          Drive. You control access to the files you create or choose.
         </p>
       </section>
       {bookId && onSiteCopy && (
@@ -279,14 +285,12 @@ export default function Connections({
           </p>
         </section>
       )}
-      <section className="export">
-        <h2>Local workspace backup</h2>
-        <p>
-          Export device-only records. Audio downloads separately. Google records
-          are available through your workbook.
-        </p>
-        <button onClick={onExport}>Export local jobs and notes</button>
-      </section>
+      <BackupPanel
+        disabled={busyCapture || busy}
+        onBusy={onBackupBusy}
+        onRestored={onBackupRestored}
+      />
+      <SupportPanel />
     </>
   );
 }

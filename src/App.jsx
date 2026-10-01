@@ -6,7 +6,8 @@ import {
   listProjectDrafts,
   projectDraftKey,
 } from "./drafts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { updateReady, subscribeUpdate, applyUpdate } from "./updates.js";
 import {
   FileText,
   NotebookPen,
@@ -29,7 +30,7 @@ import {
   validateWorkflow,
 } from "./workflow";
 import { newFieldRecord, sendFieldRecord } from "./field-records";
-import { emptyWorkspace, reviseNote, exportWorkspace } from "./model";
+import { emptyWorkspace, reviseNote } from "./model";
 import {
   loadWorkspace,
   saveWorkspace,
@@ -65,6 +66,7 @@ function rememberedWorkbook() {
   }
 }
 export default function App() {
+  const newerVersion = useSyncExternalStore(subscribeUpdate, updateReady);
   const [local, setLocal] = useState(emptyWorkspace),
     current = useRef(null),
     writing = useRef(false);
@@ -922,6 +924,27 @@ export default function App() {
         </div>
       </aside>
       <main>
+        {newerVersion && (
+          <section className="sync-bar" aria-label="App update">
+            <span>
+              A new version is ready.{" "}
+              {editing || page === "Field notes" || page === "Measurements"
+                ? "Finish this edit or return to Projects before updating."
+                : "Saved drafts will be kept."}
+            </span>
+            <button
+              disabled={
+                disabled ||
+                !!editing ||
+                page === "Field notes" ||
+                page === "Measurements"
+              }
+              onClick={applyUpdate}
+            >
+              Update StreamLion
+            </button>
+          </section>
+        )}
         {hasPending && (
           <section className="intake-panel">
             <h2>Google save awaiting verification</h2>
@@ -1264,14 +1287,24 @@ export default function App() {
             busyCapture={disabled}
             siteCopy={siteCopy}
             onSiteCopy={keepSiteCopy}
-            onExport={() =>
-              download(
-                new Blob([exportWorkspace(local)], {
-                  type: "application/json",
-                }),
-                "streamlion-workspace.json",
-              )
-            }
+            onBackupBusy={setSyncBusy}
+            onBackupRestored={async () => {
+              const restored = await loadWorkspace();
+              current.current = restored;
+              setLocal(restored);
+              const destination = bookId || rememberedWorkbook();
+              if (!bookId) setBookId(destination);
+              refreshDrafts(destination);
+              const copy = await loadSiteCopy(destination);
+              cacheLoadEpoch.current++;
+              setSiteCopy(copy);
+              cacheEnabled.current = !!copy;
+              pending.current = destination
+                ? readDraft(`${destination}:pending-write`)
+                : null;
+              setHasPending(!!pending.current);
+              setStatus("Device backup restored");
+            }}
           />
         )}
       </main>

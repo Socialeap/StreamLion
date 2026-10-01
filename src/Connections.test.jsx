@@ -74,7 +74,7 @@ test("Connections lets the user retry a failed Google config request", async () 
   let requestCount = 0;
   globalThis.fetch = async () => {
     requestCount += 1;
-    if (requestCount === 1) return new Response("unavailable", { status: 503 });
+    if (requestCount <= 3) return new Response("unavailable", { status: 503 });
     return new Response(
       JSON.stringify({
         clientId: "public-client-id.apps.googleusercontent.com",
@@ -98,7 +98,7 @@ test("Connections lets the user retry a failed Google config request", async () 
     });
 
     assert.match(
-      ui.getByRole("alert").textContent,
+      (await ui.findByRole("alert", {}, { timeout: 5000 })).textContent,
       /Couldn’t load Google connection settings/,
     );
     assert.equal(
@@ -112,7 +112,7 @@ test("Connections lets the user retry a failed Google config request", async () 
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    assert.equal(requestCount, 2);
+    assert.equal(requestCount, 4);
     assert.equal(ui.queryByRole("alert"), null);
     assert.equal(
       ui.getByRole("button", { name: "Connect Google" }).disabled,

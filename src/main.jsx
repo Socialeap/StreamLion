@@ -2,8 +2,12 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
+import { offerUpdate } from "./updates.js";
 import "./style.css";
-registerSW({
+const updateSW = registerSW({
+  onNeedRefresh() {
+    offerUpdate(() => updateSW(true));
+  },
   onOfflineReady() {
     window.dispatchEvent(new Event("offline-ready"));
   },

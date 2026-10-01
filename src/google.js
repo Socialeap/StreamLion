@@ -6,6 +6,7 @@ import {
   assertUnchanged,
   validateRevision,
 } from "./workbook.js";
+import { fetchRead } from "./network.js";
 const SCOPE = "https://www.googleapis.com/auth/drive.file";
 let token = "",
   expiresAt = 0,
@@ -16,11 +17,17 @@ export async function restoreGoogleSession() {
   if (restorePromise) return restorePromise;
   const generation = session;
   restorePromise = (async () => {
-    const response = await fetch("/api/google/session", {
-      credentials: "same-origin",
-      cache: "no-store",
-      signal: AbortSignal.timeout(20000),
-    });
+    let response;
+    try {
+      response = await fetchRead("/api/google/session", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+    } catch {
+      throw new Error(
+        "Could not restore Google. Check your connection and retry in Connections.",
+      );
+    }
     if (response.status === 401) {
       if (generation === session) disconnectGoogle();
       return { enabled: true, connected: false };
@@ -29,11 +36,21 @@ export async function restoreGoogleSession() {
       throw new Error(
         "Could not restore Google. Check your connection and retry in Connections.",
       );
-    const data = await response.json();
+    const data = await response.json().catch(() => {
+      throw new Error(
+        "Google connection could not be checked. Retry in Connections.",
+      );
+    });
     if (
+      !data ||
       typeof data.enabled !== "boolean" ||
       typeof data.connected !== "boolean" ||
-      (data.connected && (!data.subject || typeof data.bookId !== "string"))
+      (data.connected &&
+        (data.enabled !== true ||
+          typeof data.subject !== "string" ||
+          !data.subject ||
+          typeof data.bookId !== "string" ||
+          !/^[\w-]{0,100}$/.test(data.bookId)))
     )
       throw new Error(
         "Google returned an invalid connection. Retry in Connections.",
@@ -53,7 +70,7 @@ export function googleAccount() {
 }
 async function sessionRequest(path, options = {}) {
   const generation = session;
-  const response = await fetch("/api/google/" + path, {
+  const response = await fetchRead("/api/google/" + path, {
     ...options,
     credentials: "same-origin",
     cache: "no-store",
@@ -168,7 +185,7 @@ async function request(path, options = {}) {
         ...options,
         headers: { "Content-Type": "application/json" },
       })
-    : await fetch("https://sheets.googleapis.com/v4/spreadsheets" + path, {
+    : await fetchRead("https://sheets.googleapis.com/v4/spreadsheets" + path, {
         ...options,
         headers: {
           Authorization: `Bearer ${token}`,
@@ -185,7 +202,9 @@ async function request(path, options = {}) {
     throw new Error(
       response.status === 403
         ? "Google denied workbook access. Select the workbook through the Google picker or check permissions."
-        : `Google request failed (${response.status}). Refresh before retrying a save.`,
+        : response.status === 429
+          ? "Google is busy. Your draft is kept. Wait a moment, then retry."
+          : `Google request failed (${response.status}). Refresh before retrying a save.`,
     );
   return response.json();
 }
@@ -276,7 +295,7 @@ async function driveRequest(path, options = {}) {
   const generation = session;
   const response = persistentSession
     ? await sessionRequest("drive?path=" + encodeURIComponent(path), options)
-    : await fetch(`https://www.googleapis.com/${path}`, {
+    : await fetchRead(`https://www.googleapis.com/${path}`, {
         ...options,
         headers: { ...options.headers, Authorization: `Bearer ${token}` },
       });
@@ -393,6 +412,18 @@ export async function readWorkbook(bookId) {
   return (await readWorkbookSnapshot(bookId)).heads;
 }
 async function readWorkbookSnapshot(bookId) {
+  const scope = `${session}:${bookId}`;
+  if (readingWorkbooks.has(scope)) return readingWorkbooks.get(scope);
+  const task = loadWorkbookSnapshot(bookId);
+  readingWorkbooks.set(scope, task);
+  try {
+    return await task;
+  } finally {
+    if (readingWorkbooks.get(scope) === task) readingWorkbooks.delete(scope);
+  }
+}
+const readingWorkbooks = new Map();
+async function loadWorkbookSnapshot(bookId) {
   if (!/^[\w-]+$/.test(bookId)) throw new Error("Invalid workbook ID.");
   // Reject truncated workbooks instead of silently losing projects at a scan limit.
   const meta = await request(
@@ -419,13 +450,15 @@ async function readWorkbookSnapshot(bookId) {
     `/${bookId}/values:batchGet?${params}&valueRenderOption=UNFORMATTED_VALUE`,
   );
   const heads = {},
-    history = {};
+    history = {},
+    populatedRows = {};
   Object.entries(TABS).forEach(([name, h], i) => {
     const parsed = readRecordHistory(result.valueRanges[i]?.values || [], h);
     heads[name] = parsed.heads;
     history[name] = parsed.revisions;
+    populatedRows[name] = result.valueRanges[i]?.values?.length || 0;
   });
-  return { heads, history };
+  return { heads, history, populatedRows };
 }
 function hasSavedRevision(history, revision, headers) {
   const saved = history.find((r) => r.revisionId === revision.revisionId);
@@ -438,6 +471,31 @@ function hasSavedRevision(history, revision, headers) {
   return true;
 }
 export async function appendRevision(bookId, tab, revision, expected) {
+  if (!/^[\w-]+$/.test(bookId)) throw new Error("Invalid workbook ID.");
+  const generation = session;
+  const perform = () => {
+    if (generation !== session)
+      throw new Error("Google account changed before this save.");
+    return appendLocked(bookId, tab, revision, expected);
+  };
+  // Coordinate independent editor tabs on the same device. Google revision
+  // validation remains necessary for other devices and external Sheet edits.
+  if (typeof navigator !== "undefined" && navigator.locks?.request)
+    return navigator.locks.request(
+      `streamlion-workbook-write:${bookId}`,
+      perform,
+    );
+  const previous = writingWorkbooks.get(bookId) || Promise.resolve();
+  const task = previous.catch(() => {}).then(perform);
+  writingWorkbooks.set(bookId, task);
+  try {
+    return await task;
+  } finally {
+    if (writingWorkbooks.get(bookId) === task) writingWorkbooks.delete(bookId);
+  }
+}
+const writingWorkbooks = new Map();
+async function appendLocked(bookId, tab, revision, expected) {
   const h = TABS[tab];
   if (!h) throw new Error("Unknown workbook tab.");
   validateRevision(revision, h);
@@ -447,6 +505,10 @@ export async function appendRevision(bookId, tab, revision, expected) {
   if (hasSavedRevision(snapshot.history[tab], revision, h)) {
     return before;
   }
+  if (snapshot.populatedRows[tab] >= 10000)
+    throw new Error(
+      "This workbook is full. Archive its history with review before adding more records; your draft is kept.",
+    );
   assertUnchanged(prior, expected);
   if (
     tab === "Observations" &&
@@ -460,7 +522,7 @@ export async function appendRevision(bookId, tab, revision, expected) {
     { method: "POST", body: JSON.stringify({ values: [rowFor(revision, h)] }) },
   );
   // A timeout has an unknown outcome; caller retains the SAME revision ID for retry.
-  const after = await readWorkbookSnapshot(bookId);
+  const after = await loadWorkbookSnapshot(bookId);
   if (!hasSavedRevision(after.history[tab], revision, h))
     throw new Error("Write could not be verified. Refresh before retrying.");
   return after.heads;

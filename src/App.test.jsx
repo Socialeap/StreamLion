@@ -21,10 +21,11 @@ Object.defineProperty(globalThis, "navigator", {
 });
 dom.window.scrollTo = () => {};
 
-const { render, fireEvent, waitFor, cleanup } =
+const { render, fireEvent, waitFor, cleanup, act } =
   await import("@testing-library/react");
 const { default: App } = await import("./App.jsx");
 const { loadWorkspace } = await import("./storage.js");
+const { offerUpdate } = await import("./updates.js");
 
 test("saving a draft keeps its editor and updates the same project on later saves", async () => {
   localStorage.clear();
@@ -99,5 +100,43 @@ test("saving a draft keeps its editor and updates the same project on later save
     true,
   );
   cleanup();
-  dom.window.close();
 });
+test("an app update cannot reload an editor or unfinished field capture", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ enabled: false, connected: false }));
+  try {
+    const ui = render(<App />);
+    await ui.findByRole("heading", { name: "Projects" });
+    let applied = 0;
+    await act(() =>
+      offerUpdate(() => {
+        applied++;
+      }),
+    );
+    assert.equal(
+      ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+      false,
+    );
+    fireEvent.click(ui.getAllByRole("button", { name: "Create project" })[0]);
+    assert.equal(
+      ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+      true,
+    );
+    fireEvent.click(ui.getByRole("button", { name: "Back to projects" }));
+    fireEvent.click(
+      ui.getByRole("button", { name: "Field notes", exact: true }),
+    );
+    assert.equal(
+      ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+      true,
+    );
+    fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
+    fireEvent.click(ui.getByRole("button", { name: "Update StreamLion" }));
+    assert.equal(applied, 1);
+    cleanup();
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test.after(() => dom.window.close());
