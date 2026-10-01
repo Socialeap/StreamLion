@@ -22,6 +22,11 @@ test("the installed PWA sends sign-in and policy navigation to their real routes
     "/api/welcome.html",
     "/api/welcome?source=launch",
     "/mcp?session=synthetic",
+    "/api/privacy",
+    "/api/privacy.html",
+    "/api/terms",
+    "/api/terms.html",
+    "/privacy",
     "/privacy.html",
     "/privacy.html?review=1",
     "/release.json?receipt=1",
@@ -50,7 +55,7 @@ test("the public landing entry bypasses the previously deployed worker on its fi
   const matches = path => oldRoute.match({
     url: new URL(path, "https://app.example"), request: { mode: "navigate" },
   });
-  for (const path of ["/api/welcome", "/api/welcome.html", "/api/welcome?source=launch", "/api/welcome.html?source=launch"])
+  for (const path of ["/api/welcome", "/api/welcome.html", "/api/welcome?source=launch", "/api/welcome.html?source=launch", "/api/privacy", "/api/privacy.html", "/api/terms", "/api/terms.html"])
     assert.equal(matches(path), false, path);
   assert.equal(matches("/welcome"), true, "old worker reproduces the reported interception");
   assert.equal(matches("/"), true, "workspace remains available offline");

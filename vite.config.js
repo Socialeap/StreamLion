@@ -4,7 +4,7 @@ import { VitePWA } from "vite-plugin-pwa";
 export const navigationFallbackDenylist = [
   /^\/api(?:[/?]|$)/,
   /^\/mcp(?:[/?]|$)/,
-  /^\/privacy\.html(?:\?|$)/,
+  /^\/privacy(?:\.html)?(?:[/?]|$)/,
   /^\/release\.json(?:\?|$)/,
   /^\/welcome(?:\.html)?(?:[/?]|$)/,
 ];
