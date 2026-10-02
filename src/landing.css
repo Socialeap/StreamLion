@@ -1956,3 +1956,252 @@ dialog .small {
     font-size: 26px;
   }
 }
+
+/* Saved project answers: a native, interactive phone preview. */
+.voice-showcase {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 72px;
+  align-items: center;
+  padding: 78px 0 90px;
+  border-top: 1px solid var(--line);
+}
+.voice-story h2 {
+  font-size: clamp(44px, 4.6vw, 68px);
+}
+.voice-story .lead {
+  margin-top: 26px;
+  font-size: 22px;
+}
+.voice-steps {
+  list-style: none;
+  padding: 0;
+  margin: 34px 0;
+  display: grid;
+  gap: 18px;
+}
+.voice-steps li {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  font-size: 18px;
+}
+.voice-steps span {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #e8efd9;
+  border: 1px solid var(--line);
+  font-weight: 600;
+}
+.voice-benefit {
+  font-size: 18px;
+  color: var(--muted);
+  max-width: 480px;
+  margin-bottom: 22px;
+}
+.voice-boundary {
+  margin-top: 24px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.voice-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+}
+.voice-preview figcaption {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 390px;
+  text-align: center;
+  line-height: 1.6;
+}
+.voice-phone {
+  width: 100%;
+  max-width: 378px;
+  padding: 28px 20px 22px;
+  background: #fff;
+  border: 9px solid var(--forest);
+  border-radius: 40px;
+  box-shadow: 0 14px 30px #173e311c;
+  scroll-margin-top: 30px;
+}
+.voice-phone-header {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 22px;
+}
+.voice-phone-header strong {
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+.voice-phone-header span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.voice-demo-ask {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 50px;
+  background: #eef3e7;
+  color: var(--forest);
+  font-size: 15px;
+  font-weight: 600;
+}
+.voice-mic {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--forest);
+  color: #fff;
+  flex-shrink: 0;
+}
+.voice-mic svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+.voice-examples {
+  display: flex;
+  gap: 6px;
+  margin: 22px 0;
+}
+.voice-examples button {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: #fff;
+  font-size: 11px;
+  color: var(--ink);
+}
+.voice-examples button[aria-pressed="true"] {
+  background: #e8efd9;
+  border-color: #cbd9b1;
+}
+.voice-demo-question {
+  background: #f2f4ef;
+  padding: 14px;
+  border-radius: 13px;
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+.voice-demo-answer {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px 16px 16px;
+  min-height: 168px;
+}
+.voice-demo-answer h3 {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+#voice-answer-text {
+  font-size: 13px;
+  white-space: pre-line;
+}
+.voice-answer-source {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.voice-read {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 11px;
+  min-height: 44px;
+  margin-top: 14px;
+  border: 1px solid #688071;
+  border-radius: 24px;
+  background: #fff;
+  color: var(--forest);
+  font-size: 13px;
+}
+.voice-read svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+.voice-read:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.voice-demo-caption {
+  font-size: 10px;
+  text-align: center;
+  color: var(--muted);
+  margin-top: 15px;
+}
+.voice-demo-status:not(:empty) {
+  font-size: 11px;
+  margin-top: 14px;
+  color: var(--muted);
+}
+@media (max-width: 850px) {
+  .voice-showcase {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    padding: 56px 0 64px;
+  }
+  .voice-story {
+    max-width: 600px;
+  }
+  .voice-story .lead {
+    font-size: 19px;
+  }
+  .voice-preview {
+    width: 100%;
+  }
+}
+@media (max-width: 560px) {
+  .voice-story h2 {
+    font-size: 42px;
+  }
+  .voice-story .lead {
+    font-size: 17px;
+  }
+  .voice-steps li,
+  .voice-benefit {
+    font-size: 16px;
+  }
+  .voice-phone {
+    padding: 24px 16px 20px;
+    border-width: 7px;
+    border-radius: 34px;
+  }
+  .voice-phone-header strong {
+    font-size: 25px;
+  }
+  .voice-demo-ask {
+    gap: 10px;
+    font-size: 14px;
+  }
+  .voice-examples button {
+    font-size: 10px;
+  }
+}

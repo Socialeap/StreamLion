@@ -32,7 +32,8 @@ bookings.
 
 ## Demonstration
 
-The hero and workflow demo share Prepare, On site and Handover selection.
+The hero leads into a saved-project voice-answer demo. A separate workflow demo
+provides Prepare, On site and Handover selection.
 The editable measurement example uses the app's actual `parseMeasurements`
 function. It retains exact values and flags unclear wording. Editing the input
 clears old results until it is organized again. The preparation checklist and

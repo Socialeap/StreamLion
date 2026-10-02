@@ -1,6 +1,7 @@
 import "./landing.css";
 import { parseMeasurements } from "./measurements.js";
 import { estimateTimeValue } from "./landing-value.js";
+import { answerProjectQuestion } from "./project-answers.js";
 
 const descriptions = {
   prepare: {
@@ -147,3 +148,109 @@ dialog.addEventListener("click", (event) => {
   }
 });
 organize();
+
+// Synthetic preview uses the same bounded lookup as the actual workspace.
+// It never opens a microphone or connects to a visitor's Google account.
+const sampleProject = {
+  id: "landing-harbor-house",
+  title: "Harbor House",
+  contact1Name: "Alex Morgan",
+  contact1Phone: "+1 202 555 0148",
+  accessInstructions: "Meet Alex at the front entrance. Call on arrival.",
+  deliverables: "Tour link, site notes and checked measurements.",
+  deliveryDestination: "Send the handover to the commissioning company.",
+};
+const sampleQuestions = {
+  contact: "Who is the site contact?",
+  access: "How do I get in?",
+  outputs: "What are the deliverables?",
+};
+let sampleTopic = "contact";
+let sampleUtterance = null;
+const readButton = document.querySelector("#voice-demo-read");
+const sampleStatus = document.querySelector("#voice-demo-status");
+const canReadSample = Boolean(
+  window.speechSynthesis && window.SpeechSynthesisUtterance,
+);
+function stopSampleSpeech() {
+  if (sampleUtterance) {
+    sampleUtterance.onend = null;
+    sampleUtterance.onerror = null;
+    window.speechSynthesis.cancel();
+    sampleUtterance = null;
+  }
+  readButton.querySelector("span").textContent = "Read answer aloud";
+}
+function showSampleAnswer(topic = sampleTopic) {
+  if (!Object.hasOwn(sampleQuestions, topic)) return;
+  stopSampleSpeech();
+  sampleTopic = topic;
+  const result = answerProjectQuestion(sampleProject, sampleQuestions[topic]);
+  const answer = result.answers[0];
+  document.querySelector("#voice-demo-question").textContent =
+    sampleQuestions[topic];
+  document.querySelector("#voice-answer-title").textContent = answer.title;
+  document.querySelector("#voice-answer-text").textContent = answer.text;
+  document.querySelector("#voice-answer-source").textContent =
+    `Source: ${answer.sources.join("; ")}`;
+  document
+    .querySelectorAll("[data-question]")
+    .forEach((button) =>
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.question === topic),
+      ),
+    );
+  sampleStatus.textContent = "";
+}
+document
+  .querySelectorAll("[data-question]")
+  .forEach((button) =>
+    button.addEventListener("click", () =>
+      showSampleAnswer(button.dataset.question),
+    ),
+  );
+document.querySelector("#voice-demo-ask").addEventListener("click", () => {
+  showSampleAnswer();
+  sampleStatus.textContent =
+    "Sample answer shown. In the app, tap Ask by voice and speak.";
+});
+readButton.disabled = !canReadSample;
+readButton.addEventListener("click", () => {
+  if (!canReadSample) return;
+  if (sampleUtterance) {
+    stopSampleSpeech();
+    return;
+  }
+  const answer = answerProjectQuestion(
+    sampleProject,
+    sampleQuestions[sampleTopic],
+  ).answers[0];
+  const speech = new window.SpeechSynthesisUtterance(
+    `${sampleProject.title}. ${answer.text}`,
+  );
+  speech.lang = "en-US";
+  sampleUtterance = speech;
+  readButton.querySelector("span").textContent = "Stop reading";
+  speech.onend = () => {
+    if (sampleUtterance === speech) stopSampleSpeech();
+  };
+  speech.onerror = () => {
+    if (sampleUtterance !== speech) return;
+    stopSampleSpeech();
+    sampleStatus.textContent =
+      "Audio is unavailable here. The sample answer is still shown.";
+  };
+  try {
+    window.speechSynthesis.speak(speech);
+  } catch {
+    stopSampleSpeech();
+    sampleStatus.textContent =
+      "Audio is unavailable here. The sample answer is still shown.";
+  }
+});
+window.addEventListener("pagehide", stopSampleSpeech);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopSampleSpeech();
+});
+showSampleAnswer();
