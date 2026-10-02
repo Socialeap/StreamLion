@@ -404,7 +404,8 @@ export async function handleGoogle({ request, env, params }) {
       if (flow.expiresAt < Date.now())
         return redirect(origin(env) + "/?google=expired", [clearFlow]);
       if (flow.state !== url.searchParams.get("state"))
-        return redirect(origin(env) + "/?google=failed", [clearFlow]);
+        // Another tab may own the current flow; reject without clearing it.
+        return redirect(origin(env) + "/?google=failed");
       if (url.searchParams.has("error"))
         return redirect(origin(env) + "/?google=cancelled", [clearFlow]);
       const response = await tokenExchange(env, {

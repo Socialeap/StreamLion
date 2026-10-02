@@ -213,6 +213,7 @@ test("callback rejects mismatched state without calling Google", async () => {
   );
   assert.equal(response.headers.has("Content-Disposition"), false);
   assert.equal(response.headers.has("Content-Security-Policy"), false);
+  assert.equal(response.headers.has("Set-Cookie"), false);
 });
 
 test("expired OAuth flows return to the app without exchanging a code", async () => {
@@ -228,7 +229,7 @@ test("expired OAuth flows return to the app without exchanging a code", async ()
     request: new Request(
       "https://app.example/api/google/callback?state=expired&code=synthetic",
       {
-      headers: { Cookie: `__Host-streamlion-oauth=${flow}` },
+        headers: { Cookie: `__Host-streamlion-oauth=${flow}` },
       },
     ),
   });
@@ -278,10 +279,24 @@ for (const subject of ["account-a", "account-b"])
     f.db.exec(
       "UPDATE streamlion_google_sessions_v1 SET folder_id = 'folder-a'",
     );
+    const oldStart = await f.request("start");
+    const oldCookie = oldStart.headers.get("Set-Cookie").split(";")[0];
+    const oldFlow = await unseal(f.env, oldCookie.split("=")[1], "oauth-flow");
     const start = await f.request("start");
     const flowCookie = start.headers.get("Set-Cookie").split(";")[0];
     const flow = await unseal(f.env, flowCookie.split("=")[1], "oauth-flow");
     const original = globalThis.fetch;
+    const stale = await handleGoogle({
+      env: f.env,
+      params: { path: ["callback"] },
+      request: new Request(
+        `https://app.example/api/google/callback?state=${oldFlow.state}&code=stale-code`,
+        { headers: { Cookie: flowCookie } },
+      ),
+    });
+    assert.equal(stale.status, 303);
+    assert.equal(stale.headers.has("Set-Cookie"), false);
+    // The browser retains flowCookie, so the newer tab can still complete below.
     globalThis.fetch = async (url) =>
       new Response(
         JSON.stringify(
