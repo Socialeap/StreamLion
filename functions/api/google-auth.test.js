@@ -184,7 +184,14 @@ test("OAuth start uses PKCE, offline access, fixed callback and secure short-liv
     response.headers.get("Set-Cookie"),
     /Secure; HttpOnly; SameSite=Lax; Max-Age=600/,
   );
-  assert.equal((await request("callback")).status, 400);
+  assert.equal(response.headers.has("Content-Disposition"), false);
+  assert.equal(response.headers.has("Content-Security-Policy"), false);
+  const missingFlow = await request("callback");
+  assert.equal(missingFlow.status, 303);
+  assert.equal(
+    missingFlow.headers.get("Location"),
+    "https://app.example/?google=expired",
+  );
 });
 
 test("callback rejects mismatched state without calling Google", async () => {
@@ -199,7 +206,70 @@ test("callback rejects mismatched state without calling Google", async () => {
       { headers: { Cookie: flow } },
     ),
   });
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 303);
+  assert.equal(
+    response.headers.get("Location"),
+    "https://app.example/?google=failed",
+  );
+  assert.equal(response.headers.has("Content-Disposition"), false);
+  assert.equal(response.headers.has("Content-Security-Policy"), false);
+  assert.equal(response.headers.has("Set-Cookie"), false);
+});
+
+test("expired OAuth flows return to the app without exchanging a code", async () => {
+  const { env } = fixture();
+  const flow = await seal(
+    env,
+    { expiresAt: Date.now() - 1000, state: "expired" },
+    "oauth-flow",
+  );
+  const response = await handleGoogle({
+    env,
+    params: { path: ["callback"] },
+    request: new Request(
+      "https://app.example/api/google/callback?state=expired&code=synthetic",
+      {
+        headers: { Cookie: `__Host-streamlion-oauth=${flow}` },
+      },
+    ),
+  });
+  assert.equal(response.status, 303);
+  assert.equal(
+    response.headers.get("Location"),
+    "https://app.example/?google=expired",
+  );
+  assert.match(response.headers.get("Set-Cookie"), /Max-Age=0/);
+});
+
+test("Google exchange failures return to Connections rather than an API download", async () => {
+  const { env, request } = fixture();
+  const start = await request("start");
+  const flowCookie = start.headers.get("Set-Cookie").split(";")[0];
+  const flow = await unseal(env, flowCookie.split("=")[1], "oauth-flow");
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("temporary upstream failure");
+  };
+  try {
+    const response = await handleGoogle({
+      env,
+      params: { path: ["callback"] },
+      request: new Request(
+        `https://app.example/api/google/callback?state=${flow.state}&code=synthetic`,
+        {
+          headers: { Cookie: flowCookie },
+        },
+      ),
+    });
+    assert.equal(response.status, 303);
+    assert.equal(
+      response.headers.get("Location"),
+      "https://app.example/?google=failed",
+    );
+    assert.equal(response.headers.has("Content-Disposition"), false);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 for (const subject of ["account-a", "account-b"])
@@ -209,10 +279,24 @@ for (const subject of ["account-a", "account-b"])
     f.db.exec(
       "UPDATE streamlion_google_sessions_v1 SET folder_id = 'folder-a'",
     );
+    const oldStart = await f.request("start");
+    const oldCookie = oldStart.headers.get("Set-Cookie").split(";")[0];
+    const oldFlow = await unseal(f.env, oldCookie.split("=")[1], "oauth-flow");
     const start = await f.request("start");
     const flowCookie = start.headers.get("Set-Cookie").split(";")[0];
     const flow = await unseal(f.env, flowCookie.split("=")[1], "oauth-flow");
     const original = globalThis.fetch;
+    const stale = await handleGoogle({
+      env: f.env,
+      params: { path: ["callback"] },
+      request: new Request(
+        `https://app.example/api/google/callback?state=${oldFlow.state}&code=stale-code`,
+        { headers: { Cookie: flowCookie } },
+      ),
+    });
+    assert.equal(stale.status, 303);
+    assert.equal(stale.headers.has("Set-Cookie"), false);
+    // The browser retains flowCookie, so the newer tab can still complete below.
     globalThis.fetch = async (url) =>
       new Response(
         JSON.stringify(
