@@ -1,5 +1,13 @@
 # Google sign-in failure diagnosis
 
+## Confirmed Workers runtime failure (October 2, 2026)
+
+A fresh production sign-in reported `token_exchange`. Reproduction with the installed workerd runtime and the deployed compatibility date confirmed that Request rejects `redirect: "error"` before sending Google's token request. Node's Request accepts that value, so the Node-only tests missed this failure.
+
+The shared `googleFetch` helper now uses `redirect: "manual"` and rejects all 3xx responses itself. This also fixes account verification, token renewal, and Google API proxy operations that previously supplied the unsupported value. Credentials must never follow a redirect. A synthetic workerd regression executes the production helper with real Workers Request construction, verifies successful request construction, and verifies rejection without a follow-up request.
+
+After merge, deploy Cloudflare Pages Functions and the frontend from the same revision. No secret rotation, migration, or Google OAuth audience change is required for this runtime fix. Verify a fresh production sign-in and remembered workbook restoration separately before claiming live recovery. No Lovable action is required.
+
 Deploy the Pages frontend and Functions together after merging this change. No migration, new secret, or Google Cloud setting change is required by this diff.
 
 On the next sign-in, Connections displays a fixed message for the failure category. Callback redirects include only an allowlisted `reason`; never include Google's error description, authorization code, account identity, credentials, or database error text. Do not ask users to share full callback URLs.
