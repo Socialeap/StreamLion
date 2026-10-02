@@ -121,6 +121,28 @@ test("low confidence retains editable words and requires Get answer", () => {
   assert.match(ui.getByRole("status").textContent, /123 Example Street/);
 });
 
+for (const initiallyEnabled of [true, false]) {
+  test(`read-aloud can be ${initiallyEnabled ? "disabled" : "enabled"} while recognition is active`, () => {
+    window.localStorage.setItem(
+      "streamlion-read-answers-v1",
+      String(initiallyEnabled),
+    );
+    const ui = mount();
+    fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));
+    const recognition = instances[0];
+    fireEvent.click(ui.getByRole("checkbox", { name: "Read answers aloud" }));
+    assert.equal(instances.length, 1);
+    assert.equal(recognition.aborts, 0);
+    say(recognition, "Who is the site contact?");
+    assert.equal(spoken.length, initiallyEnabled ? 0 : 1);
+    assert.match(ui.getByRole("status").textContent, /Example Manager/);
+    assert.equal(
+      window.localStorage.getItem("streamlion-read-answers-v1"),
+      String(!initiallyEnabled),
+    );
+  });
+}
+
 test("permission, network and start errors release busy state and allow retry", () => {
   const ui = mount();
   fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));

@@ -71,18 +71,18 @@ of scope. Keep the core one-time-purchase path useful without those dependencies
 
 ## Validation receipt (2026-10-01)
 
-| Check | Result |
-| --- | --- |
-| Complete automated suite | PASS — 146 tests |
-| Voice/lookup/App update/ChatGPT focused tests | PASS — 15 tests |
-| Production Vite/PWA build and diff whitespace | PASS |
-| Page identity, meaningful render, no framework overlay | PASS — local field workspace |
-| Browser console | PASS — zero errors or warnings |
-| Desktop / mobile layout and screenshot inspection | PASS — 1280×900 and 390×844; no horizontal overflow |
+| Check                                                       | Result                                                                     |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Complete automated suite                                    | PASS — 149 tests                                                           |
+| Voice/lookup/App update/ChatGPT focused tests               | PASS — 18 tests                                                            |
+| Production Vite/PWA build and diff whitespace               | PASS                                                                       |
+| Page identity, meaningful render, no framework overlay      | PASS — local field workspace                                               |
+| Browser console                                             | PASS — zero errors or warnings                                             |
+| Desktop / mobile layout and screenshot inspection           | PASS — 1280×900 and 390×844; no horizontal overflow                        |
 | Project creation → home → simulated spoken contact question | PASS — exact synthetic contact returned; recognition aborted before answer |
-| Ask → typed address question | PASS — exact synthetic address and device source label |
-| Physical Android microphone / speech accuracy / playback | NOT RUN — owner hardware check after deployment |
-| Live Google roundtrip / production deployment | NOT RUN in this change |
+| Ask → typed address question                                | PASS — exact synthetic address and device source label                     |
+| Physical Android microphone / speech accuracy / playback    | NOT RUN — owner hardware check after deployment                            |
+| Live Google roundtrip / production deployment               | NOT RUN in this change                                                     |
 
 Browser plugin was not available; rendered checks used the existing cached
 Playwright CLI with isolated Chrome, synthetic local records, and a stubbed
@@ -92,3 +92,10 @@ The two other StreamLion Codex chats were verified idle before and after impleme
 
 Browser references: [speech recognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition)
 and [speech playback](https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis).
+
+PR #27 review regressions: checking or unchecking read-aloud during recognition
+uses the current preference without restarting the microphone. Temporal questions
+require a topic-specific subject; payment and delivery dates do not expose visit
+dates, and “delivery due” does not accidentally include payment dates. The three
+new tests reproduced both findings before the fixes and pass after them. Existing
+rendered UI evidence above is unchanged; this follow-up changes logic only.

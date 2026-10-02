@@ -40,6 +40,7 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
       return false;
     }
   });
+  const readAloudRef = useRef(readAloud);
   const session = useRef(null);
   const utterance = useRef(null);
   const timer = useRef(null);
@@ -139,7 +140,8 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
     }
   }
 
-  function ask(text, topicId, automaticSpeech = readAloud) {
+  // Recognition callbacks outlive their render; use the latest user preference.
+  function ask(text, topicId, automaticSpeech = readAloudRef.current) {
     cancelMedia();
     setListening(false);
     setSpeaking(false);
@@ -290,6 +292,7 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
             type="checkbox"
             checked={readAloud}
             onChange={(event) => {
+              readAloudRef.current = event.target.checked;
               setReadAloud(event.target.checked);
               try {
                 window.localStorage.setItem(

@@ -103,3 +103,32 @@ test("local and disconnected records never claim fresh Google access", () => {
   );
   assert.match(answerSourceLabel("google", "Today"), /last read Today/);
 });
+
+test("temporal questions expose only dates for the requested subject", () => {
+  const dated = {
+    ...project,
+    startLocal: "2026-10-10T09:00",
+    dueDate: "2026-10-20",
+    deliveryDeadline: "October 15",
+  };
+  for (const [question, topic] of [
+    ["When is payment due?", "payment"],
+    ["When is delivery due?", "outputs"],
+    ["What time is delivery due?", "outputs"],
+    ["When is the delivery deadline?", "outputs"],
+    ["When is my appointment?", "visit"],
+    ["What time do I arrive?", "visit"],
+  ]) {
+    const result = answerProjectQuestion(dated, question);
+    assert.deepEqual(
+      result.answers.map((answer) => answer.topic),
+      [topic],
+      question,
+    );
+    if (topic !== "visit")
+      assert.ok(!result.answers[0].text.includes(dated.startLocal), question);
+    if (topic === "outputs")
+      assert.ok(!result.answers[0].text.includes(dated.dueDate), question);
+  }
+  assert.equal(answerProjectQuestion(dated, "When is it?").kind, "unsupported");
+});

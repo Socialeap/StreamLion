@@ -36,7 +36,7 @@ export const ANSWER_TOPICS = [
       "proposedTimes",
     ],
     matches:
-      /\b(visit|appointment|schedule|start time|end time|arrival|when do i|when should i|what time|when is)\b/,
+      /\b(visit|appointment|schedule|start time|end time|arrival|arrive)\b/,
   },
   {
     id: "work",
@@ -65,7 +65,7 @@ export const ANSWER_TOPICS = [
       "paymentTerms",
     ],
     matches:
-      /\b(pay|paid|payment|payments|fee|fees|invoice|invoiced|owed|outstanding|money|due)\b/,
+      /\b(pay|paid|payment|payments|fee|fees|invoice|invoiced|owed|outstanding|money)\b/,
   },
 ];
 
