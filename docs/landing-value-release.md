@@ -16,6 +16,8 @@ Interactive hero reveals; room/measurement-derived job-site checks and remaining
 
 ## Required activation
 
+Pricing fallback follow-up: the public HTML advertises $39.95 with promotional pricing/comparison hidden. Only a valid live quote with a positive launch-slot count reveals a discounted offer. Network errors, non-2xx responses, malformed/invalid configuration and unavailable JavaScript keep that safe default. All 18 targeted landing tests and the production build passed for this correction.
+
 **Cloudflare owner, after merge:** apply `0004` only if its complete purchase schema is absent, then `0005_streamlion_launch_200.sql` using the idempotent preflight in `docs/stripe-activation.md`. Verify v1/v2 stamps, the 1–200 CHECK, preserved financial state and uniqueness indexes; staging must be absent. Configure `STREAMLION_REFUND_DAYS=7` for this offer. Deploy the approved merged main's Pages frontend and Functions, recording its SHA/revision.
 
 **Stripe owner:** complete the existing account's sandbox product/key/webhook and refund/restore acceptance before approving live activation. The expanded slot cap does not replace that work. The guarantee is handled through the support email and manual full refunds in Stripe. Keep any earlier, longer purchased refund rights.

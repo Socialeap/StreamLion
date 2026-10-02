@@ -3,6 +3,24 @@ const LAUNCH_PRICE = 29.96;
 
 export const VALUE_TASKS = ["brief", "readings", "handover"];
 
+/** Only a valid live quote with available slots may reveal promotional pricing. */
+export function confirmedPurchaseQuote(config) {
+  if (
+    !config?.enabled ||
+    config.mode !== "live" ||
+    ![config.amount, config.standardAmount].every(
+      (n) => Number.isSafeInteger(n) && n > 0,
+    ) ||
+    config.currency !== "usd" ||
+    ![7, 14, 30].includes(config.refundDays) ||
+    (config.amount < config.standardAmount &&
+      (!Number.isSafeInteger(config.launchRemaining) ||
+        config.launchRemaining <= 0))
+  )
+    return null;
+  return config;
+}
+
 /** Editable task timings are planning assumptions, not measured app performance. */
 export function estimateTaskValue(tasks, hourlyRate, prices) {
   if (!Array.isArray(tasks) || tasks.length !== VALUE_TASKS.length) return null;

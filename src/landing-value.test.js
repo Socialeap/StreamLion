@@ -1,6 +1,65 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { estimateTimeValue, estimateTaskValue } from "./landing-value.js";
+import { readFileSync } from "node:fs";
+import { JSDOM } from "jsdom";
+import {
+  confirmedPurchaseQuote,
+  estimateTimeValue,
+  estimateTaskValue,
+} from "./landing-value.js";
+
+const liveQuote = {
+  enabled: true,
+  mode: "live",
+  amount: 2996,
+  standardAmount: 3995,
+  currency: "usd",
+  refundDays: 7,
+  launchRemaining: 1,
+};
+test("launch pricing requires a valid live quote and an available slot", () => {
+  assert.equal(confirmedPurchaseQuote(liveQuote), liveQuote);
+  for (const config of [
+    null,
+    undefined,
+    {},
+    { ...liveQuote, enabled: false },
+    { ...liveQuote, mode: "test" },
+    { ...liveQuote, amount: "2996" },
+    { ...liveQuote, currency: "eur" },
+    { ...liveQuote, refundDays: 0 },
+    { ...liveQuote, launchRemaining: 0 },
+    { ...liveQuote, launchRemaining: undefined },
+  ])
+    assert.equal(confirmedPurchaseQuote(config), null);
+});
+test("exhausted live quotes may show standard pricing", () => {
+  const standard = { ...liveQuote, amount: 3995, launchRemaining: 0 };
+  assert.equal(confirmedPurchaseQuote(standard), standard);
+});
+test("HTML without JavaScript or a successful quote only advertises standard pricing", () => {
+  const document = new JSDOM(
+    readFileSync(new URL("../api/welcome.html", import.meta.url), "utf8"),
+  ).window.document;
+  assert.equal(
+    document.querySelector(".launch-price .price").textContent,
+    "$39.95",
+  );
+  assert.equal(
+    document.querySelector(".launch-price h3").textContent,
+    "One-time purchase",
+  );
+  for (const selector of [
+    ".original-price",
+    ".launch-saving",
+    "[data-launch-comparison]",
+  ])
+    assert.equal(document.querySelector(selector).hidden, true);
+  assert.equal(
+    document.querySelector(".launch-price .button").getAttribute("href"),
+    "/api/purchase",
+  );
+});
 
 test("illustrative defaults compare both prices", () => {
   const result = estimateTimeValue("10", "60");

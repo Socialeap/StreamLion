@@ -1,6 +1,10 @@
 import "./landing.css";
 import { parseMeasurements } from "./measurements.js";
-import { estimateTaskValue, VALUE_TASKS } from "./landing-value.js";
+import {
+  confirmedPurchaseQuote,
+  estimateTaskValue,
+  VALUE_TASKS,
+} from "./landing-value.js";
 import { answerProjectQuestion } from "./project-answers.js";
 import { beforeLeaving } from "./workflow.js";
 import {
@@ -81,7 +85,7 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
 });
 const count = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
-let purchasePrices;
+let purchasePrices = { standard: 39.95, launch: 39.95 };
 function updateValue() {
   const tasks = VALUE_TASKS.map((id) => ({
     before: document.querySelector(`#time-${id}-before`).value,
@@ -384,16 +388,9 @@ showSampleAnswer();
 // Public checkout remains server-gated; the CTA always reaches the purchase page.
 fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
   .then((r) => (r.ok ? r.json() : null))
+  .then(confirmedPurchaseQuote)
   .then((config) => {
-    if (!config?.enabled || config.mode !== "live") return;
-    if (
-      ![config.amount, config.standardAmount].every(
-        (n) => Number.isSafeInteger(n) && n > 0,
-      ) ||
-      config.currency !== "usd" ||
-      ![7, 14, 30].includes(config.refundDays)
-    )
-      return;
+    if (!config) return;
     const format = (amount) => currency.format(amount / 100);
     document.querySelector(".standard-price .price").textContent = format(
       config.standardAmount,
@@ -433,5 +430,5 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
       : "Pay once. Your final price and any taxes are shown before payment.";
   })
   .catch(() => {
-    /* The purchase page rechecks availability and the final quote. */
+    /* Keep the standard-price HTML fallback; never imply unconfirmed slots. */
   });
