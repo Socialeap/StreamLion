@@ -333,6 +333,9 @@ export async function handleGoogle({ request, env, params }) {
       : json({ error: "Persistent connection is not enabled." }, 503);
   if (!googleConfigurationReady(env))
     return json({ error: "Google connection setup is incomplete." }, 503);
+  let callbackStage = "token_exchange";
+  const failed = (reason, cookies = []) =>
+    redirect(origin(env) + "/?google=failed&reason=" + reason, cookies);
   try {
     if (url.origin !== origin(env))
       return json(
@@ -405,7 +408,7 @@ export async function handleGoogle({ request, env, params }) {
         return redirect(origin(env) + "/?google=expired", [clearFlow]);
       if (flow.state !== url.searchParams.get("state"))
         // Another tab may own the current flow; reject without clearing it.
-        return redirect(origin(env) + "/?google=failed");
+        return failed("state_mismatch");
       if (url.searchParams.has("error"))
         return redirect(origin(env) + "/?google=cancelled", [clearFlow]);
       const response = await tokenExchange(env, {
@@ -415,17 +418,26 @@ export async function handleGoogle({ request, env, params }) {
         redirect_uri: origin(env) + "/api/google/callback",
       });
       const tokens = await response.json();
+      if (!response.ok)
+        return failed(
+          tokens.error === "invalid_client"
+            ? "client_rejected"
+            : tokens.error === "invalid_grant"
+              ? "grant_rejected"
+              : "token_exchange",
+          [clearFlow],
+        );
+      if (!tokens.refresh_token) return failed("offline_access", [clearFlow]);
       if (
-        !response.ok ||
         !tokens.access_token ||
-        !tokens.refresh_token ||
         !Number.isFinite(Number(tokens.expires_in)) ||
         Number(tokens.expires_in) <= 0 ||
         !tokens.scope
           ?.split(" ")
           .includes("https://www.googleapis.com/auth/drive.file")
       )
-        return redirect(origin(env) + "/?google=failed", [clearFlow]);
+        return failed("token_response", [clearFlow]);
+      callbackStage = "account_check";
       const identityResponse = await googleFetch(
         "https://openidconnect.googleapis.com/v1/userinfo",
         {
@@ -440,7 +452,8 @@ export async function handleGoogle({ request, env, params }) {
         !identity.email ||
         !identity.email_verified
       )
-        return redirect(origin(env) + "/?google=failed", [clearFlow]);
+        return failed("account_check", [clearFlow]);
+      callbackStage = "session_save";
       const previous = await getSession(request, env);
       const id = random(),
         sessionHash = await hash(id);
@@ -642,9 +655,7 @@ export async function handleGoogle({ request, env, params }) {
       request.method === "GET" &&
       url.origin === origin(env)
     )
-      return redirect(origin(env) + "/?google=failed", [
-        setCookie(FLOW, "", 0),
-      ]);
+      return failed(callbackStage, [setCookie(FLOW, "", 0)]);
     const status =
       e.message === "reconnect"
         ? 401

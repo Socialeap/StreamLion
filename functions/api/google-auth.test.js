@@ -209,7 +209,7 @@ test("callback rejects mismatched state without calling Google", async () => {
   assert.equal(response.status, 303);
   assert.equal(
     response.headers.get("Location"),
-    "https://app.example/?google=failed",
+    "https://app.example/?google=failed&reason=state_mismatch",
   );
   assert.equal(response.headers.has("Content-Disposition"), false);
   assert.equal(response.headers.has("Content-Security-Policy"), false);
@@ -264,7 +264,7 @@ test("Google exchange failures return to Connections rather than an API download
     assert.equal(response.status, 303);
     assert.equal(
       response.headers.get("Location"),
-      "https://app.example/?google=failed",
+      "https://app.example/?google=failed&reason=token_exchange",
     );
     assert.equal(response.headers.has("Content-Disposition"), false);
   } finally {
@@ -779,3 +779,81 @@ test("folder proxy accepts only folder creation and parent-only moves, never sha
     /bad_request/,
   );
 });
+
+for (const scenario of [
+  {
+    reason: "client_rejected",
+    status: 401,
+    token: { error: "invalid_client", error_description: "private-secret" },
+  },
+  { reason: "grant_rejected", status: 400, token: { error: "invalid_grant" } },
+  {
+    reason: "token_exchange",
+    status: 503,
+    token: { error: "private-upstream" },
+  },
+  { reason: "offline_access", token: { access_token: "private-token" } },
+  {
+    reason: "token_response",
+    token: {
+      access_token: "private-token",
+      refresh_token: "private-refresh",
+      expires_in: 3600,
+      scope: "email",
+    },
+  },
+  { reason: "account_check", identity: { email: "private@example.com" } },
+  { reason: "session_save", databaseFailure: true },
+]) {
+  test(`callback safely identifies ${scenario.reason} without exposing provider data`, async () => {
+    const { env, request } = fixture();
+    const start = await request("start");
+    const flowCookie = start.headers.get("Set-Cookie").split(";")[0];
+    const flow = await unseal(env, flowCookie.split("=")[1], "oauth-flow");
+    const original = globalThis.fetch;
+    const validToken = {
+      access_token: "private-token",
+      refresh_token: "private-refresh",
+      expires_in: 3600,
+      scope: "openid email https://www.googleapis.com/auth/drive.file",
+    };
+    globalThis.fetch = async (url) =>
+      new Response(
+        JSON.stringify(
+          String(url).includes("/token")
+            ? scenario.token || validToken
+            : scenario.identity || {
+                sub: "private-subject",
+                email: "private@example.com",
+                email_verified: true,
+              },
+        ),
+        {
+          status: String(url).includes("/token") ? scenario.status || 200 : 200,
+        },
+      );
+    if (scenario.databaseFailure)
+      env.GOOGLE_SESSIONS.batch = async () => {
+        throw new Error("private-database-details");
+      };
+    try {
+      const response = await handleGoogle({
+        env,
+        params: { path: ["callback"] },
+        request: new Request(
+          `https://app.example/api/google/callback?state=${flow.state}&code=private-code`,
+          { headers: { Cookie: flowCookie } },
+        ),
+      });
+      assert.equal(response.status, 303);
+      assert.equal(
+        response.headers.get("Location"),
+        `https://app.example/?google=failed&reason=${scenario.reason}`,
+      );
+      assert.doesNotMatch(response.headers.get("Location"), /private-/);
+      assert.match(response.headers.get("Set-Cookie"), /Max-Age=0/);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+}
