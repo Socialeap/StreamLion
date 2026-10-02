@@ -135,8 +135,17 @@ async function getSession(request, env) {
   }
   return row;
 }
-function googleFetch(url, options) {
-  return fetch(url, { ...options, signal: AbortSignal.timeout(20000) });
+export async function googleFetch(url, options) {
+  // Workers rejects redirect: "error". Never follow a credential-bearing
+  // request to another destination: inspect and reject redirects ourselves.
+  const response = await fetch(url, {
+    ...options,
+    redirect: "manual",
+    signal: AbortSignal.timeout(20000),
+  });
+  if (response.status >= 300 && response.status < 400)
+    throw new Error("google_redirect_rejected");
+  return response;
 }
 async function tokenExchange(env, params) {
   return googleFetch("https://oauth2.googleapis.com/token", {
@@ -147,7 +156,6 @@ async function tokenExchange(env, params) {
       client_secret: env.GOOGLE_CLIENT_SECRET,
       ...params,
     }),
-    redirect: "error",
   });
 }
 const refreshing = new Map();
@@ -442,7 +450,6 @@ export async function handleGoogle({ request, env, params }) {
         "https://openidconnect.googleapis.com/v1/userinfo",
         {
           headers: { Authorization: `Bearer ${tokens.access_token}` },
-          redirect: "error",
         },
       );
       const identity = await identityResponse.json();
@@ -563,7 +570,6 @@ export async function handleGoogle({ request, env, params }) {
           : `https://sheets.googleapis.com/v4/spreadsheets/${bookId}?fields=spreadsheetId`,
         {
           headers: { Authorization: `Bearer ${await accessToken(env, row)}` },
-          redirect: "error",
         },
       );
       if (!check.ok)
@@ -633,7 +639,6 @@ export async function handleGoogle({ request, env, params }) {
             request.headers.get("Content-Type") || "application/json",
         },
         body,
-        redirect: "error",
       });
       // Never replay a mutation automatically after an uncertain upstream outcome.
       return new Response(response.body, {
