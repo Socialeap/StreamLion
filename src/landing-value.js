@@ -17,14 +17,21 @@ function jobsToCover(price, value) {
 }
 
 /** Illustrative time value, not a claim about actual customer savings. */
-export function estimateTimeValue(minutes, hourlyRate) {
+export function estimateTimeValue(
+  minutes,
+  hourlyRate,
+  { standard = STANDARD_PRICE, launch = LAUNCH_PRICE } = {},
+) {
+  standard = positiveNumber(standard, 10000);
+  launch = positiveNumber(launch, 10000);
+  if (standard === null || launch === null) return null;
   const time = positiveNumber(minutes, 480);
   const rate = positiveNumber(hourlyRate, 10000);
   if (time === null || rate === null) return null;
   const perJob = (time / 60) * rate;
   if (!Number.isFinite(perJob) || perJob <= 0) return null;
-  const standardJobs = jobsToCover(STANDARD_PRICE, perJob);
-  const launchJobs = jobsToCover(LAUNCH_PRICE, perJob);
+  const standardJobs = jobsToCover(standard, perJob);
+  const launchJobs = jobsToCover(launch, perJob);
   if (
     ![standardJobs, launchJobs].every(
       (value) => Number.isSafeInteger(value) && value > 0,
@@ -35,7 +42,7 @@ export function estimateTimeValue(minutes, hourlyRate) {
     perJob,
     standardJobs,
     launchJobs,
-    standardProgress: Math.min(1, perJob / STANDARD_PRICE),
-    launchProgress: Math.min(1, perJob / LAUNCH_PRICE),
+    standardProgress: Math.min(1, perJob / standard),
+    launchProgress: Math.min(1, perJob / launch),
   };
 }

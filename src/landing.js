@@ -43,8 +43,9 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
 });
 const count = new Intl.NumberFormat("en-US");
+let purchasePrices;
 function updateValue() {
-  const estimate = estimateTimeValue(minutes.value, rate.value);
+  const estimate = estimateTimeValue(minutes.value, rate.value, purchasePrices);
   document.querySelector("#roi-result").hidden = !estimate;
   document.querySelector("#roi-message").textContent = estimate
     ? ""
@@ -130,11 +131,13 @@ closeout.forEach((select) =>
   }),
 );
 const dialog = document.querySelector("#interest-dialog");
-document
-  .querySelectorAll("[data-interest]")
-  .forEach((button) =>
-    button.addEventListener("click", () => dialog.showModal()),
-  );
+document.querySelectorAll("[data-interest]").forEach((button) =>
+  button.addEventListener("click", () => {
+    if (button.dataset.purchaseEnabled === "true")
+      window.location.assign("/api/purchase");
+    else dialog.showModal();
+  }),
+);
 dialog.addEventListener("click", (event) => {
   if (event.target === dialog) {
     const r = dialog.getBoundingClientRect();
@@ -254,3 +257,58 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) stopSampleSpeech();
 });
 showSampleAnswer();
+
+// Keep the existing launch-interest path until the owner enables verified checkout.
+fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
+  .then((r) => (r.ok ? r.json() : null))
+  .then((config) => {
+    if (!config?.enabled || config.mode !== "live") return;
+    document.querySelectorAll("[data-interest]").forEach((button) => {
+      button.dataset.purchaseEnabled = "true";
+      button.textContent = "Buy StreamLion";
+    });
+    const format = (amount) =>
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+      }).format(amount / 100);
+    document.querySelector(".standard-price .price").textContent = format(
+      config.standardAmount,
+    );
+    document.querySelector(".launch-price .price").textContent = format(
+      config.amount,
+    );
+    const launch = config.amount < config.standardAmount;
+    document.querySelector(".launch-price h3").textContent = launch
+      ? "First 100 purchases"
+      : "One-time purchase";
+    document.querySelector(".original-price s").textContent = format(
+      config.standardAmount,
+    );
+    document.querySelector(".original-price").hidden = !launch;
+    const saving = document.querySelector(".launch-saving");
+    saving.hidden = !launch;
+    saving.textContent = `Launch offer · save ${format(config.standardAmount - config.amount)}`;
+    purchasePrices = {
+      standard: config.standardAmount / 100,
+      launch: config.amount / 100,
+    };
+    document.querySelector("#roi-standard-price").textContent =
+      `At ${format(config.standardAmount)}`;
+    document.querySelector("#roi-launch-price").textContent =
+      `At ${format(config.amount)}${launch ? " launch price" : ""}`;
+    document.querySelector("#roi-launch-price").parentElement.hidden = !launch;
+    updateValue();
+    const faq = document.querySelector("[data-launch-faq]");
+    if (faq)
+      faq.textContent = launch
+        ? "Sales are open. Launch-priced places are confirmed at checkout. The first 100 completed purchases receive the launch price; an email request does not reserve a place."
+        : "Sales are open at the one-time price shown above.";
+    const note = document.querySelector("[data-checkout-note]");
+    if (note)
+      note.textContent =
+        "Pay once. Your final price and any taxes are shown before payment.";
+  })
+  .catch(() => {
+    /* launch-interest path remains usable */
+  });

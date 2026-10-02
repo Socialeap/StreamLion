@@ -10,7 +10,13 @@ export const navigationFallbackDenylist = [
 ];
 export default defineConfig({
   build: {
-    rollupOptions: { input: { app: "index.html", welcome: "api/welcome.html" } },
+    rollupOptions: {
+      input: {
+        app: "index.html",
+        welcome: "api/welcome.html",
+        purchase: "api/purchase.html",
+      },
+    },
   },
   define: {
     __STREAMLION_REVISION__: JSON.stringify(
