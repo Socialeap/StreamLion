@@ -1,7 +1,10 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta name="google-site-verification" content="jjiVIwqcuUy5j_XMvbPFCMGBaNtSUGGQT5PGrcVZXDo" />
+    <meta
+      name="google-site-verification"
+      content="jjiVIwqcuUy5j_XMvbPFCMGBaNtSUGGQT5PGrcVZXDo"
+    />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#173e31" />
@@ -453,7 +456,7 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
                   ><output id="roi-standard">4</output>
                   <span id="roi-standard-unit">jobs</span></strong
                 >
-                <p>At $39.95</p>
+                <p id="roi-standard-price">At $39.95</p>
                 <div class="value-bar" aria-hidden="true">
                   <i id="roi-standard-bar"></i>
                 </div>
@@ -463,7 +466,7 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
                   ><output id="roi-launch">3</output>
                   <span id="roi-launch-unit">jobs</span></strong
                 >
-                <p>At $29.96 launch price</p>
+                <p id="roi-launch-price">At $29.96 launch price</p>
                 <div class="value-bar" aria-hidden="true">
                   <i id="roi-launch-bar"></i>
                 </div>
@@ -505,12 +508,12 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
             </ul>
           </div>
           <div class="launch-price">
-            <h3>First 100 purchases</h3>
+            <h3>100 launch-price places</h3>
             <p class="price">$29.96</p>
             <p class="original-price"><s>$39.95</s></p>
             <p class="launch-saving">25% off at launch · save $9.99</p>
             <button class="button" data-interest>Get launch updates</button>
-            <p class="small">
+            <p class="small" data-checkout-note>
               Sales open after launch checks. Taxes shown at checkout.
             </p>
           </div>
@@ -606,10 +609,11 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
         </details>
         <details>
           <summary>Is the launch offer available now?</summary>
-          <p>
-            Not yet. Request a launch email when sales open. The first 100
-            completed purchases receive 25% off; an email request does not
-            reserve the discount.
+          <p data-launch-faq>
+            Not yet. Request a launch email when sales open. There will be 100
+            launch-price places, reserved when checkout starts. Pending payments
+            hold a place; expired or failed checkouts release it once confirmed.
+            An email request does not reserve the discount.
           </p>
         </details>
       </section>

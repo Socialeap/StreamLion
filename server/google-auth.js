@@ -1,5 +1,6 @@
 import { FOLDER_MIME } from "../src/drive-folders.js";
 import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
+import { hasPurchase, licenseRequired } from "./purchase-access.js";
 const SESSION = "__Host-streamlion-session";
 const FLOW = "__Host-streamlion-oauth";
 const SCOPE = "openid email https://www.googleapis.com/auth/drive.file";
@@ -117,7 +118,7 @@ function redirect(url, cookies = []) {
 function sameOrigin(request, env) {
   return request.headers.get("Origin") === origin(env);
 }
-async function getSession(request, env) {
+export async function getSession(request, env) {
   const id = cookie(request, SESSION);
   if (!/^[A-Za-z0-9_-]{43}$/.test(id)) return null;
   const row = await env.GOOGLE_SESSIONS.prepare(
@@ -387,7 +388,15 @@ export async function handleGoogle({ request, env, params }) {
         state = random();
       const flow = await seal(
         env,
-        { verifier, state, expiresAt: Date.now() + 600000 },
+        {
+          verifier,
+          state,
+          expiresAt: Date.now() + 600000,
+          returnTo:
+            url.searchParams.get("returnTo") === "purchase"
+              ? "/api/purchase"
+              : "/",
+        },
         "oauth-flow",
       );
       const target = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -500,10 +509,12 @@ export async function handleGoogle({ request, env, params }) {
           ).bind(previous.session_hash),
         );
       await env.GOOGLE_SESSIONS.batch(statements);
-      return redirect(origin(env) + "/?google=connected", [
-        clearFlow,
-        setCookie(SESSION, id, MAX_AGE),
-      ]);
+      return redirect(
+        origin(env) +
+          (flow.returnTo === "/api/purchase" ? flow.returnTo : "/") +
+          "?google=connected",
+        [clearFlow, setCookie(SESSION, id, MAX_AGE)],
+      );
     }
     const row = await getSession(request, env);
     if (route === "session" && request.method === "GET") {
@@ -536,6 +547,13 @@ export async function handleGoogle({ request, env, params }) {
       response.headers.set("Set-Cookie", setCookie(SESSION, "", 0));
       return response;
     }
+    // Sign-in/status/disconnect stay accessible so unpaid buyers can authenticate
+    // and restore a purchase. Every server-backed workspace operation is gated.
+    if (licenseRequired(env) && !(await hasPurchase(env, row.google_subject)))
+      return json(
+        { error: "Purchase StreamLion or restore your purchase to continue." },
+        402,
+      );
     if (["workbook", "folder"].includes(route) && request.method === "POST") {
       const isFolder = route === "folder";
       const body = await limitedBody(request, 4096);

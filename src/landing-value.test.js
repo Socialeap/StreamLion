@@ -30,3 +30,11 @@ test("invalid or unsupported estimates produce no result", () => {
   assert.equal(estimateTimeValue(Number.MIN_VALUE, 60), null);
   assert.equal(estimateTimeValue(0.000000000000001, 1), null);
 });
+
+test("the estimate follows the actual configured checkout price", () => {
+  const result = estimateTimeValue(10, 60, { standard: 29.95, launch: 29.95 });
+  assert.equal(result.standardJobs, 3);
+  assert.equal(result.launchJobs, 3);
+  assert.equal(result.standardProgress, 10 / 29.95);
+  assert.equal(estimateTimeValue(10, 60, { standard: -1, launch: 20 }), null);
+});

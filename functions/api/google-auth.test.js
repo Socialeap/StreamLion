@@ -282,7 +282,14 @@ for (const subject of ["account-a", "account-b"])
     const oldStart = await f.request("start");
     const oldCookie = oldStart.headers.get("Set-Cookie").split(";")[0];
     const oldFlow = await unseal(f.env, oldCookie.split("=")[1], "oauth-flow");
-    const start = await f.request("start");
+    const start = await handleGoogle({
+      env: f.env,
+      params: { path: ["start"] },
+      request: new Request(
+        "https://app.example/api/google/start?returnTo=" +
+          (subject === "account-a" ? "purchase" : "https://evil.example"),
+      ),
+    });
     const flowCookie = start.headers.get("Set-Cookie").split(";")[0];
     const flow = await unseal(f.env, flowCookie.split("=")[1], "oauth-flow");
     const original = globalThis.fetch;
@@ -329,6 +336,10 @@ for (const subject of ["account-a", "account-b"])
         ),
       });
       assert.equal(response.status, 303);
+      assert.equal(
+        response.headers.get("Location"),
+        `https://app.example${subject === "account-a" ? "/api/purchase" : "/"}?google=connected`,
+      );
       const rows = f.db
         .prepare("SELECT * FROM streamlion_google_sessions_v1")
         .all();
