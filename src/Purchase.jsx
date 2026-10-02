@@ -23,7 +23,9 @@ export default function Purchase({ onPurchased }) {
         "session_id",
       );
       // Verified buyers can reopen their workspace during a pricing outage.
-      if (a.purchased && !sessionId) {
+      if (a.purchased) {
+        if (sessionId)
+          window.history.replaceState(null, "", window.location.pathname);
         setConfig({ enabled: true, required: a.required, mode: a.mode });
         setAccount(a);
         onPurchased?.();
@@ -185,8 +187,10 @@ export default function Purchase({ onPurchased }) {
               </p>
               {config.launchRemaining > 0 && (
                 <p>
-                  Launch price for the first 100 purchases. Your final price is
-                  shown before payment.
+                  100 launch-price places, reserved when checkout starts.
+                  Pending payments hold a place; expired or failed checkouts
+                  release it once confirmed. Your final price is shown before
+                  payment.
                 </p>
               )}
               <p>

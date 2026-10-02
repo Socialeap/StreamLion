@@ -280,7 +280,7 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
     );
     const launch = config.amount < config.standardAmount;
     document.querySelector(".launch-price h3").textContent = launch
-      ? "First 100 purchases"
+      ? "100 launch-price places"
       : "One-time purchase";
     document.querySelector(".original-price s").textContent = format(
       config.standardAmount,
@@ -302,8 +302,8 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
     const faq = document.querySelector("[data-launch-faq]");
     if (faq)
       faq.textContent = launch
-        ? "Sales are open. Launch-priced places are confirmed at checkout. The first 100 completed purchases receive the launch price; an email request does not reserve a place."
-        : "Sales are open at the one-time price shown above.";
+        ? "Sales are open. There are 100 launch-price places, reserved when checkout starts. Pending payments hold a place; expired or failed checkouts release it once confirmed. Your final price is shown before payment. An email request does not reserve a place."
+        : "Sales are open at the one-time price shown above. Launch-price places may be unavailable while pending checkouts hold reservations. Your final price is shown before payment.";
     const note = document.querySelector("[data-checkout-note]");
     if (note)
       note.textContent =

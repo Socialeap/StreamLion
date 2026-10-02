@@ -66,33 +66,49 @@ test("a temporary configuration failure offers a working retry and clear sign-in
   assert.ok(ui.getByText(/No real payment/));
   cleanup();
 });
-test("a purchase restores its account even during a pricing outage, without another checkout", async (t) => {
-  t.mock.method(globalThis, "fetch", async (url) =>
-    url.endsWith("config")
-      ? response({ error: "Pricing outage" }, 503)
-      : response({
-          enabled: true,
-          required: true,
-          connected: true,
-          purchased: true,
-          mode: "test",
-          account: "provider@example.com",
-          subject: "buyer",
-        }),
-  );
-  const ui = render(<Purchase />);
-  await act(async () => {});
-  assert.equal(
-    ui.getByRole("link", { name: "Open workspace" }).getAttribute("href"),
-    "/",
-  );
-  assert.ok(ui.getByText("provider@example.com"));
-  assert.equal(
-    ui.queryByRole("button", { name: "Continue to secure checkout" }),
-    null,
-  );
-  cleanup();
-});
+for (const sessionId of [null, "cs_test_verified"])
+  test(`a verified purchase restores during a pricing outage ${sessionId ? "on checkout return" : "without a return session"}`, async (t) => {
+    window.history.replaceState(
+      null,
+      "",
+      "/api/purchase" + (sessionId ? `?session_id=${sessionId}` : ""),
+    );
+    const requests = [];
+    let restored = 0;
+    t.mock.method(globalThis, "fetch", async (url) => {
+      requests.push(url);
+      return url.endsWith("config")
+        ? response({ error: "Pricing outage" }, 503)
+        : response({
+            enabled: true,
+            required: true,
+            connected: true,
+            purchased: true,
+            mode: "test",
+            account: "provider@example.com",
+            subject: "buyer",
+          });
+    });
+    const ui = render(<Purchase onPurchased={() => restored++} />);
+    await act(async () => {});
+    assert.equal(
+      ui.getByRole("link", { name: "Open workspace" }).getAttribute("href"),
+      "/",
+    );
+    assert.ok(ui.getByText("provider@example.com"));
+    assert.equal(ui.queryByRole("alert"), null);
+    assert.equal(window.location.search, "");
+    assert.equal(restored, 1);
+    assert.equal(
+      requests.some((url) => url.endsWith("confirm")),
+      false,
+    );
+    assert.equal(
+      ui.queryByRole("button", { name: "Continue to secure checkout" }),
+      null,
+    );
+    cleanup();
+  });
 test("payment verification failure does not mount the workspace; retry restores it", async (t) => {
   let fail = true;
   t.mock.method(globalThis, "fetch", async () =>
