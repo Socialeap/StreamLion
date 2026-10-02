@@ -1,4 +1,5 @@
 import ProjectFolderButton from "./ProjectFolderButton.jsx";
+import ProjectVoiceAnswers from "./ProjectVoiceAnswers.jsx";
 import { useEffect, useState } from "react";
 import { MapPin, Phone, Check, ArrowRight } from "lucide-react";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
@@ -68,6 +69,9 @@ function ProjectHomeContent({
   onSave,
   onRepeat,
   onFolderBusy,
+  onVoiceBusy,
+  answerSource,
+  answerAsOf,
   scope,
   connected,
   siteCopy,
@@ -376,6 +380,13 @@ function ProjectHomeContent({
           <button onClick={onBack}>All projects</button>
         </div>
       </header>
+      <ProjectVoiceAnswers
+        project={project}
+        scope={scope}
+        source={answerSource}
+        asOf={answerAsOf}
+        onBusy={onVoiceBusy}
+      />
       <nav className="project-stages" aria-label="Project workflow">
         {PANELS.map((name, i) => (
           <button

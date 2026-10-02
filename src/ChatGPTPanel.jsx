@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { PROJECT_FIELDS, intakeFor } from "./project-schema";
-import { paymentSummary, projectContext, readWorkflow } from "./workflow";
+import { projectContext, readWorkflow } from "./workflow";
+import ProjectVoiceAnswers from "./ProjectVoiceAnswers.jsx";
 import { download } from "./storage";
 
 export function chatPrompt({ mode = "ask" } = {}) {
@@ -122,8 +123,10 @@ export default function ChatGPTPanel({
   project,
   notes = [],
   asOf = "Current device records",
+  source = "device",
+  scope,
+  onBusy,
 }) {
-  const [fact, setFact] = useState("");
   let snapshot = "",
     handoffKey = "",
     plan,
@@ -143,30 +146,6 @@ export default function ChatGPTPanel({
   } catch (e) {
     error = e.message;
   }
-  const facts = project
-    ? {
-        Visit: [
-          project.startLocal
-            ? `${project.startLocal.replace("T", " ")} (${project.timeZone || "time zone not recorded"})`
-            : "Appointment not recorded",
-          project.appointmentStatus || "Status not recorded",
-        ].join(" · "),
-        Access:
-          project.accessInstructions || "Access instructions not recorded.",
-        "Requested work":
-          [
-            project.scope,
-            project.deliverables &&
-              `Requested outputs: ${project.deliverables}`,
-          ]
-            .filter(Boolean)
-            .join("\n\n") || "Work has not been recorded.",
-        Payment: (() => {
-          const pay = paymentSummary(project);
-          return `Agreed: ${pay.agreed}\nInvoiced: ${pay.invoiced}\nReceived: ${pay.received}\nOutstanding: ${pay.outstanding}`;
-        })(),
-      }
-    : {};
   return (
     <section className="intake-panel chat-panel">
       <h2>
@@ -174,25 +153,13 @@ export default function ChatGPTPanel({
       </h2>
       {project && (
         <>
-          <p>Quick answers from your saved details. No chat setup needed.</p>
-          <div className="actions">
-            {Object.keys(facts).map((name) => (
-              <button
-                key={name}
-                onClick={() => setFact(name)}
-                aria-pressed={fact === name}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-          {fact && (
-            <div className="fact-answer" role="status">
-              <strong>{fact}</strong>
-              <p className="note-text">{facts[fact]}</p>
-              <small>From project details · {asOf}</small>
-            </div>
-          )}
+          <ProjectVoiceAnswers
+            project={project}
+            source={source}
+            scope={scope}
+            asOf={asOf}
+            onBusy={onBusy}
+          />
           <h3>Need help thinking it through?</h3>
         </>
       )}
