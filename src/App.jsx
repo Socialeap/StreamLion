@@ -16,6 +16,7 @@ import {
   Ruler,
 } from "lucide-react";
 import Jobs from "./Jobs";
+import { googleSignInFailure } from "./google-signin-errors.js";
 import Notes from "./Notes";
 import Measurements from "./MeasurementCapture.jsx";
 import ProjectEditor from "./ProjectEditor";
@@ -144,7 +145,10 @@ export default function App() {
       setPage("Connections");
     } else if (result === "cancelled" || result === "failed") {
       setError(
-        "Google sign-in was not completed. Your drafts are preserved; try again in Connections.",
+        googleSignInFailure(
+          result,
+          new URLSearchParams(window.location.search).get("reason"),
+        ),
       );
       setPage("Connections");
     }
