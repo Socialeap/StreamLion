@@ -1158,6 +1158,15 @@ export default function App() {
             siteCopy={siteCopy}
             onSiteCopy={keepSiteCopy}
             onFolderBusy={setSyncBusy}
+            onVoiceBusy={setCaptureBusy}
+            answerSource={
+              active.deviceOnly
+                ? "device"
+                : remote && hasGoogleSession()
+                  ? "google"
+                  : "copy"
+            }
+            answerAsOf={remote ? verifiedAt : siteCopy?.verifiedAt}
             onBack={() => setPage("Projects")}
             onEdit={() => setEditing(active)}
             onAsk={() => setPage("Ask")}
@@ -1265,7 +1274,8 @@ export default function App() {
                   Ask StreamLion
                 </h1>
                 <p>
-                  Quick answers here. Your own ChatGPT for a deeper discussion.
+                  Ask by voice or type. Get answers from your saved project
+                  details.
                 </p>
               </div>
             </header>
@@ -1274,7 +1284,7 @@ export default function App() {
               <select
                 value={selected}
                 onChange={(e) => setSelected(e.target.value)}
-                title="Choose a project, or leave All projects selected to ask a general question."
+                title="Choose the project whose saved details you want to ask about."
               >
                 <option value="">Choose a project</option>
                 {workspace.jobs.map((j) => (
@@ -1285,9 +1295,18 @@ export default function App() {
               </select>
             </label>
             <ChatGPTPanel
-              key={selected}
+              key={`${active?.deviceOnly ? "local" : bookId}:${selected}`}
               project={active}
               notes={workspace.notes}
+              source={
+                active?.deviceOnly
+                  ? "device"
+                  : remote && hasGoogleSession()
+                    ? "google"
+                    : "copy"
+              }
+              scope={active?.deviceOnly ? "local" : bookId}
+              onBusy={setCaptureBusy}
               asOf={
                 !active?.deviceOnly
                   ? remote
