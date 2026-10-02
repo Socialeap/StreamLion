@@ -1619,3 +1619,340 @@ dialog .small {
     transform: none;
   }
 }
+
+/* Visitor demo and illustrative value estimate. */
+.site-header nav {
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.hero {
+  grid-template-columns: 0.95fr 1.05fr;
+  gap: 48px;
+  min-height: 630px;
+  padding: 56px 0 72px;
+}
+.hero h1 {
+  font-size: clamp(42px, 4.6vw, 68px);
+}
+.hero-copy .lead {
+  margin-top: 24px;
+  font-size: 20px;
+}
+.hero-project {
+  margin: 0;
+  padding: 10px 24px 24px;
+}
+.hero-project > div {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 14px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+.hero-project > div:last-child {
+  border: 0;
+}
+.hero-project dt {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hero-project svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--forest);
+  stroke-width: 1.6;
+  flex-shrink: 0;
+}
+.hero-project dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.product-preview .preview-benefits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  text-align: center;
+  margin-top: 22px;
+  font-size: 12px;
+}
+.preview-benefits span {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+}
+.preview-benefits svg {
+  width: 42px;
+  height: 42px;
+  padding: 11px;
+  background: var(--lime);
+  border-radius: 50%;
+  fill: none;
+  stroke: var(--forest);
+  stroke-width: 1.7;
+}
+.demo-switch {
+  flex-direction: column;
+  max-width: 370px;
+}
+.demo-switch button {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  text-align: left;
+  padding: 14px 18px;
+}
+.demo-switch button span {
+  opacity: 0.75;
+  font-size: 12px;
+}
+.demo-intro .demo-instruction {
+  min-height: 0;
+  margin-top: 20px;
+}
+.demo-intro #demo-benefit {
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+.demo-intro #demo-description {
+  min-height: 56px;
+  font-size: 16px;
+}
+.roi-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  padding: 100px 0;
+  align-items: center;
+}
+.roi-intro h2 em {
+  font-style: normal;
+  color: #4c765a;
+}
+.roi-intro .lead {
+  font-size: 18px;
+  max-width: 390px;
+  margin-top: 22px;
+}
+.outcome-list {
+  list-style: none;
+  padding: 0;
+  margin: 40px 0 0;
+  display: grid;
+  gap: 28px;
+}
+.outcome-list li {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+.outcome-list svg {
+  width: 54px;
+  height: 54px;
+  padding: 14px;
+  background: #e9efdf;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  fill: none;
+  stroke: var(--forest);
+  stroke-width: 1.5;
+  flex-shrink: 0;
+}
+.outcome-list h3 {
+  font-size: 19px;
+  letter-spacing: -0.025em;
+}
+.outcome-list p {
+  font-size: 15px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.roi-calculator {
+  min-width: 0;
+  padding: 34px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px #173e3108;
+}
+.roi-calculator h3 {
+  font-size: 26px;
+}
+.roi-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin: 26px 0;
+}
+.roi-inputs label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.roi-inputs input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 12px;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: white;
+  font-size: 16px;
+}
+#roi-message:not(:empty) {
+  margin: 16px 0;
+  padding: 14px;
+  background: #fff5df;
+  font-size: 14px;
+}
+.roi-per-job {
+  padding: 16px 22px;
+  background: #edf3e5;
+  border-radius: 8px;
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+.roi-per-job span {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.roi-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin: 24px 0;
+}
+.roi-comparison strong {
+  font-size: 30px;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+.roi-comparison p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 5px 0 12px;
+}
+.value-bar {
+  height: 8px;
+  border-radius: 10px;
+  background: #e4e9df;
+  overflow: hidden;
+}
+.value-bar i {
+  display: block;
+  height: 100%;
+  width: 25%;
+  background: var(--forest);
+}
+.roi-bar-caption {
+  font-size: 11px;
+  color: var(--muted);
+}
+.roi-calculator .small {
+  font-size: 12px;
+  margin-top: 18px;
+}
+.roi-calculator > .button {
+  margin-top: 24px;
+  width: 100%;
+}
+@media (max-width: 850px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 38px;
+    min-height: 0;
+    padding: 32px 0 64px;
+  }
+  .hero-copy .lead {
+    max-width: 560px;
+  }
+  .roi-section {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    padding: 64px 0;
+  }
+  .roi-calculator {
+    width: 100%;
+    max-width: 650px;
+  }
+  .site-header nav {
+    justify-content: flex-start;
+    gap: 12px 24px;
+  }
+  .site-header nav .button {
+    margin-left: auto;
+  }
+}
+@media (max-width: 560px) {
+  .site-header nav {
+    gap: 8px 12px;
+  }
+  .site-header nav > a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  .hero h1 {
+    font-size: 45px;
+  }
+  .hero-copy .lead {
+    font-size: 17px;
+  }
+  .hero-project {
+    padding: 4px 16px 14px;
+  }
+  .hero-project > div {
+    grid-template-columns: 104px 1fr;
+    padding: 18px 0;
+    gap: 10px;
+  }
+  .hero-project dd {
+    font-size: 13px;
+  }
+  .hero-project dt {
+    font-size: 12px;
+    gap: 8px;
+  }
+  .product-preview .preview-benefits {
+    font-size: 11px;
+    gap: 6px;
+  }
+  .demo-intro #demo-description {
+    min-height: 0;
+  }
+  .demo-switch {
+    max-width: none;
+  }
+  .roi-intro h2 {
+    font-size: 40px;
+  }
+  .roi-calculator {
+    padding: 24px 20px;
+  }
+  .roi-calculator h3 {
+    font-size: 23px;
+  }
+  .roi-inputs {
+    gap: 14px;
+  }
+  .roi-inputs label {
+    font-size: 12px;
+  }
+  .roi-per-job {
+    font-size: 32px;
+    padding: 14px;
+  }
+  .roi-comparison strong {
+    font-size: 26px;
+  }
+}

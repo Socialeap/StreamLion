@@ -1,27 +1,74 @@
 import "./landing.css";
 import { parseMeasurements } from "./measurements.js";
+import { estimateTimeValue } from "./landing-value.js";
 
 const descriptions = {
-  prepare: "Check the brief and the agreed work before you head out.",
-  site: "See how a site measurement fits together, from dictation to a checked reading.",
-  handover:
-    "Keep delivery, client acceptance and payment separate, so the next action is clear.",
+  prepare: {
+    benefit: "Check access before you travel.",
+    description: "Keep the brief, contacts and agreed work within reach.",
+    area: "Job brief",
+  },
+  site: {
+    benefit: "Leave with readings tied to the room.",
+    description: "Dictate, organize and check against your tape.",
+    area: "Kitchen",
+  },
+  handover: {
+    benefit: "Know what still needs follow-up.",
+    description: "See delivery, acceptance and payment separately.",
+    area: "Closeout",
+  },
 };
 function chooseStep(step) {
   if (!Object.hasOwn(descriptions, step)) return;
-  document.querySelectorAll("[data-step]").forEach((button) => {
+  document.querySelectorAll(".demo-switch [data-step]").forEach((button) => {
     const active = button.dataset.step === step;
     button.setAttribute("aria-pressed", String(active));
     button.classList.toggle("selected", active);
   });
-  document.querySelectorAll("[data-hero-panel]").forEach((panel) => {
-    panel.hidden = panel.dataset.heroPanel !== step;
-  });
   document.querySelectorAll("[data-demo-panel]").forEach((panel) => {
     panel.hidden = panel.dataset.demoPanel !== step;
   });
-  document.querySelector("#demo-description").textContent = descriptions[step];
+  document.querySelector("#demo-description").textContent =
+    descriptions[step].description;
+  document.querySelector("#demo-benefit").textContent =
+    descriptions[step].benefit;
+  document.querySelector("#demo-area").textContent = descriptions[step].area;
 }
+const minutes = document.querySelector("#roi-minutes");
+const rate = document.querySelector("#roi-rate");
+const currency = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
+const count = new Intl.NumberFormat("en-US");
+function updateValue() {
+  const estimate = estimateTimeValue(minutes.value, rate.value);
+  document.querySelector("#roi-result").hidden = !estimate;
+  document.querySelector("#roi-message").textContent = estimate
+    ? ""
+    : "Enter minutes above 0 (up to 480) and an hourly value above $0 (up to $10,000).";
+  if (!estimate) return;
+  document.querySelector("#roi-per-job").textContent =
+    estimate.perJob < 0.005 ? "<$0.01" : currency.format(estimate.perJob);
+  document.querySelector("#roi-standard").textContent = count.format(
+    estimate.standardJobs,
+  );
+  document.querySelector("#roi-launch").textContent = count.format(
+    estimate.launchJobs,
+  );
+  document.querySelector("#roi-standard-unit").textContent =
+    estimate.standardJobs === 1 ? "job" : "jobs";
+  document.querySelector("#roi-launch-unit").textContent =
+    estimate.launchJobs === 1 ? "job" : "jobs";
+  document.querySelector("#roi-standard-bar").style.width =
+    `${estimate.standardProgress * 100}%`;
+  document.querySelector("#roi-launch-bar").style.width =
+    `${estimate.launchProgress * 100}%`;
+}
+minutes.addEventListener("input", updateValue);
+rate.addEventListener("input", updateValue);
+updateValue();
 const dictation = document.querySelector("#dictation");
 function organize() {
   const body = document.querySelector("#readings");
