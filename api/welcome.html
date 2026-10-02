@@ -84,7 +84,7 @@
             <div class="preview-heading">
               <strong>Harbor House</strong><span>Sample project</span>
             </div>
-            <dl class="hero-project">
+            <dl class="hero-project" id="hero-brief" data-hero-panel="brief">
               <div>
                 <dt>
                   <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -120,24 +120,96 @@
                 <dd>Tour link · Notes · Measurements</dd>
               </div>
             </dl>
+            <div
+              class="hero-reveal"
+              id="hero-evidence"
+              data-hero-panel="evidence"
+              hidden
+            >
+              <p class="eyebrow">From field wording to room records</p>
+              <h3>Kitchen readings, ready to check.</h3>
+              <p class="hero-quote">
+                “Length twelve feet four inches. Width ten feet two inches.”
+              </p>
+              <dl class="hero-result">
+                <div>
+                  <dt>Length</dt>
+                  <dd>12 ft 4 in</dd>
+                </div>
+                <div>
+                  <dt>Width</dt>
+                  <dd>10 ft 2 in</dd>
+                </div>
+              </dl>
+              <p>
+                Each reading keeps its room, label and exact value. Check it
+                against your tape, then keep it with the job’s notes.
+              </p>
+              <a class="text-link" href="#demo" data-step="site"
+                >Try your own room readings →</a
+              >
+            </div>
+            <div
+              class="hero-reveal"
+              id="hero-action"
+              data-hero-panel="action"
+              hidden
+            >
+              <p class="eyebrow">Before leaving job-site</p>
+              <h3>The tour is captured. What’s missing?</h3>
+              <ul class="hero-checks">
+                <li>Ground-floor living room captured <strong>Done</strong></li>
+                <li>Kitchen captured <strong>Done</strong></li>
+                <li>
+                  Kitchen length &amp; width checked
+                  <strong class="needs-action">Still to do</strong>
+                </li>
+              </ul>
+              <p class="insight">
+                Next: check the kitchen dimensions before you pack up. The brief
+                requests measurements as well as the tour.
+              </p>
+              <a class="text-link" href="#demo" data-step="prepare"
+                >Build a job-site checklist →</a
+              >
+            </div>
           </div>
-          <figcaption class="preview-benefits">
-            <span
-              ><svg aria-hidden="true" viewBox="0 0 24 24">
+          <figcaption
+            class="preview-benefits"
+            role="group"
+            aria-label="Explore StreamLion features"
+          >
+            <button
+              type="button"
+              data-hero="brief"
+              aria-pressed="true"
+              aria-controls="hero-brief"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4" /></svg
-              >Brief ready</span
+              >Brief ready
+            </button>
+            <button
+              type="button"
+              data-hero="evidence"
+              aria-pressed="false"
+              aria-controls="hero-evidence"
             >
-            <span
-              ><svg aria-hidden="true" viewBox="0 0 24 24">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path d="M3 5h18v14H3zM3 16l5-5 5 5 3-3 5 4M16 9h.01" /></svg
-              >Evidence together</span
+              >Evidence together
+            </button>
+            <button
+              type="button"
+              data-hero="action"
+              aria-pressed="false"
+              aria-controls="hero-action"
             >
-            <span
-              ><svg aria-hidden="true" viewBox="0 0 24 24">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="9" />
                 <path d="m7 12 3 3 7-7" /></svg
-              >Next action clear</span
-            >
+              >Next action clear
+            </button>
           </figcaption>
         </figure>
       </section>
@@ -265,10 +337,11 @@
               </button>
             </div>
             <h3 id="demo-benefit" aria-live="polite">
-              Check access before you travel.
+              Turn the agreed work into checks you can act on.
             </h3>
             <p id="demo-description">
-              Keep the brief, contacts and agreed work within reach.
+              Change the sample brief. Build a checklist. See exactly what is
+              still open before you leave.
             </p>
             <p class="demo-caption">
               Sample only · Nothing is saved to Google.
@@ -280,42 +353,87 @@
               ><span class="demo-area" id="demo-area">Job brief</span>
             </div>
             <div data-demo-panel="prepare">
-              <h3>Ready before you arrive.</h3>
+              <h3>From the brief to a job-site checklist.</h3>
               <dl class="brief-detail">
                 <div>
                   <dt>Visit</dt>
                   <dd>Friday, 9:00 AM · Brooklyn, NY</dd>
                 </div>
                 <div>
-                  <dt>Agreed scope</dt>
-                  <dd>
-                    Ground floor + kitchen. Check kitchen length and width.
+                  <dt>Access</dt>
+                  <dd>Meet contact · Front entrance.</dd>
+                </div>
+                <div>
+                  <dt>Agreed spaces</dt>
+                  <dd id="demo-spaces-summary">
+                    Ground-floor living room · Kitchen
                   </dd>
                 </div>
                 <div>
-                  <dt>Access</dt>
-                  <dd>Meet contact · Front entrance.</dd>
+                  <dt>Readings required</dt>
+                  <dd id="demo-readings-summary">
+                    Kitchen length · Kitchen width
+                  </dd>
                 </div>
                 <div>
                   <dt>Deliverables</dt>
                   <dd>Tour link · Notes · Checked measurements.</dd>
                 </div>
               </dl>
+              <details class="demo-brief-editor">
+                <summary>Edit the sample brief</summary>
+                <div class="demo-scope-inputs">
+                  <label for="demo-brief"
+                    >Agreed spaces · one per line<textarea
+                      id="demo-brief"
+                      rows="2"
+                      maxlength="3000"
+                    >
+Ground-floor living room
+Kitchen</textarea>
+                  </label>
+                  <label for="demo-required-readings"
+                    >Required measurements · one per line<textarea
+                      id="demo-required-readings"
+                      rows="2"
+                      maxlength="3000"
+                    >
+Kitchen length
+Kitchen width</textarea>
+                  </label>
+                </div>
+                <p class="small">
+                  Change a space or a requested measurement. Build the checklist
+                  to see the specific work to complete.
+                </p>
+                <button class="button secondary" id="build-checklist">
+                  Build job-site checklist
+                </button>
+              </details>
               <fieldset class="sample-checklist">
-                <legend>Before leaving</legend>
-                <label
-                  ><input type="checkbox" /> All agreed spaces captured</label
-                ><label
-                  ><input type="checkbox" /> Measurements checked against the
-                  tape</label
-                ><label><input type="checkbox" /> Access issues recorded</label>
+                <legend>Before leaving job-site</legend>
+                <div id="checklist-items"></div>
               </fieldset>
-              <p class="demo-status" aria-live="polite"></p>
+              <div class="insight" aria-live="polite">
+                <p class="demo-status"></p>
+                <ul id="checklist-remaining"></ul>
+              </div>
               <button class="button" data-step="site">
                 Try measurements →
               </button>
             </div>
             <div data-demo-panel="site" hidden>
+              <label class="input-label" for="measurement-space"
+                >Room or space</label
+              >
+              <input
+                class="demo-input"
+                id="measurement-space"
+                type="text"
+                value="Kitchen"
+                maxlength="200"
+                autocomplete="off"
+              />
               <label class="input-label" for="dictation"
                 >Say or type a measurement</label
               ><textarea id="dictation" maxlength="3000" rows="3">
@@ -352,7 +470,11 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
               </div>
             </div>
             <div data-demo-panel="handover" hidden>
-              <h3>A clear closeout.</h3>
+              <h3>What should happen next?</h3>
+              <p class="small">
+                Sample invoice: $300 USD. Choose a payment amount to see the
+                remaining balance.
+              </p>
               <div class="closeout-row">
                 <label for="delivery">Delivery</label
                 ><select id="delivery">
@@ -372,17 +494,20 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
                 <label for="payment">Payment</label
                 ><select id="payment">
                   <option>Not recorded</option>
-                  <option>Part received</option>
-                  <option>Received</option>
+                  <option value="Part received" data-amount="150">
+                    Part received · $150
+                  </option>
+                  <option value="Received" data-amount="300">
+                    Received · $300
+                  </option>
                 </select>
               </div>
-              <p class="small">
-                A sent tour is not a paid invoice. Track each status separately.
-              </p>
-              <p id="closeout-status" role="status" aria-live="polite">
-                Delivery: Not sent · Acceptance: Awaiting confirmation ·
-                Payment: Not recorded
-              </p>
+              <div class="insight closeout-insight" aria-live="polite">
+                <h4 id="closeout-status"></h4>
+                <p class="closeout-balance" id="closeout-balance"></p>
+                <ol id="closeout-actions"></ol>
+                <p id="closeout-reason"></p>
+              </div>
             </div>
           </div>
         </div>
@@ -390,7 +515,10 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
       <section id="value" class="roi-section shell" aria-labelledby="roi-title">
         <div class="roi-intro">
           <h2 id="roi-title">Put a value on<br /><em>less admin.</em></h2>
-          <p class="lead">Use your own estimates. No promised time savings.</p>
+          <p class="lead">
+            What could an organized job give back? Start with the admin tasks
+            you already do.
+          </p>
           <ul class="outcome-list">
             <li>
               <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -423,18 +551,105 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
           </ul>
         </div>
         <div class="roi-calculator">
-          <h3>Your break-even estimate</h3>
+          <h3>Build your time-value estimate</h3>
+          <p class="small" id="roi-assumptions">
+            Start with these example timings for one job. Adjust both columns to
+            match your work. “Organized” assumes the brief is together, readings
+            are labeled by room, and handover details are ready to reuse.
+          </p>
+          <div class="table-scroll">
+            <table class="task-timings">
+              <caption>
+                Example workload · minutes per job
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Admin task</th>
+                  <th scope="col">Today</th>
+                  <th scope="col">Organized</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Find brief, access &amp; contacts</th>
+                  <td>
+                    <input
+                      id="time-brief-before"
+                      aria-label="Find job details: minutes today"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="6"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      id="time-brief-after"
+                      aria-label="Find job details: minutes organized"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="2"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Organize room readings &amp; notes</th>
+                  <td>
+                    <input
+                      id="time-readings-before"
+                      aria-label="Organize field records: minutes today"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="8"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      id="time-readings-after"
+                      aria-label="Organize field records: minutes organized"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="3"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Prepare handover &amp; check payment</th>
+                  <td>
+                    <input
+                      id="time-handover-before"
+                      aria-label="Prepare handover: minutes today"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="6"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      id="time-handover-after"
+                      aria-label="Prepare handover: minutes organized"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="2"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div class="roi-inputs">
-            <label for="roi-minutes"
-              >Minutes saved per job<input
-                type="number"
-                id="roi-minutes"
-                min="0"
-                max="480"
-                step="any"
-                value="10"
-                aria-describedby="roi-disclaimer" /></label
-            ><label for="roi-rate"
+            <label for="roi-rate"
               >Your hourly value (USD)<input
                 type="number"
                 id="roi-rate"
@@ -446,9 +661,15 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
             /></label>
           </div>
           <p id="roi-message" role="status" aria-live="polite"></p>
+          <p
+            class="roi-time-summary"
+            id="roi-time-summary"
+            aria-live="polite"
+          ></p>
           <div id="roi-result" aria-live="polite" aria-atomic="true">
             <p class="roi-per-job">
-              <output id="roi-per-job">$10.00</output> <span>per job</span>
+              <output id="roi-per-job">$13.00</output>
+              <span>estimated time value per job</span>
             </p>
             <div class="roi-comparison">
               <div>
@@ -473,11 +694,12 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
               </div>
             </div>
             <p class="roi-bar-caption">
-              Bar = one job’s estimated time value toward the app price.
+              Jobs to cover the one-time price at your estimated time value.
             </p>
           </div>
           <p class="small" id="roi-disclaimer">
-            Illustration only. Excludes tax and other costs.
+            Editable planning assumptions. Results express time value at your
+            hourly rate. App prices exclude tax.
           </p>
           <a class="button" href="#pricing"
             >See the one-time price <span aria-hidden="true">→</span></a
@@ -508,13 +730,19 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
             </ul>
           </div>
           <div class="launch-price">
-            <h3>100 launch-price places</h3>
+            <h3>First 200 Only Launch Offer</h3>
             <p class="price">$29.96</p>
             <p class="original-price"><s>$39.95</s></p>
-            <p class="launch-saving">25% off at launch · save $9.99</p>
-            <button class="button" data-interest>Get launch updates</button>
+            <p class="launch-saving">25% off · save $9.99</p>
+            <a class="button" href="/api/purchase">Purchase Now!</a>
+            <p class="purchase-guarantee">
+              <strong data-refund-days>7-day money-back guarantee</strong
+              ><br />Try it on your next job. Request a full refund within
+              <span data-refund-period>seven days</span> of purchase.
+            </p>
             <p class="small" data-checkout-note>
-              Sales open after launch checks. Taxes shown at checkout.
+              Launch places are reserved when checkout starts. Final price and
+              any taxes are shown before payment.
             </p>
           </div>
         </div>
@@ -559,9 +787,6 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
               rel="noreferrer"
               >Explore the directory ↗</a
             >
-            <p class="small">
-              Forthcoming benefit. No promise of leads or bookings.
-            </p>
           </div>
         </div>
       </section>
@@ -588,8 +813,7 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
           <summary>Do I need ChatGPT?</summary>
           <p>
             No. Project voice answers work in StreamLion. For broader, optional
-            AI help, paste a dated project copy into your ChatGPT account. It is
-            not a live Google connection.
+            AI help, paste a dated project copy into your ChatGPT account.
           </p>
         </details>
         <details>
@@ -608,12 +832,20 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
           </p>
         </details>
         <details>
-          <summary>Is the launch offer available now?</summary>
-          <p data-launch-faq>
-            Not yet. Request a launch email when sales open. There will be 100
-            launch-price places, reserved when checkout starts. Pending payments
-            hold a place; expired or failed checkouts release it once confirmed.
-            An email request does not reserve the discount.
+          <summary>
+            Can I try it on a real job before deciding to keep it?
+          </summary>
+          <p>
+            Yes. Your purchase includes a
+            <strong data-refund-days>7-day money-back guarantee</strong>. Use it
+            for a real job—from preparation to handover. To request a full
+            refund, email
+            <a href="mailto:info@transcendencemedia.com"
+              >info@transcendencemedia.com</a
+            >
+            with your receipt within
+            <span data-refund-period>seven days</span> of purchase. Your Google
+            project files remain yours.
           </p>
         </details>
       </section>
@@ -630,32 +862,6 @@ Length 12 feet 4 inches. Width 10 feet 2 inches.</textarea>
       </nav>
       <p>Built for the work around spatial capture.</p>
     </footer>
-    <dialog id="interest-dialog" aria-labelledby="interest-title">
-      <form method="dialog">
-        <button class="dialog-close" aria-label="Close launch email dialog">
-          ×
-        </button>
-      </form>
-      <h2 id="interest-title">Be there for the launch.</h2>
-      <p>
-        Request an email when StreamLion is ready and the first-100 offer opens.
-      </p>
-      <p class="small">
-        This opens your email app. Send the prepared message to
-        <a href="mailto:info@transcendencemedia.com"
-          >info@transcendencemedia.com</a
-        >. Your address is not stored on this page.
-      </p>
-      <a
-        id="launch-email"
-        class="button"
-        href="mailto:info@transcendencemedia.com?subject=StreamLion%20launch%20updates&body=Please%20email%20me%20when%20StreamLion%20launches%20and%20the%20first-100%20offer%20opens."
-        >Request launch email →</a
-      >
-      <p class="small">
-        Planned launch offer: $29.96 USD. No payment is taken now.
-      </p>
-    </dialog>
     <script type="module" src="/src/landing.js"></script>
   </body>
 </html>

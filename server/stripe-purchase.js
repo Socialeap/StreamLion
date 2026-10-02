@@ -6,6 +6,7 @@ import {
   hasPurchase,
 } from "./purchase-access.js";
 const API_VERSION = "2026-09-30.endive";
+const LAUNCH_PLACES = 200;
 const json = (value, status = 200) =>
   new Response(JSON.stringify(value), {
     status,
@@ -45,7 +46,7 @@ function configuration(env) {
     !/^price_\w+$/.test(env.STRIPE_PRICE_ID || "") ||
     (env.STRIPE_LAUNCH_PRICE_ID &&
       !/^price_\w+$/.test(env.STRIPE_LAUNCH_PRICE_ID)) ||
-    !["14", "30"].includes(env.STREAMLION_REFUND_DAYS) ||
+    !["7", "14", "30"].includes(env.STREAMLION_REFUND_DAYS) ||
     (mode === "live" && env.STREAMLION_LIVE_PAYMENTS_APPROVED !== "true")
   )
     throw new Error("purchase_configuration");
@@ -67,7 +68,7 @@ const accountChecks = new Map();
 async function preflight(env, stripe) {
   const stamp = await first(
     env,
-    "SELECT version FROM streamlion_purchase_schema_v1 WHERE version = 1",
+    "SELECT version FROM streamlion_purchase_schema_v2 WHERE version = 2",
   );
   if (!stamp) throw new Error("purchase_configuration");
   const cacheKey = env.STRIPE_SECRET_KEY + ":" + env.STRIPE_ACCOUNT_ID;
@@ -283,11 +284,11 @@ async function createCheckout(env, stripe, identity, config) {
   if (!order) {
     const now = Date.now(),
       orderId = crypto.randomUUID();
-    // Reserve at most 100 launch slots in the same atomic INSERT. Pending and
+    // Reserve at most 200 launch slots in the same atomic INSERT. Pending and
     // delayed payments hold their slots; only confirmed expiry/failure frees one.
     await run(
       env,
-      `WITH RECURSIVE slots(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM slots WHERE n<100),
+      `WITH RECURSIVE slots(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM slots WHERE n<${LAUNCH_PLACES}),
       candidate AS (SELECT MIN(n) AS slot FROM slots WHERE NOT EXISTS
         (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND promo_slot=n))
       INSERT OR IGNORE INTO streamlion_purchases_v1
@@ -351,7 +352,7 @@ async function createCheckout(env, stripe, identity, config) {
         message: `I agree to the [StreamLion purchase terms](${config.origin}/api/terms).`,
       },
       submit: {
-        message: `One-time StreamLion purchase. No subscription. Full refund within ${config.refundDays} days: info@transcendencemedia.com. Use the same Google account to restore access.`,
+        message: `One-time StreamLion purchase. No subscription. Request a full refund within ${config.refundDays} days of purchase: info@transcendencemedia.com. Use the same Google account to restore access.`,
       },
     },
   };
@@ -554,7 +555,7 @@ export async function handlePurchase({ request, env, params }) {
         "SELECT COUNT(*) AS count FROM streamlion_purchases_v1 WHERE mode=? AND promo_slot IS NOT NULL",
         mode,
       );
-      const launch = catalog.launch && used.count < 100;
+      const launch = catalog.launch && used.count < LAUNCH_PLACES;
       return json({
         enabled: true,
         required,
@@ -564,7 +565,10 @@ export async function handlePurchase({ request, env, params }) {
           ? catalog.launch.unit_amount
           : catalog.standard.unit_amount,
         standardAmount: catalog.standard.unit_amount,
-        launchRemaining: catalog.launch ? Math.max(0, 100 - used.count) : 0,
+        launchRemaining: catalog.launch
+          ? Math.max(0, LAUNCH_PLACES - used.count)
+          : 0,
+        launchCapacity: LAUNCH_PLACES,
         refundDays: config.refundDays,
       });
     }

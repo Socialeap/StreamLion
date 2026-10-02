@@ -1,74 +1,28 @@
-# StreamLion landing page
+# StreamLion public landing page
 
 ## Surface and offer
 
-`api/welcome.html` is a separate static Vite entry. The existing app remains at `/`.
-Local preview: `/api/welcome.html`. The public URL is `/api/welcome`.
-Cloudflare Pages redirects the HTML extension to the extensionless path, as described in
-[Cloudflare's route matching documentation](https://developers.cloudflare.com/pages/configuration/serving-pages/#route-matching).
+`api/welcome.html` is the standalone Vite entry at **`/api/welcome`**; the workspace remains at `/`. Preview uses `/api/welcome.html`. Use `/api/welcome` for public links so an older installed PWA does not intercept this entry. The `/api/` navigation exclusion remains unchanged.
 
-The `/api/` prefix is already excluded by the previously deployed service worker.
-This static page needs no API handler. Its first navigation therefore reaches
-Cloudflare even before an installed workspace updates its worker. Do not advertise
-`/welcome`: older workers intercept that route before a server redirect can run.
-The new worker retains its `/welcome` exclusion, but that alone cannot repair an
-already-installed worker. Use `/api/welcome` for launch links and bookmarks.
+The requested offer is **$39.95 USD one-time**, **$29.96 for the first 200 launch checkout places**, saving $9.99 (25% rounded to cents). Places are reserved at checkout initiation, retained for pending payments, and released after confirmed expiry/failure. Completed purchases retain their historical place. There is no countdown or invented remaining-buyer count.
 
-The offer is $39.95 USD for a one-time purchase. The proposed launch discount
-is 25% for the first 100 completed purchases: $29.96 USD, saving $9.99 after
-rounding to cents. There is no countdown or invented remaining-purchase count.
-The offer is planned; the page does not accept payment or reserve a discounted
-place.
+**Purchase Now!** links directly to `/api/purchase`, with or without landing-page JavaScript. The purchase page rechecks account, price and availability before creating hosted Stripe Checkout. Default payments remain disabled; this change does not enable live charges. A valid live configuration updates displayed prices, discount and refund period; an exhausted promotion removes its discount and comparison. See [Stripe activation](stripe-activation.md) before public promotion.
 
-The launch CTA opens an accessible dialog and then a prepared email to
-`info@transcendencemedia.com`. The visitor must send that message in their email
-app. The landing page does not collect an email address, write a mailing list,
-or claim that an unsent message subscribed them.
+The requested **seven-day money-back guarantee** is a request window from payment, not a bank-settlement deadline. Requests go to `info@transcendencemedia.com` with the receipt. The owner processes refunds in Stripe; the app's key does not need refund-write permission. Earlier, longer refund rights remain intact. Purchase terms and hosted Checkout describe the same policy.
 
-Automatic updates refer to the purchased app. Future premium upgrades have
-separate availability and pricing. Free access to join the Frontiers|3D
-Providers directory is explicitly forthcoming, with no claim of leads or
-bookings.
+## Demonstrations and copy
 
-## Demonstration
+- **Hero:** three accessible buttons reveal the brief, original-to-organized room readings, or specific unfinished work. Arrow keys/Home/End switch reveals. Each reveal stays beside its control and links into the corresponding workflow demo.
+- **Ask the job:** the existing interactive, source-labeled voice-answer sample is preserved.
+- **Prepare:** explicit sample spaces and requested dimensions generate individual capture/tape-check actions. The actual `requirementsFromBrief`, `scopeSignature` and `beforeLeaving` functions track requirements and report remaining work. Editing the optional sample brief disables old checks until rebuilt. This is an explicit-room example, not a general-purpose freeform scope parser. Unknown rooms are not inferred.
+- **On site:** visitors enter a room/space name and readings. The actual `parseMeasurements` function retains exact values and flags ambiguity. Edited input clears old results; a missing space name prompts guidance and produces no unlabeled result.
+- **Handover:** statuses produce sequenced next actions. An explicit $300 sample invoice and $150/$300 received choices use the real `paymentSummary` calculation. A missing received amount stays unknown; accepted-but-unsent records prompt verification before duplicate delivery. Receipt of payment alone does not complete handover.
+- **Time value:** three editable task rows compare today's timings with an organized-workflow scenario. Assumptions are visible; the visitor does not need to guess total savings. The net time difference (including any extra work) is valued at the visitor's hourly rate. Zero/negative differences show no positive return; incomplete fields hide stale results. Example timings are planning inputs, not measured customer performance.
 
-The hero leads into a saved-project voice-answer demo. A separate workflow demo
-provides Prepare, On site and Handover selection.
-The editable measurement example uses the app's actual `parseMeasurements`
-function. It retains exact values and flags unclear wording. Editing the input
-clears old results until it is organized again. The preparation checklist and
-delivery, acceptance and payment statuses update locally. All data is labeled
-as a sample, and no Google records are read or written.
+Samples stay in the page and do not read/write Google. The landing does not load analytics, remote fonts or an LLM API. Existing lion assets and self-hosted Manrope fonts are retained.
 
-The page uses self-hosted Manrope fonts under the included OFL license, the
-existing lion assets, native HTML controls and a small dedicated script. It
-does not load React, analytics, remote font services or an LLM API.
+## Release classification and acceptance
 
-## Release classification
+**Frontend + backend + durable purchase state + refund configuration.** This includes `0005_streamlion_launch_200.sql` after the original `0004` purchase schema. Existing financial rows and uniqueness rules are preserved. The new backend requires the v2 stamp before quote/checkout, and `STREAMLION_REFUND_DAYS=7` is the offer's activation setting. No Google/provider credentials are changed here.
 
-Frontend and build entry change only. No migration, new server function,
-secret, provider configuration or backend activation is required.
-No Lovable action is required; StreamLion uses GitHub, Cloudflare and Google
-Cloud.
-
-After PR merge, the ordinary Cloudflare Pages Git deployment publishes the
-landing entry. Verify `/api/welcome`, both CTA locations, `/` app access and
-`/privacy.html` on the deployed revision, including from an existing installed
-PWA. Local design and interaction checks are not a production deployment
-receipt or physical-phone test.
-
-Before paid sales open, complete the app's production gates and a separate
-reviewed purchase/entitlement flow. Enforce the first-100 limit at checkout,
-with final taxes and discount displayed before payment. This PR does not
-implement checkout, license enforcement, refunds, or discount inventory.
-
-## Verification
-
-- Production build passed for both app and landing entries.
-- Focused measurement and Workbox navigation tests passed.
-- Browser/IAB checked desktop and a 390 × 844 mobile viewport, including
-  measurement organization, ambiguous wording, checklist updates, independent
-  closeout statuses, modal close/Escape behavior and focus return.
-- Design concepts and final browser screenshots were compared with
-  `view_image`; the local design review includes the copy diff and intentional
-  functional deviations. No QA images are shipped in the production bundle.
+**No Lovable action is required.** StreamLion uses repository/GitHub, Cloudflare and Google Cloud. Follow the idempotent D1 preflight in [Stripe activation](stripe-activation.md) after PR merge, then deploy the approved merged main's Pages assets and Functions. Do not promote the new public offer before Stripe test acceptance and separate live activation approval. Browser viewport checks do not replace physical Android checkout/restore testing or a production deployment receipt.
