@@ -2444,3 +2444,188 @@ dialog .small {
     padding: 8px 6px;
   }
 }
+
+/* Connected sample: short source/task pairs, field checks, and the real report. */
+.hero-copy .lead strong {
+  display: block;
+  color: var(--forest);
+  font-weight: 750;
+}
+.hero-support {
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 20px 0 0;
+  max-width: 42ch;
+}
+.task-suggestions {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.suggested-task {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+.suggested-task > label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.suggested-task input[type="text"],
+.suggested-task input:not([type]) {
+  min-width: 0;
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--forest);
+}
+.suggested-task blockquote {
+  border-left: 2px solid #cbd9bf;
+  margin: 10px 0 0 25px;
+  padding-left: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.suggested-task > label:not(:first-child) {
+  display: block;
+  margin: 10px 0 0 25px;
+  font-size: 12px;
+}
+.demo-review {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 16px 0;
+}
+.demo-review input,
+.suggested-task input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--forest);
+}
+.reading-editor,
+.report-options {
+  margin: 20px 0;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.reading-editor summary,
+.report-options summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 6px 0;
+}
+.reading-editor .input-label,
+.report-options .input-label {
+  margin-top: 16px;
+}
+.reading-editor .table-scroll {
+  margin-top: 14px;
+}
+.demo-card #reading-issues,
+.demo-card #exception-status {
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.demo-card [disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.report-summary {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.sample-report-dialog {
+  width: min(1000px, calc(100vw - 32px));
+  max-width: none;
+  height: min(850px, calc(100dvh - 32px));
+  max-height: none;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--forest);
+  background: white;
+}
+.sample-report-dialog::backdrop {
+  background: #082719aa;
+}
+.sample-report-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sample-report-dialog header h2 {
+  font-size: 20px;
+  margin: 0;
+}
+.sample-report-dialog iframe {
+  width: 100%;
+  height: calc(100% - 72px);
+  border: 1px solid var(--line);
+}
+@media (max-width: 560px) {
+  .hero-support {
+    font-size: 15px;
+  }
+  .sample-report-dialog {
+    padding: 10px;
+  }
+  .sample-report-dialog header h2 {
+    font-size: 16px;
+  }
+  .suggested-task input:not([type]) {
+    font-size: 16px;
+  }
+}
+.suggested-task > label:first-child {
+  align-items: flex-start;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.suggested-task details {
+  margin: 8px 0 0 25px;
+  font-size: 12px;
+}
+.suggested-task summary {
+  cursor: pointer;
+  color: var(--forest);
+}
+.suggested-task details label {
+  display: block;
+  margin-top: 10px;
+}
+.suggested-task details select {
+  width: 100%;
+  min-height: 40px;
+}
+@media (min-width: 1100px) {
+  .task-suggestions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .site-demo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  .site-demo-grid .reading-editor {
+    border-top: 0;
+    margin-top: 0;
+    padding-top: 0;
+  }
+}
