@@ -1,5 +1,11 @@
-import { measurementText, measurementNeedsReview } from "./measurements.js";
+import {
+  measurementText,
+  measurementNeedsReview,
+  readMeasurement,
+} from "./measurements.js";
 import { legacyFields, intakeFor } from "./project-schema.js";
+import { validateTaskDetails, validateBriefDraft } from "./brief-tasks.js";
+import { validateExceptionDraft } from "./site-exceptions.js";
 
 // A versioned observation uses the existing workbook headers and revision rules.
 export const WORKFLOW_AREA = "StreamLion project checklist";
@@ -64,6 +70,10 @@ export function validateWorkflow(value, { draft = false } = {}) {
     )
       throw new Error("Explain why this requirement is blocked or not needed.");
     ids.add(item.id);
+    // Older version-1 checklists remain valid; richer tasks add optional fields.
+    validateTaskDetails(
+      draft && item.kind === "measurement" ? { ...item, kind: "review" } : item,
+    );
   }
   for (const key of [
     "scopeSignature",
@@ -77,6 +87,9 @@ export function validateWorkflow(value, { draft = false } = {}) {
       (!draft && value[key].length > (key === "siteLessons" ? 2000 : 200))
     )
       throw new Error("Invalid checklist details.");
+  if (value.briefDraft !== undefined) validateBriefDraft(value.briefDraft);
+  if (value.exceptionDraft !== undefined)
+    validateExceptionDraft(value.exceptionDraft);
   if (!draft && JSON.stringify(value).length > 11500)
     throw new Error(
       "This checklist is full. Shorten the descriptions before saving; nothing has been discarded.",
@@ -143,7 +156,11 @@ export function requirementsFromBrief(project) {
 
 export function beforeLeaving(project, plan, notes) {
   const items = plan.requirements
-    .filter((item) => item.state === "todo" || item.state === "blocked")
+    .filter(
+      (item) =>
+        item.kind !== "delivery" &&
+        (item.state === "todo" || item.state === "blocked"),
+    )
     .map((item) => ({
       label: item.label,
       detail: item.state === "blocked" ? item.reason : "Not yet checked",
@@ -187,8 +204,79 @@ export function beforeLeaving(project, plan, notes) {
         detail: "An attached field record is unavailable in this view.",
         state: "todo",
       });
+    if (item.kind === "measurement" && item.state === "done") {
+      const evidence = measurementEvidence(item, notes, project.id);
+      if (evidence.issue)
+        items.push({
+          label: `Check reading for ${item.label}`,
+          detail: evidence.issue,
+          state: "todo",
+        });
+    }
   }
+  if (plan.briefDraft?.text.trim() || plan.briefDraft?.suggestions.length)
+    items.push({
+      label: "Finish the brief review",
+      detail: "Suggested requests have not been added to the checklist yet.",
+      state: "todo",
+    });
+  if (plan.exceptionDraft?.detail.trim())
+    items.push({
+      label: "Keep the unfinished site exception",
+      detail: "The exception wording is still a draft, not a field record.",
+      state: "todo",
+    });
   return items;
+}
+
+export function measurementEvidence(item, notes, projectId) {
+  const normalize = (value) => value.trim().toLowerCase().replace(/\s+/g, " ");
+  const candidates = [];
+  for (const note of notes) {
+    if (
+      note.jobId !== projectId ||
+      (item.evidence.length && !item.evidence.includes(note.id))
+    )
+      continue;
+    try {
+      const data = readMeasurement(note);
+      if (
+        !data ||
+        ![data.room, [data.floor, data.room].filter(Boolean).join(" / ")].some(
+          (name) => normalize(name) === normalize(item.area),
+        )
+      )
+        continue;
+      candidates.push({ note, data });
+    } catch {
+      /* An unreadable record stays in the general review warnings. */
+    }
+  }
+  if (
+    new Set(
+      candidates.map(({ data }) => `${normalize(data.floor)}|${data.side}`),
+    ).size > 1
+  )
+    return {
+      records: [],
+      issue:
+        "Several spaces share this name. Add the floor to this task or attach the correct measurement record.",
+    };
+  const records = candidates
+    .filter(
+      ({ note, data }) =>
+        note.reviewed &&
+        !note.pendingBookId &&
+        !data.issues.length &&
+        data.entries.some((entry) => entry.label === item.reading),
+    )
+    .map(({ note }) => note);
+  return {
+    records,
+    issue: records.length
+      ? ""
+      : "Attach or record a reviewed tape reading for this space and dimension. Readings waiting for Google still need a send check.",
+  };
 }
 
 export function paymentSummary(project) {

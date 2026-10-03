@@ -25,7 +25,7 @@ test("project home saves a reasoned exception, retains unfinished checklist on n
     title: "Synthetic",
     deviceOnly: true,
     deliverables: "Rear room capture",
-    scope: "Interior",
+    scope: "",
     reviewState: "reviewed",
   };
   let saved;
@@ -45,7 +45,15 @@ test("project home saves a reasoned exception, retains unfinished checklist on n
   };
   let ui = render(<ProjectHome {...props} />);
   fireEvent.click(
-    ui.getByRole("button", { name: "Use the requested outputs" }),
+    ui.getByRole("button", { name: "Build from project details" }),
+  );
+  fireEvent.click(
+    ui.getByLabelText(
+      "I checked the selected tasks against the source, including exclusions.",
+    ),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Add reviewed tasks to checklist" }),
   );
   fireEvent.change(ui.getByLabelText("Status: Rear room capture"), {
     target: { value: "blocked" },
@@ -147,6 +155,83 @@ test("verified checklist retry clears only matching local edits and keeps newer 
   cleanup();
 });
 test.after(() => dom.window.close());
+
+test("site exception retry retains its operation identity across navigation and holds the update gate", async () => {
+  localStorage.clear();
+  const { newFieldRecord, appendFieldRecord } =
+    await import("./field-records.js");
+  let records = [],
+    attempts = 0,
+    release;
+  const gates = [];
+  const props = {
+    project: { id: "exception-job", title: "Exception QA", deviceOnly: true },
+    notes: [],
+    scope: "local",
+    onEdit: () => {},
+    onBack: () => {},
+    onNotes: () => {},
+    onAsk: () => {},
+    onSave: async () => {},
+    onOperationBusy: (value) => gates.push(value),
+    onFieldRecord: async (context, blob, id) => {
+      attempts++;
+      records = appendFieldRecord(
+        records,
+        newFieldRecord(context, "", blob, id),
+      );
+      if (attempts === 1) throw new Error("Acknowledgment was lost");
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      return id;
+    },
+  };
+  let ui = render(<ProjectHome {...props} />);
+  fireEvent.click(ui.getByRole("button", { name: "2. On site" }));
+  fireEvent.change(ui.getByLabelText("Exception area"), {
+    target: { value: "Rear office" },
+  });
+  fireEvent.change(ui.getByLabelText("What happened?"), {
+    target: { value: "Office locked" },
+  });
+  fireEvent.change(ui.getByLabelText("Next action"), {
+    target: { value: "Client to arrange access" },
+  });
+  fireEvent.click(
+    ui.getByLabelText("I checked this wording against what happened."),
+  );
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Save site exception" })),
+  );
+  assert.match(ui.getByRole("alert").textContent, /Acknowledgment/);
+  const reserved = JSON.parse(
+    localStorage.getItem("streamlion-draft-v1:local:checklist:exception-job"),
+  ).plan.exceptionDraft.recordId;
+  assert.equal(reserved, records[0].id);
+  cleanup();
+  ui = render(<ProjectHome {...props} />);
+  fireEvent.click(ui.getByRole("button", { name: "2. On site" }));
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Save site exception" })),
+  );
+  assert.equal(ui.getByRole("button", { name: "All projects" }).disabled, true);
+  assert.equal(gates.at(-1), true);
+  await act(async () => release());
+  assert.equal(records.length, 1);
+  assert.equal(gates.at(-1), false);
+  assert.equal(
+    ui.getByRole("button", { name: "All projects" }).disabled,
+    false,
+  );
+  assert.equal(
+    JSON.parse(
+      localStorage.getItem("streamlion-draft-v1:local:checklist:exception-job"),
+    ).plan.exceptionDraft,
+    undefined,
+  );
+  cleanup();
+});
 
 test("project folder work holds the parent update gate until the Drive request settles", async () => {
   const { restoreGoogleSession, disconnectGoogle } =

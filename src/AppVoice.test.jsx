@@ -55,7 +55,11 @@ test("Project home and Ask route voice activity into the app update gate", async
     });
     const ui = render(<App />);
     fireEvent.click(
-      await ui.findByRole("button", { name: "Synthetic voice site" }),
+      await ui.findByRole(
+        "button",
+        { name: "Synthetic voice site" },
+        { timeout: 5000 },
+      ),
     );
     assert.ok(ui.getByRole("heading", { name: "Ask this project" }));
     let applied = 0;

@@ -237,6 +237,22 @@ test("unfinished local and Google checklist drafts round-trip without completing
     ],
     // Autosaved wording may exceed the saved-record limit until it is edited.
     siteLessons: "Still editing. ".repeat(160),
+    briefDraft: {
+      text: "Measure kitchen width",
+      sourceName: "Client brief.pdf",
+      suggestions: [],
+      reviewed: false,
+    },
+    exceptionDraft: {
+      type: "Access blocked",
+      taskId: "requirement",
+      area: "Back room",
+      detail: "Door locked",
+      nextAction: "",
+      reportedBy: "",
+      checked: false,
+      recordId: "retained-operation",
+    },
   };
   const drafts = [
     ["local:checklist:job", { plan, base: "" }],
@@ -255,6 +271,8 @@ test("unfinished local and Google checklist drafts round-trip without completing
     assert.equal(localStorage.getItem(`streamlion-draft-v1:${key}`), value);
     const restored = readDraft(key);
     assert.equal(restored.plan.requirements[0].reason, "");
+    assert.equal(restored.plan.briefDraft.text, "Measure kitchen width");
+    assert.equal(restored.plan.exceptionDraft.recordId, "retained-operation");
     assert.throws(() => validateWorkflow(restored.plan), /Explain why/);
   }
 });
