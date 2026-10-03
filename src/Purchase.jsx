@@ -187,14 +187,15 @@ export default function Purchase({ onPurchased }) {
               </p>
               {config.launchRemaining > 0 && (
                 <p>
-                  100 launch-price places, reserved when checkout starts.
-                  Pending payments hold a place; expired or failed checkouts
-                  release it once confirmed. Your final price is shown before
-                  payment.
+                  First 200 Only Launch Offer. Places are reserved when checkout
+                  starts. Pending payments hold a place; expired or failed
+                  checkouts release it once confirmed. Your final price is shown
+                  before payment.
                 </p>
               )}
               <p>
-                {config.refundDays}-day full refund.{" "}
+                {config.refundDays}-day money-back guarantee. Request a full
+                refund within {config.refundDays} days of purchase.{" "}
                 <a href="/api/terms" target="_blank" rel="noreferrer">
                   Purchase terms
                 </a>{" "}

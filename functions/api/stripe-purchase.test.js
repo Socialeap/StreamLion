@@ -13,6 +13,7 @@ function fixture(t, { launch = true } = {}) {
     "0002_google_request_limits",
     "0003_google_workspace_folder",
     "0004_streamlion_purchases",
+    "0005_streamlion_launch_200",
   ])
     sql.exec(
       readFileSync(
@@ -36,7 +37,7 @@ function fixture(t, { launch = true } = {}) {
     GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64url"),
     STREAMLION_PAYMENTS_MODE: "test",
     STREAMLION_REQUIRE_LICENSE: "true",
-    STREAMLION_REFUND_DAYS: "14",
+    STREAMLION_REFUND_DAYS: "7",
     STRIPE_SECRET_KEY: "sk_test_synthetic" + crypto.randomUUID(),
     STRIPE_WEBHOOK_SECRET: "whsec_synthetic",
     STRIPE_ACCOUNT_ID: "acct_synthetic",
@@ -81,6 +82,13 @@ function fixture(t, { launch = true } = {}) {
       return response(catalog[path.split("/").at(-1)]);
     if (path === "/v1/checkout/sessions" && options.method === "POST") {
       const params = new URLSearchParams(options.body);
+      assert.ok(
+        params
+          .get("custom_text[submit][message]")
+          .includes(
+            `Request a full refund within ${env.STREAMLION_REFUND_DAYS} days of purchase`,
+          ),
+      );
       const orderId = params.get("metadata[order_id]");
       const existing = [...sessions.values()].find(
         (s) => s.metadata.order_id === orderId,
@@ -237,6 +245,179 @@ function fixture(t, { launch = true } = {}) {
     },
   };
 }
+test("the 200-place migration preserves financial state and uniqueness safeguards", () => {
+  const sql = new DatabaseSync(":memory:");
+  try {
+    sql.exec(
+      readFileSync(
+        new URL(
+          "../../migrations/0004_streamlion_purchases.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const insert = sql.prepare(`INSERT INTO streamlion_purchases_v1
+      (order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,
+       checkout_session,checkout_url,payment_intent,status,amount_refunded,created_at,expires_at,updated_at,revision)
+      VALUES(?,'live',?,'owner@example.com','price_old','prod_old',2996,'usd',?,?,?, ?,?,?,11,22,33,4)`);
+    for (const [index, status] of [
+      "paid",
+      "refunded",
+      "pending",
+      "processing",
+      "disputed",
+    ].entries())
+      insert.run(
+        "order" + index,
+        "owner" + index,
+        index + 1,
+        "cs_old" + index,
+        "https://checkout.stripe.com/old" + index,
+        "pi_old" + index,
+        status,
+        status === "refunded" ? 2996 : 0,
+      );
+    sql.exec(
+      "INSERT INTO streamlion_stripe_events_v1 VALUES('evt_preserved','live','charge.refunded',44)",
+    );
+    const before = sql
+      .prepare("SELECT * FROM streamlion_purchases_v1 ORDER BY order_id")
+      .all();
+    sql.exec("BEGIN");
+    sql.exec(
+      readFileSync(
+        new URL(
+          "../../migrations/0005_streamlion_launch_200.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    sql.exec("COMMIT");
+    assert.deepEqual(
+      sql
+        .prepare("SELECT * FROM streamlion_purchases_v1 ORDER BY order_id")
+        .all(),
+      before,
+    );
+    assert.equal(
+      sql.prepare("SELECT event_id FROM streamlion_stripe_events_v1").get()
+        .event_id,
+      "evt_preserved",
+    );
+    assert.equal(
+      sql.prepare("SELECT version FROM streamlion_purchase_schema_v2").get()
+        .version,
+      2,
+    );
+    assert.equal(
+      sql
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE name='streamlion_purchases_200_stage'",
+        )
+        .get(),
+      undefined,
+    );
+    insert.run(
+      "last",
+      "last-owner",
+      200,
+      "cs_last",
+      "https://checkout.stripe.com/last",
+      "pi_last",
+      "paid",
+      0,
+    );
+    assert.throws(
+      () =>
+        insert.run(
+          "extra",
+          "extra-owner",
+          201,
+          "cs_extra",
+          "url",
+          "pi_extra",
+          "paid",
+          0,
+        ),
+      /CHECK constraint/,
+    );
+    assert.throws(
+      () =>
+        insert.run(
+          "same-slot",
+          "other-owner",
+          200,
+          "cs_duplicate",
+          "url",
+          "pi_duplicate",
+          "paid",
+          0,
+        ),
+      /UNIQUE constraint/,
+    );
+    assert.throws(
+      () =>
+        insert.run(
+          "duplicate-pending",
+          "owner2",
+          199,
+          "cs_pending",
+          "url",
+          "pi_pending",
+          "pending",
+          0,
+        ),
+      /UNIQUE constraint/,
+    );
+    assert.throws(
+      () =>
+        insert.run(
+          "duplicate-session",
+          "session-owner",
+          198,
+          "cs_old0",
+          "url",
+          "pi_new",
+          "paid",
+          0,
+        ),
+      /UNIQUE constraint/,
+    );
+    assert.throws(
+      () =>
+        insert.run(
+          "duplicate-intent",
+          "intent-owner",
+          197,
+          "cs_new",
+          "url",
+          "pi_old0",
+          "paid",
+          0,
+        ),
+      /UNIQUE constraint/,
+    );
+  } finally {
+    sql.close();
+  }
+});
+test("quotes report 200 places and seven days; unmigrated checkout fails closed", async (t) => {
+  const f = fixture(t);
+  const quote = await (await f.request("config")).json();
+  assert.equal(quote.launchCapacity, 200);
+  assert.equal(quote.launchRemaining, 200);
+  assert.equal(quote.refundDays, 7);
+  f.sql.exec("DROP TABLE streamlion_purchase_schema_v2");
+  assert.equal((await f.request("config")).status, 503);
+  const cookie = await f.login();
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie })).status,
+    503,
+  );
+  assert.equal(f.creates, 0);
+});
 test("disabled checkout leaves existing app available; incomplete or wrong-mode configuration fails closed", async (t) => {
   const f = fixture(t);
   f.env.STREAMLION_REQUIRE_LICENSE = "false";
@@ -408,12 +589,12 @@ test("expired and failed delayed payments release their slots; processing paymen
   assert.equal(receipt.status, "failed");
   assert.equal(receipt.promo_slot, null);
 });
-test("one hundred launch slots cannot be oversold by simultaneous purchasers", async (t) => {
+test("two hundred launch slots cannot be oversold by simultaneous purchasers", async (t) => {
   const f = fixture(t);
   const insert = f.sql
     .prepare(`INSERT INTO streamlion_purchases_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,status,created_at,expires_at,updated_at)
     VALUES(?,'test',?,'x@example.com','price_launch','prod_streamlion',2996,'usd',?,'paid',1,1,1)`);
-  for (let n = 1; n < 100; n++) insert.run("old" + n, "old" + n, n);
+  for (let n = 1; n < 200; n++) insert.run("old" + n, "old" + n, n);
   const receipts = await Promise.all([
     f.checkout("buyer-a"),
     f.checkout("buyer-b"),
@@ -425,8 +606,11 @@ test("one hundred launch slots cannot be oversold by simultaneous purchasers", a
         "SELECT COUNT(*) AS n FROM streamlion_purchases_v1 WHERE promo_slot IS NOT NULL",
       )
       .get().n,
-    100,
+    200,
   );
+  const quote = await (await f.request("config")).json();
+  assert.equal(quote.launchRemaining, 0);
+  assert.equal(quote.amount, 3995);
 });
 test("the Google proxy refuses unpaid accounts while leaving disconnect available", async (t) => {
   const f = fixture(t),

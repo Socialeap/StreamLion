@@ -1,22 +1,34 @@
 import "./landing.css";
 import { parseMeasurements } from "./measurements.js";
-import { estimateTimeValue } from "./landing-value.js";
+import {
+  confirmedPurchaseQuote,
+  estimateTaskValue,
+  VALUE_TASKS,
+} from "./landing-value.js";
 import { answerProjectQuestion } from "./project-answers.js";
+import { beforeLeaving } from "./workflow.js";
+import {
+  closeoutNextActions,
+  checklistFromJobDetails,
+} from "./landing-demo.js";
 
 const descriptions = {
   prepare: {
-    benefit: "Check access before you travel.",
-    description: "Keep the brief, contacts and agreed work within reach.",
+    benefit: "Turn the agreed work into checks you can act on.",
+    description:
+      "Change the sample brief. Build a checklist. See exactly what is still open before you leave.",
     area: "Job brief",
   },
   site: {
     benefit: "Leave with readings tied to the room.",
-    description: "Dictate, organize and check against your tape.",
-    area: "Kitchen",
+    description:
+      "Name a space, dictate the readings, and see them organized for your tape check.",
+    area: "Room readings",
   },
   handover: {
-    benefit: "Know what still needs follow-up.",
-    description: "See delivery, acceptance and payment separately.",
+    benefit: "Know which follow-up comes next.",
+    description:
+      "Change the delivery, acceptance or payment record. See which follow-up comes next and why.",
     area: "Closeout",
   },
 };
@@ -36,52 +48,172 @@ function chooseStep(step) {
     descriptions[step].benefit;
   document.querySelector("#demo-area").textContent = descriptions[step].area;
 }
-const minutes = document.querySelector("#roi-minutes");
+document
+  .querySelectorAll("[data-step]")
+  .forEach((button) =>
+    button.addEventListener("click", () => chooseStep(button.dataset.step)),
+  );
+const heroButtons = [...document.querySelectorAll("[data-hero]")];
+heroButtons.forEach((button, index) => {
+  button.addEventListener("click", () => {
+    heroButtons.forEach((item) =>
+      item.setAttribute("aria-pressed", String(item === button)),
+    );
+    document.querySelectorAll("[data-hero-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.heroPanel !== button.dataset.hero;
+    });
+  });
+  button.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const target =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? heroButtons.length - 1
+          : (index +
+              (event.key === "ArrowLeft" ? -1 : 1) +
+              heroButtons.length) %
+            heroButtons.length;
+    heroButtons[target].focus();
+    heroButtons[target].click();
+  });
+});
 const rate = document.querySelector("#roi-rate");
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
-const count = new Intl.NumberFormat("en-US");
-let purchasePrices;
+const count = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+let purchasePrices = { standard: 39.95, launch: 39.95 };
 function updateValue() {
-  const estimate = estimateTimeValue(minutes.value, rate.value, purchasePrices);
-  document.querySelector("#roi-result").hidden = !estimate;
+  const tasks = VALUE_TASKS.map((id) => ({
+    before: document.querySelector(`#time-${id}-before`).value,
+    after: document.querySelector(`#time-${id}-after`).value,
+  }));
+  const estimate = estimateTaskValue(tasks, rate.value, purchasePrices);
+  document.querySelector("#roi-result").hidden = !estimate?.value;
   document.querySelector("#roi-message").textContent = estimate
     ? ""
-    : "Enter minutes above 0 (up to 480) and an hourly value above $0 (up to $10,000).";
-  if (!estimate) return;
+    : "Enter a timing from 0 to 480 minutes in every box (each column totals up to 480), and an hourly value above $0, up to $10,000.";
+  document.querySelector("#roi-time-summary").textContent = estimate
+    ? `${count.format(estimate.before)} min today → ${count.format(estimate.after)} min organized. ${
+        estimate.minutes > 0
+          ? `${count.format(estimate.minutes)} minutes freed in this scenario.`
+          : estimate.minutes === 0
+            ? "These timings show no time difference."
+            : `${count.format(-estimate.minutes)} more minutes in the organized scenario. Revisit the task timings to see where the extra work comes from.`
+      }`
+    : "";
+  const value = estimate?.value;
+  if (!value) return;
   document.querySelector("#roi-per-job").textContent =
-    estimate.perJob < 0.005 ? "<$0.01" : currency.format(estimate.perJob);
-  document.querySelector("#roi-standard").textContent = count.format(
-    estimate.standardJobs,
-  );
-  document.querySelector("#roi-launch").textContent = count.format(
-    estimate.launchJobs,
-  );
-  document.querySelector("#roi-standard-unit").textContent =
-    estimate.standardJobs === 1 ? "job" : "jobs";
-  document.querySelector("#roi-launch-unit").textContent =
-    estimate.launchJobs === 1 ? "job" : "jobs";
-  document.querySelector("#roi-standard-bar").style.width =
-    `${estimate.standardProgress * 100}%`;
-  document.querySelector("#roi-launch-bar").style.width =
-    `${estimate.launchProgress * 100}%`;
+    value.perJob < 0.005 ? "<$0.01" : currency.format(value.perJob);
+  for (const name of ["standard", "launch"]) {
+    document.querySelector(`#roi-${name}`).textContent = count.format(
+      value[`${name}Jobs`],
+    );
+    document.querySelector(`#roi-${name}-unit`).textContent =
+      value[`${name}Jobs`] === 1 ? "job" : "jobs";
+    document.querySelector(`#roi-${name}-bar`).style.width =
+      `${value[`${name}Progress`] * 100}%`;
+  }
 }
-minutes.addEventListener("input", updateValue);
-rate.addEventListener("input", updateValue);
+document
+  .querySelectorAll(".task-timings input, #roi-rate")
+  .forEach((input) => input.addEventListener("input", updateValue));
 updateValue();
+
+const brief = document.querySelector("#demo-brief");
+const requiredReadings = document.querySelector("#demo-required-readings");
+let checklistProject, checklistPlan;
+function updateChecklist() {
+  const remaining = beforeLeaving(checklistProject, checklistPlan, []);
+  const list = document.querySelector("#checklist-remaining");
+  list.replaceChildren();
+  if (remaining.length === checklistPlan.requirements.length) {
+    document.querySelector(".demo-status").textContent =
+      `${remaining.length} job-specific checks built. Tick completed work to reveal what is still open.`;
+    return;
+  }
+  document.querySelector(".demo-status").textContent = remaining.length
+    ? `${remaining.length} ${remaining.length === 1 ? "check" : "checks"} still open before leaving job-site:`
+    : "Job-site checks complete. Next: gather your evidence for the handover.";
+  remaining.forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = item.label;
+    list.append(li);
+  });
+}
+function buildChecklist() {
+  const holder = document.querySelector("#checklist-items");
+  try {
+    const { project, plan, spaces, readings } = checklistFromJobDetails(
+      brief.value,
+      requiredReadings.value,
+    );
+    checklistProject = project;
+    checklistPlan = plan;
+    document.querySelector("#demo-spaces-summary").textContent =
+      spaces.join(" · ") || "None stated in this example";
+    document.querySelector("#demo-readings-summary").textContent =
+      readings.join(" · ") || "None stated in this example";
+    holder.replaceChildren();
+    plan.requirements.forEach((item) => {
+      const label = document.createElement("label"),
+        input = document.createElement("input");
+      input.type = "checkbox";
+      input.addEventListener("change", () => {
+        item.state = input.checked ? "done" : "todo";
+        updateChecklist();
+      });
+      label.append(input, document.createTextNode(item.label));
+      holder.append(label);
+    });
+    updateChecklist();
+  } catch (error) {
+    holder.replaceChildren();
+    document.querySelector("#checklist-remaining").replaceChildren();
+    document.querySelector(".demo-status").textContent = error.message;
+  }
+}
+[brief, requiredReadings].forEach((input) =>
+  input.addEventListener("input", () => {
+    document.querySelectorAll("#checklist-items input").forEach((input) => {
+      input.disabled = true;
+    });
+    document.querySelector("#checklist-remaining").replaceChildren();
+    document.querySelector(".demo-status").textContent =
+      "Agreed work changed. Build the checklist again to check the new requirements.";
+  }),
+);
+document
+  .querySelector("#build-checklist")
+  .addEventListener("click", buildChecklist);
+buildChecklist();
+
 const dictation = document.querySelector("#dictation");
+const space = document.querySelector("#measurement-space");
 function organize() {
-  const body = document.querySelector("#readings");
-  const issues = document.querySelector("#reading-issues");
+  const body = document.querySelector("#readings"),
+    issues = document.querySelector("#reading-issues");
   body.replaceChildren();
   issues.replaceChildren();
+  if (!space.value.trim()) {
+    issues.textContent =
+      "Name the room or space so these readings stay with the right area.";
+    space.focus();
+    return;
+  }
   try {
     const result = parseMeasurements(dictation.value);
     for (const reading of result.entries) {
       const row = document.createElement("tr");
-      for (const value of ["Kitchen", reading.label, reading.display]) {
+      for (const value of [
+        space.value.trim(),
+        reading.label,
+        reading.display,
+      ]) {
         const cell = document.createElement("td");
         cell.textContent = value;
         row.append(cell);
@@ -99,58 +231,53 @@ function organize() {
     issues.textContent = error.message;
   }
 }
-document
-  .querySelectorAll("[data-step]")
-  .forEach((button) =>
-    button.addEventListener("click", () => chooseStep(button.dataset.step)),
-  );
 document.querySelector("#organize").addEventListener("click", organize);
 document.querySelector("#measurement-example").addEventListener("click", () => {
+  space.value = "Kitchen";
   dictation.value = "Length 12 feet 4 inches. Width 10 feet 2 inches.";
   organize();
 });
-dictation.addEventListener("input", () => {
-  document.querySelector("#readings").replaceChildren();
-  document.querySelector("#reading-issues").textContent =
-    "Wording changed. Choose Organize readings to check it.";
-});
-const checks = [...document.querySelectorAll(".sample-checklist input")];
-checks.forEach((input) =>
-  input.addEventListener("change", () => {
-    document.querySelector(".demo-status").textContent =
-      `${checks.filter((input) => input.checked).length} of ${checks.length} checks complete in this demo.`;
+[dictation, space].forEach((input) =>
+  input.addEventListener("input", () => {
+    document.querySelector("#readings").replaceChildren();
+    document.querySelector("#reading-issues").textContent =
+      "Input changed. Choose Organize readings to check it.";
   }),
 );
+organize();
+
 const closeout = ["delivery", "acceptance", "payment"].map((id) =>
   document.getElementById(id),
 );
-closeout.forEach((select) =>
-  select.addEventListener("change", () => {
-    document.querySelector("#closeout-status").textContent =
-      `Delivery: ${closeout[0].value} · Acceptance: ${closeout[1].value} · Payment: ${closeout[2].value}`;
-  }),
-);
-const dialog = document.querySelector("#interest-dialog");
-document.querySelectorAll("[data-interest]").forEach((button) =>
-  button.addEventListener("click", () => {
-    if (button.dataset.purchaseEnabled === "true")
-      window.location.assign("/api/purchase");
-    else dialog.showModal();
-  }),
-);
-dialog.addEventListener("click", (event) => {
-  if (event.target === dialog) {
-    const r = dialog.getBoundingClientRect();
-    if (
-      event.clientX < r.left ||
-      event.clientX > r.right ||
-      event.clientY < r.top ||
-      event.clientY > r.bottom
-    )
-      dialog.close();
-  }
-});
-organize();
+function updateCloseout() {
+  const result = closeoutNextActions(
+    ...closeout.map((select) => select.value),
+    {
+      invoiceAmount: "300",
+      paidAmount: closeout[2].selectedOptions[0].dataset.amount || "",
+      currency: "USD",
+    },
+  );
+  document.querySelector("#closeout-status").textContent = result.headline;
+  document.querySelector("#closeout-balance").textContent =
+    result.outstanding === "Not enough information"
+      ? "Invoice balance: payment amount not recorded."
+      : `Invoice balance: ${result.outstanding}`;
+  const list = document.querySelector("#closeout-actions");
+  list.replaceChildren();
+  result.actions.forEach((action) => {
+    const li = document.createElement("li"),
+      title = document.createElement("strong"),
+      detail = document.createElement("p");
+    title.textContent = action.label;
+    detail.textContent = action.detail;
+    li.append(title, detail);
+    list.append(li);
+  });
+  document.querySelector("#closeout-reason").textContent = result.reason;
+}
+closeout.forEach((select) => select.addEventListener("change", updateCloseout));
+updateCloseout();
 
 // Synthetic preview uses the same bounded lookup as the actual workspace.
 // It never opens a microphone or connects to a visitor's Google account.
@@ -258,20 +385,13 @@ document.addEventListener("visibilitychange", () => {
 });
 showSampleAnswer();
 
-// Keep the existing launch-interest path until the owner enables verified checkout.
+// Public checkout remains server-gated; the CTA always reaches the purchase page.
 fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
   .then((r) => (r.ok ? r.json() : null))
+  .then(confirmedPurchaseQuote)
   .then((config) => {
-    if (!config?.enabled || config.mode !== "live") return;
-    document.querySelectorAll("[data-interest]").forEach((button) => {
-      button.dataset.purchaseEnabled = "true";
-      button.textContent = "Buy StreamLion";
-    });
-    const format = (amount) =>
-      new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-      }).format(amount / 100);
+    if (!config) return;
+    const format = (amount) => currency.format(amount / 100);
     document.querySelector(".standard-price .price").textContent = format(
       config.standardAmount,
     );
@@ -280,7 +400,7 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
     );
     const launch = config.amount < config.standardAmount;
     document.querySelector(".launch-price h3").textContent = launch
-      ? "100 launch-price places"
+      ? "First 200 Only Launch Offer"
       : "One-time purchase";
     document.querySelector(".original-price s").textContent = format(
       config.standardAmount,
@@ -288,7 +408,7 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
     document.querySelector(".original-price").hidden = !launch;
     const saving = document.querySelector(".launch-saving");
     saving.hidden = !launch;
-    saving.textContent = `Launch offer · save ${format(config.standardAmount - config.amount)}`;
+    saving.textContent = `${Math.round((1 - config.amount / config.standardAmount) * 100)}% off · save ${format(config.standardAmount - config.amount)}`;
     purchasePrices = {
       standard: config.standardAmount / 100,
       launch: config.amount / 100,
@@ -299,16 +419,16 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
       `At ${format(config.amount)}${launch ? " launch price" : ""}`;
     document.querySelector("#roi-launch-price").parentElement.hidden = !launch;
     updateValue();
-    const faq = document.querySelector("[data-launch-faq]");
-    if (faq)
-      faq.textContent = launch
-        ? "Sales are open. There are 100 launch-price places, reserved when checkout starts. Pending payments hold a place; expired or failed checkouts release it once confirmed. Your final price is shown before payment. An email request does not reserve a place."
-        : "Sales are open at the one-time price shown above. Launch-price places may be unavailable while pending checkouts hold reservations. Your final price is shown before payment.";
-    const note = document.querySelector("[data-checkout-note]");
-    if (note)
-      note.textContent =
-        "Pay once. Your final price and any taxes are shown before payment.";
+    document.querySelectorAll("[data-refund-days]").forEach((label) => {
+      label.textContent = `${config.refundDays}-day money-back guarantee`;
+    });
+    document.querySelectorAll("[data-refund-period]").forEach((label) => {
+      label.textContent = `${config.refundDays} days`;
+    });
+    document.querySelector("[data-checkout-note]").textContent = launch
+      ? "Launch places are reserved when checkout starts. Final price and any taxes are shown before payment."
+      : "Pay once. Your final price and any taxes are shown before payment.";
   })
   .catch(() => {
-    /* launch-interest path remains usable */
+    /* Keep the standard-price HTML fallback; never imply unconfirmed slots. */
   });

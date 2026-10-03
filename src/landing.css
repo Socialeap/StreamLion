@@ -1680,11 +1680,23 @@ dialog .small {
   margin-top: 22px;
   font-size: 12px;
 }
-.preview-benefits span {
+.preview-benefits button {
   display: flex;
   align-items: center;
   flex-direction: column;
   gap: 10px;
+  padding: 12px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--forest);
+  font-size: inherit;
+  min-height: 88px;
+}
+.preview-benefits button:hover,
+.preview-benefits button[aria-pressed="true"] {
+  background: #edf3e5;
+  border-color: #bbcaab;
 }
 .preview-benefits svg {
   width: 42px;
@@ -1822,6 +1834,8 @@ dialog .small {
   overflow-wrap: anywhere;
 }
 .roi-per-job span {
+  display: block;
+  margin-top: 6px;
   font-size: 15px;
   font-weight: 400;
   letter-spacing: 0;
@@ -2203,5 +2217,216 @@ dialog .small {
   }
   .voice-examples button {
     font-size: 10px;
+  }
+}
+
+/* Hands-on feature results, with the input and next action kept together. */
+.hero-reveal {
+  padding: 24px;
+  min-height: 310px;
+}
+.hero-reveal .eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.hero-reveal h3 {
+  font-size: 24px;
+  line-height: 1.25;
+  margin-bottom: 16px;
+}
+.hero-reveal p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.hero-quote {
+  color: var(--muted);
+  padding: 14px;
+  background: #f5f7f0;
+  border-radius: 8px;
+}
+.hero-result {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 16px 0;
+}
+.hero-result dt {
+  font-size: 13px;
+  color: var(--muted);
+}
+.hero-result dd {
+  margin: 4px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+.hero-reveal .text-link {
+  font-size: 13px;
+  margin-top: 16px;
+}
+.hero-checks {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+}
+.hero-checks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.hero-checks strong {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.hero-checks .needs-action {
+  color: #82500c;
+}
+.insight {
+  padding: 16px;
+  background: #f2f6e9;
+  border-radius: 8px;
+  margin: 18px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.insight ul,
+.insight ol {
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+.insight li + li {
+  margin-top: 8px;
+}
+.insight p {
+  margin: 0;
+}
+.demo-brief-label {
+  margin-top: 20px;
+}
+.demo-brief-editor {
+  margin-top: 16px;
+}
+.demo-brief-editor summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 12px 0;
+}
+.demo-scope-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.demo-scope-inputs label {
+  font-size: 12px;
+  font-weight: 600;
+}
+.demo-scope-inputs textarea {
+  margin-top: 10px;
+}
+.demo-input {
+  width: 100%;
+  padding: 12px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafbf8;
+  color: var(--forest);
+  margin-bottom: 18px;
+  font-size: 16px;
+}
+.demo-card .demo-status {
+  font-weight: 600;
+  min-height: 0;
+}
+.closeout-insight #closeout-status {
+  background: none;
+  padding: 0;
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.closeout-insight li p {
+  margin-top: 4px;
+}
+.closeout-insight #closeout-reason {
+  margin-top: 16px;
+  color: var(--muted);
+}
+.closeout-insight .closeout-balance {
+  margin-top: 12px;
+  font-weight: 700;
+  font-size: 18px;
+}
+.task-timings {
+  margin-top: 20px;
+  table-layout: fixed;
+}
+.task-timings caption {
+  text-align: left;
+  padding-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.task-timings th:first-child {
+  width: 48%;
+}
+.task-timings th {
+  font-size: 12px;
+}
+.task-timings tbody th {
+  background: white;
+}
+.task-timings td,
+.task-timings th {
+  padding: 10px;
+}
+.task-timings input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink);
+  font-size: 16px;
+  background: white;
+}
+.roi-time-summary {
+  font-size: 16px;
+  line-height: 1.6;
+  margin: 18px 0;
+  font-weight: 600;
+}
+.purchase-guarantee {
+  font-size: 14px;
+  line-height: 1.7;
+  margin-top: 20px;
+}
+@media (max-width: 560px) {
+  .demo-scope-inputs {
+    grid-template-columns: 1fr;
+  }
+  .hero-reveal {
+    padding: 20px 16px;
+  }
+  .hero-reveal h3 {
+    font-size: 21px;
+  }
+  .hero-checks li {
+    font-size: 12px;
+    gap: 10px;
+  }
+  .task-timings th:first-child {
+    width: 44%;
+  }
+  .task-timings td,
+  .task-timings th {
+    padding: 8px 6px;
   }
 }

@@ -29,7 +29,8 @@ if (
   !Number.isSafeInteger(config.amount) ||
   config.amount <= 0 ||
   config.currency !== "usd" ||
-  ![14, 30].includes(config.refundDays)
+  config.refundDays !== 7 ||
+  config.launchCapacity !== 200
 )
   throw new Error("Purchase configuration mismatch.");
 if (status.mode !== expectedMode || status.connected || status.purchased)

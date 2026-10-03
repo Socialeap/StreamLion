@@ -27,8 +27,9 @@ const config = {
   mode: "test",
   amount: 2996,
   standardAmount: 3995,
-  launchRemaining: 100,
-  refundDays: 14,
+  launchRemaining: 200,
+  launchCapacity: 200,
+  refundDays: 7,
 };
 const response = (v, status = 200) =>
   new Response(JSON.stringify(v), {

@@ -4,7 +4,7 @@
 
 ## Release classification
 
-Backend + frontend + durable D1 state + server-only secrets + Stripe provider setup. This PR does not activate payments on merge. The owner must approve the final price, refund period and live sales separately. Default payments mode is disabled; existing Google/PWA use continues until the owner explicitly enables license enforcement. StreamLion uses GitHub, Cloudflare and Google Cloud. **No Lovable action is required.** No Supabase migration, paid upgrade, new account, auto-recharge or LLM API is involved.
+Backend + frontend + durable D1 state + server-only secrets + Stripe provider setup. This PR does not activate payments on merge. The owner has requested the 200-place offer and a seven-day guarantee. Live sales still require the separate test-acceptance and activation approval below. Default payments mode is disabled; existing Google/PWA use continues until the owner explicitly enables license enforcement. StreamLion uses GitHub, Cloudflare and Google Cloud. **No Lovable action is required.** No Supabase migration, paid upgrade, new account, auto-recharge or LLM API is involved.
 
 Use existing Stripe account **3DPS by TM**, Transcendence Media LLC, `acct_1JnHIaCQXdxBxU8G`. StreamLion is a separate product within this business; do not edit, delete or replace F|3D products, prices, payment links or webhook endpoints. Changes to the account-wide descriptor affect other sales and require a separate reviewed change. Recommended full descriptor `FRONTIERS3D`, shortened card prefix `FRONTIERS` (max 10 characters), purchase suffix `STREAMLION`. This code sets only the purchase-specific suffix and Checkout display name.
 
@@ -12,26 +12,34 @@ All project content stays in Sheets/Drive. D1 records purchases, refunds, disput
 
 ## Price/policy approval gate
 
-Proposed existing landing offer: $39.95 USD standard, $29.96 USD for 100 launch-price places reserved when checkout starts. The backend reads approved Stripe Price objects, never browser amounts. An optional launch Price uses 100 transactional reservations. Pending/processing payments hold their slots; confirmed expired/failed checkout releases its slot. Completed purchases, including later refunded purchases, keep the historical place. Missed expiry events conservatively hold places until their Stripe events are redelivered; do not free reservations with guessed SQL.
+Approved landing offer: $39.95 USD standard, $29.96 USD for 200 launch-price places reserved when checkout starts. The backend reads approved Stripe Price objects, never browser amounts. An optional launch Price uses 200 transactional reservations. Pending/processing payments hold their slots; confirmed expired/failed checkout releases its slot. Completed purchases, including later refunded purchases, keep the historical place. Missed expiry events conservatively hold places until their Stripe events are redelivered; do not free reservations with guessed SQL.
 
-The owner must choose **14 or 30 days** for the full-refund period before configuring `STREAMLION_REFUND_DAYS`. No recurring subscription. Review the committed purchase terms and privacy additions, price and tax treatment before live sales. Stripe Tax is **not enabled** by this integration; do not enable paid automatic tax or represent tax compliance as completed without an owner decision. Configure any required tax registrations/tax rates before live sales. The current code accepts the configured Price's tax behavior; amounts/taxes must be checked in the test Checkout receipt. No new paid services during activation; incremental activation spend ceiling **$0**, with test cards only. Stop if an upgrade is required.
+Configure **`STREAMLION_REFUND_DAYS=7`** for the requested seven-day money-back guarantee. The API also accepts 14/30 for compatibility with longer existing offers; do not shorten an earlier buyer’s promised refund period. Requests within seven days of payment go to `info@transcendencemedia.com` with the receipt; the owner processes full refunds in Stripe to the original payment method. The request window and bank processing time are separate. This does not add refund-write permissions to the application key. No recurring subscription. Review the committed purchase terms and privacy additions, price and tax treatment before live sales. Stripe Tax is **not enabled** by this integration; do not enable paid automatic tax or represent tax compliance as completed without an owner decision. Configure any required tax registrations/tax rates before live sales. The current code accepts the configured Price's tax behavior; amounts/taxes must be checked in the test Checkout receipt. No new paid services during activation; incremental activation spend ceiling **$0**, with test cards only. Stop if an upgrade is required.
 
 ## 1. D1 preflight (Cloudflare owner, after merge)
 
 Sync to the **current approved merged `main` SHA** and record it. Back up the existing database before migration using the existing Cloudflare recovery process. Reuse `streamlion-google-sessions` and its `GOOGLE_SESSIONS` production binding. Never copy production Google credentials or this database into public PR previews.
 
-Check all seven markers:
+Check the original seven purchase markers plus the new v2 stamp and temporary staging marker:
 
 ```sql
 SELECT name,type,sql FROM sqlite_master WHERE name IN (
  'streamlion_purchases_v1','streamlion_purchase_owner_v1',
  'streamlion_purchase_pending_v1','streamlion_stripe_events_v1',
  'streamlion_purchase_limits_v1','streamlion_purchase_limit_expiry_v1',
- 'streamlion_purchase_schema_v1'
+ 'streamlion_purchase_schema_v1','streamlion_purchase_schema_v2',
+ 'streamlion_purchases_200_stage'
 );
 ```
 
-There are **seven named markers** (the purchases table also contains two inline UNIQUE constraints). If all named markers are absent, apply **`migrations/0004_streamlion_purchases.sql` byte-for-byte in one transaction**. If only some exist, stop and report partial state. If all exist, compare definitions against the committed migration and confirm `SELECT version FROM streamlion_purchase_schema_v1` returns exactly `1`; skip only when they match. Never generate substitute SQL or alter existing Google tables. Do not print users' records or credentials.
+The **original seven markers** are the table/index names in `0004_streamlion_purchases.sql`. The v2 stamp is the eighth final marker; the staging table must not remain. Use the transactional migration runner for only the approved files below; stop if unrelated pending migrations would be applied.
+
+- If **all nine names are absent**, apply committed **`migrations/0004_streamlion_purchases.sql` byte-for-byte in one transaction**, verify its seven definitions and version `1`, then continue to the next step.
+- If all original seven exist, **v2 and staging are absent**, verify the definitions against `0004` and version `1` exactly. Apply **`migrations/0005_streamlion_launch_200.sql` byte-for-byte in one transaction**. This rebuilds only the purchase table to widen its slot CHECK to 1–200, copies every financial field, recreates both named purchase indexes, and writes the v2 stamp. Preserve all Google tables, webhook receipts, rate-limit records and the original v1 stamp.
+- If all original seven plus **v2 exist and staging is absent**, verify the final purchase table/constraints/indexes against `0005`, the remaining tables against `0004`, and stamps exactly `1` and `2`. Skip both migrations only on a full match.
+- **Any partial presence, staging table, mismatched definition or incorrect stamp: stop and report.** Never generate substitute SQL, reapply the rebuild, drop unmatched tables, or inspect/print credentials.
+
+For an existing ledger, compare financial row counts, amounts, refund totals and statuses before/after migration without publishing buyer records. Confirm the original checkout-session/payment-intent uniqueness and pending-account uniqueness remain. The new backend fails closed for quote/checkout until the v2 stamp exists; it does not auto-run a migration. Do not advertise the new landing offer until migration/configuration/deployment acceptance is complete.
 
 ## 2. Stripe test setup (owner/dashboard or explicitly authorized API)
 
@@ -49,20 +57,20 @@ There are **seven named markers** (the purchases table also contains two inline 
 3. Create a temporary **test restricted API key** with Checkout Sessions write/read and read access to Accounts, Products, Prices, Payment Intents, Charges and Disputes. No payout, transfer, customer deletion or refund-write permission is required by the app. Perform test refunds manually in Stripe. If Stripe cannot give the required account-read permission with a restricted key, use a temporary test secret key, then revoke it after testing; never use a live key for this stage.
 4. The owner stores values **directly in Cloudflare production Secrets**. Do not paste them into chat, a PR, repository, VITE variables or browser code:
 
-| Secret | Initial test value |
-| --- | --- |
-| `STREAMLION_PAYMENTS_MODE` | `test` |
-| `STREAMLION_REQUIRE_LICENSE` | `false` initially; test enforcement only with owner approval |
-| `STREAMLION_REFUND_DAYS` | approved `14` or `30` |
-| `STRIPE_SECRET_KEY` | temporary `rk_test_...` or `sk_test_...` |
-| `STRIPE_WEBHOOK_SECRET` | signing secret from this **test endpoint**, `whsec_...` |
-| `STRIPE_ACCOUNT_ID` | `acct_1JnHIaCQXdxBxU8G` |
-| `STRIPE_PRODUCT_ID` | test StreamLion `prod_...` |
-| `STRIPE_PRICE_ID` | test standard one-time `price_...` |
-| `STRIPE_LAUNCH_PRICE_ID` | optional test launch one-time `price_...`; omit for no promotion |
-| `STREAMLION_LIVE_PAYMENTS_APPROVED` | leave absent/false |
+| Secret                              | Initial test value                                               |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| `STREAMLION_PAYMENTS_MODE`          | `test`                                                           |
+| `STREAMLION_REQUIRE_LICENSE`        | `false` initially; test enforcement only with owner approval     |
+| `STREAMLION_REFUND_DAYS`            | `7` for this offer                                               |
+| `STRIPE_SECRET_KEY`                 | temporary `rk_test_...` or `sk_test_...`                         |
+| `STRIPE_WEBHOOK_SECRET`             | signing secret from this **test endpoint**, `whsec_...`          |
+| `STRIPE_ACCOUNT_ID`                 | `acct_1JnHIaCQXdxBxU8G`                                          |
+| `STRIPE_PRODUCT_ID`                 | test StreamLion `prod_...`                                       |
+| `STRIPE_PRICE_ID`                   | test standard one-time `price_...`                               |
+| `STRIPE_LAUNCH_PRICE_ID`            | optional test launch one-time `price_...`; omit for no promotion |
+| `STREAMLION_LIVE_PAYMENTS_APPROVED` | leave absent/false                                               |
 
-Retain the existing Google secrets and flags. Deploy only Pages project `streamlion` from the approved merged main, including frontend and Pages Functions. The public welcome page retains launch-interest buttons while mode is `test`; the owner opens **`/api/purchase`** directly. This page labels test mode explicitly. Do not route real customers to test checkout.
+Retain the existing Google secrets and flags. Deploy only Pages project `streamlion` from the approved merged main, including frontend and Pages Functions. The public welcome page now links **Purchase Now!** directly to **`/api/purchase`**. Keep this landing revision unpromoted until live acceptance; payment mode remains disabled/test until explicitly approved. This page labels test mode explicitly. Do not route real customers to test checkout.
 
 ## 3. Test acceptance (no real charges)
 
@@ -77,12 +85,12 @@ Retain the existing Google secrets and flags. Deploy only Pages project `streaml
 
 ## 4. Live activation — separate approval required
 
-Do not set live keys or `STREAMLION_LIVE_PAYMENTS_APPROVED=true` until the owner accepts the complete test receipt, final pricing/refund/terms/tax setup, existing-tester treatment and customer-facing statement descriptor. Create/reuse live StreamLion product and approved one-time Prices (metadata `app=streamlion`), live endpoint and restricted key with matching permissions. Configure live equivalents of the secrets, then `STREAMLION_PAYMENTS_MODE=live`, `STREAMLION_REQUIRE_LICENSE=true`, and the explicit live approval flag. Deploy the approved main and verify the public Buy button, final checkout price, webhook delivery and buyer restoration. A **real payment/refund** requires separate explicit owner authorization; test-mode success does not prove settlement.
+Do not set live keys or `STREAMLION_LIVE_PAYMENTS_APPROVED=true` until the owner accepts the complete test receipt, final pricing/refund/terms/tax setup, existing-tester treatment and customer-facing statement descriptor. Create/reuse live StreamLion product and approved one-time Prices (metadata `app=streamlion`), live endpoint and restricted key with matching permissions. Configure live equivalents of the secrets, then `STREAMLION_PAYMENTS_MODE=live`, `STREAMLION_REQUIRE_LICENSE=true`, and the explicit live approval flag. Deploy the approved main and verify the public Purchase Now! link, final checkout price, webhook delivery and buyer restoration. A **real payment/refund** requires separate explicit owner authorization; test-mode success does not prove settlement.
 
 Webhook validation rejects wrong-mode events, other products, altered quantity/discount/price and wrong-account confirmations. Unrelated F|3D events are acknowledged without changing their data. The backend retries recognized StreamLion events on verification failures. Current Stripe payment/charge/dispute state is reconciled with optimistic concurrency, not event delivery order. Refunds and disputes affect the order's license state only; other valid paid orders for the same account retain access. Disabling checkout is not a refund-processing substitute: leave the live webhook configured and functioning after sales open.
 
 ## Receipt and rollback
 
-Report approved merged main SHA; D1 migration/stamp result; secret **names/presence only**; Stripe account/mode/product/price IDs; webhook endpoint ID/version/types and test delivery result; Pages deployment ID/revision; authenticated purchase/restore/refund/account-isolation results; Android result; final public price/refund/terms/tax/descriptor approval. Until these are present, report **code complete, activation/test pending**, not production ready.
+Report approved merged main SHA; D1 0004/0005 migration and v1/v2 stamp result; secret **names/presence only**; Stripe account/mode/product/price IDs; webhook endpoint ID/version/types and test delivery result; Pages deployment ID/revision; authenticated purchase/restore/refund/account-isolation results; Android result; final public price/refund/terms/tax/descriptor approval. Until these are present, report **code complete, activation/test pending**, not production ready.
 
 For a prelaunch test rollback, set `STREAMLION_REQUIRE_LICENSE=false` and `STREAMLION_PAYMENTS_MODE=disabled`, deploy the previously approved state, and preserve purchase tables/Google records. Disabled webhooks return a retryable status so events are not silently dropped. For a live incident, preserve webhooks and existing entitlements; do not disable/refund another product or delete purchase data. Revoke the temporary test key after its replacement is verified. Do not rotate the Google token encryption key.
