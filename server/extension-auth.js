@@ -13,6 +13,10 @@ import { hasPurchase, licenseRequired } from "./purchase-access.js";
 export const EXTENSION_CLIENT = "https://chatgpt.com/oauth/client.json";
 export const EXTENSION_REDIRECT =
   "https://chatgpt.com/connector_platform_oauth_redirect";
+// Exact callback observed in the owner's ChatGPT App registration form.
+export const EXTENSION_APP_REDIRECT =
+  "https://chatgpt.com/connector/oauth/DPNQcee_niD1";
+const allowedRedirects = [EXTENSION_REDIRECT, EXTENSION_APP_REDIRECT];
 export const EXTENSION_SCOPE = "records.read records.write";
 const DAY = 86400000;
 export const randomToken = () =>
@@ -125,7 +129,7 @@ function authorizeParams(url, env) {
   const p = Object.fromEntries(url.searchParams);
   if (
     p.client_id !== EXTENSION_CLIENT ||
-    p.redirect_uri !== EXTENSION_REDIRECT ||
+    !allowedRedirects.includes(p.redirect_uri) ||
     p.response_type !== "code" ||
     p.code_challenge_method !== "S256" ||
     !tokenPattern.test(p.code_challenge || "") ||
@@ -285,7 +289,7 @@ export async function handleExtensionAuth({ request, env, params }) {
         "extension-consent",
       );
       return page(
-        `<p>Connect <strong>${escape(session.email)}</strong> to ChatGPT.</p><p>Destination: <a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(session.workbook_id)}/edit" target="_blank" rel="noopener">Your selected StreamLion workbook</a></p><p>ChatGPT can read projects and field records from this workbook${p.scope.includes("records.write") ? ", and prepare changes for you to review. Saving requires a separate click in the workspace" : ""}.</p><form method="post"><input type="hidden" name="consent" value="${escape(consent)}"><button type="submit">Connect this workbook</button></form><p><a href="${escape(EXTENSION_REDIRECT + "?" + new URLSearchParams({ error: "access_denied", state: p.state }))}">Cancel</a></p>`,
+        `<p>Connect <strong>${escape(session.email)}</strong> to ChatGPT.</p><p>Destination: <a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(session.workbook_id)}/edit" target="_blank" rel="noopener">Your selected StreamLion workbook</a></p><p>ChatGPT can read projects and field records from this workbook${p.scope.includes("records.write") ? ", and prepare changes for you to review. Saving requires a separate click in the workspace" : ""}.</p><form method="post"><input type="hidden" name="consent" value="${escape(consent)}"><button type="submit">Connect this workbook</button></form><p><a href="${escape(p.redirect_uri + "?" + new URLSearchParams({ error: "access_denied", state: p.state }))}">Cancel</a></p>`,
         env,
       );
     }
@@ -361,7 +365,7 @@ export async function handleExtensionAuth({ request, env, params }) {
         status: 303,
         headers: {
           Location:
-            EXTENSION_REDIRECT +
+            p.redirect_uri +
             "?" +
             new URLSearchParams({ code, state: p.state }),
           "Cache-Control": "no-store",
@@ -391,7 +395,7 @@ export async function handleExtensionAuth({ request, env, params }) {
       if (
         !tokenPattern.test(code) ||
         !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) ||
-        form.get("redirect_uri") !== EXTENSION_REDIRECT
+        !allowedRedirects.includes(form.get("redirect_uri"))
       )
         throw new ExtensionError("invalid_grant");
       const row = await env.GOOGLE_SESSIONS.prepare(
@@ -400,7 +404,7 @@ export async function handleExtensionAuth({ request, env, params }) {
         .bind(
           await hash(code),
           EXTENSION_CLIENT,
-          EXTENSION_REDIRECT,
+          form.get("redirect_uri"),
           await hash(verifier),
           extensionResource(env),
           Date.now(),

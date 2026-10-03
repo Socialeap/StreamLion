@@ -10,7 +10,7 @@ import {
 } from "../server/extension-auth.js";
 import { TABS } from "../src/workbook.js";
 
-export async function extensionFixture() {
+export async function extensionFixture({ redirect = EXTENSION_REDIRECT } = {}) {
   const db = new DatabaseSync(":memory:");
   for (const name of [
     "0001_google_sessions.sql",
@@ -71,7 +71,7 @@ export async function extensionFixture() {
   const verifier = "v".repeat(43);
   const authorization = new URLSearchParams({
     client_id: EXTENSION_CLIENT,
-    redirect_uri: EXTENSION_REDIRECT,
+    redirect_uri: redirect,
     response_type: "code",
     code_challenge_method: "S256",
     code_challenge: await hash(verifier),
@@ -124,7 +124,7 @@ export async function extensionFixture() {
         grant_type: "authorization_code",
         code: c,
         code_verifier: verifier,
-        redirect_uri: EXTENSION_REDIRECT,
+        redirect_uri: redirect,
         resource: "https://app.example/mcp-extension",
       },
     });

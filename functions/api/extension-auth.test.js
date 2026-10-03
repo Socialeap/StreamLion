@@ -4,6 +4,7 @@ import { extensionFixture } from "../../test/extension-fixture.js";
 import {
   EXTENSION_CLIENT,
   EXTENSION_REDIRECT,
+  EXTENSION_APP_REDIRECT,
   extensionPrincipal,
   extensionMetadata,
 } from "../../server/extension-auth.js";
@@ -89,6 +90,65 @@ test("consent requires same origin, same live account and same selected workbook
       .get().n,
     0,
   );
+});
+test("both exact callbacks retain consent, cancel and code-exchange destinations", async () => {
+  for (const redirect of [EXTENSION_REDIRECT, EXTENSION_APP_REDIRECT]) {
+    const f = await extensionFixture({ redirect });
+    const html = await (await f.auth("authorize")).text();
+    const cancel = html
+      .match(/<a href="([^"]+)">Cancel<\/a>/)[1]
+      .replaceAll("&amp;", "&");
+    assert.equal(new URL(cancel).origin + new URL(cancel).pathname, redirect);
+    const consent = html.match(/name="consent" value="([^"]+)"/)[1];
+    const response = await f.auth("authorize", {
+      method: "POST",
+      body: { consent },
+    });
+    const target = new URL(response.headers.get("Location"));
+    assert.equal(target.origin + target.pathname, redirect);
+    assert.equal(target.searchParams.get("state"), "synthetic-state");
+    const code = target.searchParams.get("code");
+    const wrong =
+      redirect === EXTENSION_REDIRECT
+        ? EXTENSION_APP_REDIRECT
+        : EXTENSION_REDIRECT;
+    assert.equal(
+      (
+        await f.auth("token", {
+          method: "POST",
+          body: {
+            client_id: EXTENSION_CLIENT,
+            grant_type: "authorization_code",
+            code,
+            code_verifier: f.verifier,
+            redirect_uri: wrong,
+            resource: "https://app.example/mcp-extension",
+          },
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await f.exchange(code)).status,
+      200,
+      "wrong allowed callback does not consume the code",
+    );
+    assert.equal((await f.exchange(code)).status, 400);
+  }
+});
+test("registered callback is an exact allowlist entry, never a prefix or wildcard", async () => {
+  for (const redirect of [
+    `${EXTENSION_APP_REDIRECT}/`,
+    `${EXTENSION_APP_REDIRECT}?next=evil`,
+    `${EXTENSION_APP_REDIRECT}#fragment`,
+    "https://chatgpt.com/connector/oauth/another-app",
+    "https://chatgpt.com.evil.example/connector/oauth/DPNQcee_niD1",
+  ]) {
+    const f = await extensionFixture({ redirect });
+    const response = await f.auth("authorize");
+    assert.equal(response.status, 400);
+    assert.equal(response.headers.get("Location"), null);
+  }
 });
 test("authorization codes are single-use; a bad verifier cannot consume the valid code", async () => {
   const f = await extensionFixture(),
