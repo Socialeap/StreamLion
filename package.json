@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "build": "vite build && npm run build:extension",
+    "build:extension": "node scripts/build-extension.mjs",
+    "pretest": "npm run build:extension",
     "preview": "vite preview --host 127.0.0.1",
+    "preview:extension": "npm run build:extension && node scripts/preview-extension.mjs",
     "test": "node --import tsx --test src/*.test.js src/*.test.jsx functions/**/*.test.js",
-    "smoke:mcp": "node scripts/smoke-mcp.mjs"
+    "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "smoke:extension": "node scripts/smoke-extension.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^2.0.0",

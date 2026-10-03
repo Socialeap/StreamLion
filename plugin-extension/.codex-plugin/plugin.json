@@ -1,0 +1,22 @@
+{
+  "interface": {
+    "displayName": "StreamLion",
+    "shortDescription": "Open your projects and review changes in this conversation",
+    "longDescription": "Choose your StreamLion Google workbook once. Ask about a job, organize room measurements, review project and checklist changes, and prepare a handover in the same conversation.",
+    "developerName": "PASCAL E CHARPENTIER",
+    "category": "Productivity",
+    "capabilities": ["skills", "mcp"],
+    "defaultPrompt": "Open my StreamLion workspace. Help me with the selected project; prepare changes for my review before saving.",
+    "composerIcon": "./assets/gpt-icon.png",
+    "logo": "./assets/gpt-icon.png"
+  },
+  "name": "gpt-11b52f5bcfe3bd414f9586be746198d8",
+  "version": "0.75.0",
+  "description": "StreamLion extension pilot: Google projects, exact room readings and reviewed changes alongside the ChatGPT conversation.",
+  "author": {
+    "name": "PASCAL E CHARPENTIER"
+  },
+  "keywords": [],
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
+}
