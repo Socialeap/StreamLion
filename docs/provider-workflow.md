@@ -4,14 +4,16 @@
 
 1. Create from a brief, the basic details, or explicitly approved client defaults. A named draft is resumable. Save stays in the editor.
 2. Open the project home: **Prepare → On site → Before leaving → Delivery**. Directions, phone contacts, access, scope, exclusions, and requested outputs stay with the project.
-3. Convert the customer's requested outputs into a working checklist. Add requirements and site areas; explicitly check, block, or exclude each item. Exceptions require explanations. Link individual field records as evidence.
+3. Organize project details or a locally read PDF/text brief into editable task suggestions. Review the original passages, then add selected capture, tape-reading and delivery requirements. Explicitly check, block, or exclude work and attach field records as evidence.
 4. Type or dictate using the phone keyboard, record a short voice memo, or add a field photo. Listen/review originals in the PWA. A Google project first journals the record and file atomically on the device, then sends automatically if authorized. Failed requests leave a visible waiting list with explicit retry.
 5. Before leaving, inspect unchecked/blocked items, changed briefs, unreviewed/pending records, and unavailable evidence. Capture completion is the provider's recorded decision, never an automatic scan-quality certification.
-6. Download a delivery summary, record delivery and acceptance independently, and view agreed/invoiced/received/outstanding amounts. Unknown received amounts do not mean zero. Payment fields remain summaries, not an accounting ledger.
+6. Preview a branded handover with source-linked tasks, exceptions, exact readings and photo previews; print/save PDF or download a shareable HTML report. Record delivery and acceptance independently. Fees and unchecked record details are optional in the client report. Unknown received amounts do not mean zero.
 7. Reuse approved client work defaults or start a repeat visit. Repeat drafts copy site/contact/access context; customer references, appointments and transaction amounts are cleared. Review against the new instructions before saving.
 8. Ask shows common facts without an LLM request. Deeper discussion opens ordinary ChatGPT and explicitly copies a dated selected-project snapshot. The user pastes it once. Desktop requests a proportionate browser window; mobile uses a new tab. Browser policy controls the final window behavior. Clipboard failure offers a file backup. The URL contains instructions, not customer project data. ChatGPT does not receive live Google authorization or automatically submit a message.
 
 ## Compatible storage
+
+The [Core job workflow release](core-value-release.md) adds local brief review, source references, exception capture/retry identities, measurement-evidence checks and professional reports. These optional version-1 checklist fields use the same storage and revision safeguards below.
 
 Projects and Observations keep the existing exact headers. No schema migration, server function, secret, provider setting, scope expansion, paid LLM, or hosted customer database is introduced.
 

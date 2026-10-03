@@ -957,3 +957,46 @@ fieldset .form-row {gap:0 18px;}
   border-block: 1px solid var(--border, #dde5e0);
 }
 .google-folder h3 { margin-top: 0; }
+
+.voice-shell { padding: 0; border: 0; margin: 0; min-width: 0; }
+.home-section { margin: 0; min-width: 0; }
+.brief-builder { padding: 22px; border: 1px solid #cddcd2; border-radius: 10px; background: #f5faf7; margin: 22px 0 28px; }
+.brief-builder h3 { margin: 0 0 12px; font-size: 23px; }
+.brief-builder details { margin-block: 16px; }
+.brief-builder textarea { margin-top: 8px; }
+.brief-builder small, .site-exception small { display: block; color: var(--muted); line-height: 1.6; margin: 10px 0; }
+.task-review-list { display: grid; gap: 14px; margin: 22px 0; }
+.task-suggestion { border: 1px solid var(--line); background: white; border-radius: 8px; padding: 18px; min-width: 0; }
+.task-suggestion h4 { margin: 16px 0 8px; font-size: 17px; overflow-wrap: anywhere; }
+.task-suggestion h4 small { display: inline; font-weight: 400; }
+.task-suggestion blockquote, .requirement-source blockquote { border-left: 3px solid #bbcebf; margin: 12px 0; padding: 8px 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-suggestion blockquote span, .requirement-source blockquote small { display: block; font-size: 12px; color: var(--muted); margin-bottom: 7px; }
+.task-review-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; align-items: start; }
+.task-review-fields label { min-width: 0; }
+.site-exception { border: 1px solid #e6d4b2; background: #fffcf5; border-radius: 9px; padding: 18px; margin: 24px 0; }
+.site-exception > summary { font-weight: 650; }
+.site-exception .success { display: block; }
+.handover-dialog { width: min(1000px, 96vw); max-width: 1000px; max-height: 92vh; padding: 0; border: 1px solid #cddcd2; border-radius: 12px; background: #e8eee9; }
+.handover-dialog::backdrop { background: #10291fc2; }
+.handover-controls { padding: 22px; background: white; border-bottom: 1px solid var(--line); }
+.handover-controls .section-heading { align-items: center; }
+.handover-controls h2 { font-size: 23px; margin: 0; }
+.handover-controls small { display: block; line-height: 1.6; color: var(--muted); margin-top: 12px; }
+.report-options { display: flex; gap: 14px 28px; flex-wrap: wrap; }
+.handover-pages { padding: 24px; }
+@media (max-width: 760px) {
+  .brief-builder { padding: 16px; }
+  .task-review-fields { grid-template-columns: 1fr; }
+  .handover-dialog { width: 100vw; max-width: 100vw; max-height: 100dvh; margin: auto 0; border-radius: 0; }
+  .handover-controls { padding: 16px; }
+  .handover-controls .section-heading { align-items: flex-start; }
+  .handover-controls .actions > button { flex: 1 1 140px; }
+  .handover-pages { padding: 12px; }
+}
+@media print {
+  body:has(.handover-dialog[open]) > :not(.handover-dialog) { display: none !important; }
+  .handover-dialog[open] { position: static; display: block; width: auto; max-width: none; height: auto; max-height: none; margin: 0; padding: 0; overflow: visible; border: 0; background: white; }
+  .handover-dialog::backdrop, .handover-controls { display: none !important; }
+  .handover-pages { padding: 0; }
+  .handover-dialog button { display: none !important; }
+}

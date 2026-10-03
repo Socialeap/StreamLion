@@ -1,6 +1,8 @@
 import ProjectFolderButton from "./ProjectFolderButton.jsx";
 import ProjectVoiceAnswers from "./ProjectVoiceAnswers.jsx";
-import { useEffect, useState } from "react";
+import BriefTaskBuilder from "./BriefTaskBuilder.jsx";
+import SiteException from "./SiteException.jsx";
+import { useEffect, useRef, useState } from "react";
 import { MapPin, Phone, Check, ArrowRight } from "lucide-react";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
 import { download } from "./storage";
@@ -8,14 +10,15 @@ import {
   readWorkflow,
   workflowNote,
   WORKFLOW_AREA,
-  requirementsFromBrief,
   validateWorkflow,
   beforeLeaving,
   paymentSummary,
   deliverySummary,
   scopeSignature,
   progressLabel,
+  measurementEvidence,
 } from "./workflow";
+import { measurementText } from "./measurements.js";
 
 const PANELS = ["Prepare", "On site", "Before leaving", "Delivery"];
 const PANEL_HELP = [
@@ -70,6 +73,8 @@ function ProjectHomeContent({
   onRepeat,
   onFolderBusy,
   onVoiceBusy,
+  onOperationBusy,
+  onFieldRecord,
   answerSource,
   answerAsOf,
   scope,
@@ -97,6 +102,16 @@ function ProjectHomeContent({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [Report, setReport] = useState(null);
+  const reportTrigger = useRef(null);
+  const busyFlags = useRef({ work: false, voice: false });
+  function markBusy(kind, value) {
+    busyFlags.current[kind] = value;
+    const active = Object.values(busyFlags.current).some(Boolean);
+    setBusy(active);
+    (onOperationBusy || onVoiceBusy)?.(active);
+  }
   useEffect(() => {
     if (dirty && savedText && savedText === JSON.stringify(plan)) {
       setBase(savedText);
@@ -122,7 +137,19 @@ function ProjectHomeContent({
     .filter(Boolean)
     .join(", ");
   const checks = beforeLeaving(project, plan, notes);
+  const followUpRecorded =
+    checks.length > 0 &&
+    checks.every(
+      (item) => item.state === "blocked" && /\bNext:\s+\S/.test(item.detail),
+    );
   const payment = paymentSummary(project);
+  const shownRequirements = plan.requirements.filter((item) =>
+    panel === 3
+      ? item.kind === "delivery"
+      : panel === 1
+        ? item.kind !== "delivery"
+        : true,
+  );
   function update(next) {
     setPlan(next);
     setDirty(true);
@@ -131,10 +158,12 @@ function ProjectHomeContent({
     try {
       writeDraft(key, { plan: next, base });
       setError("");
+      return true;
     } catch {
       setError(
         "This device cannot keep your checklist draft. Download a backup before leaving.",
       );
+      return false;
     }
   }
   function changeItem(id, values) {
@@ -145,8 +174,22 @@ function ProjectHomeContent({
       ),
     });
   }
+  async function openReport() {
+    markBusy("work", true);
+    try {
+      const { default: Component } = await import("./HandoverReport.jsx");
+      setReport(() => Component);
+      setReportOpen(true);
+    } catch {
+      setError(
+        "The handover preview could not load. Try again, or download the text summary.",
+      );
+    } finally {
+      markBusy("work", false);
+    }
+  }
   async function save() {
-    setBusy(true);
+    markBusy("work", true);
     setError("");
     try {
       if (stale)
@@ -166,45 +209,30 @@ function ProjectHomeContent({
     } catch (e) {
       setError(e.message);
     } finally {
-      setBusy(false);
+      markBusy("work", false);
     }
   }
   const checklist = (
     <>
       <div className="section-heading">
-        <h3>Work checklist</h3>
+        <h3>{panel === 3 ? "Delivery tasks" : "Work checklist"}</h3>
         <span>
-          {plan.requirements.filter((item) => item.state === "done").length} /{" "}
-          {plan.requirements.length} checked
+          {
+            shownRequirements.filter(
+              (item) =>
+                item.state === "done" &&
+                (item.kind !== "measurement" ||
+                  !measurementEvidence(item, notes, project.id).issue),
+            ).length
+          }{" "}
+          / {shownRequirements.length} checked
         </span>
       </div>
       {!plan.requirements.length && (
-        <div className="empty-inline">
-          <p>
-            Turn the customer's requested outputs into a checklist you can check
-            on site.
-          </p>
-          <button
-            onClick={() => {
-              try {
-                const items = requirementsFromBrief(project);
-                if (!items.length)
-                  throw new Error(
-                    "No outputs were recorded. Add a requirement below or edit the brief.",
-                  );
-                update({
-                  ...plan,
-                  requirements: items,
-                  scopeSignature: scopeSignature(project),
-                });
-              } catch (e) {
-                setError(e.message);
-              }
-            }}
-          >
-            Use the requested outputs
-          </button>
-        </div>
+        <p className="empty-inline">
+          Build tasks from the brief in Prepare, or add a specific requirement
+          below.
+        </p>
       )}
       {plan.scopeSignature !== scopeSignature(project) && (
         <div className="error">
@@ -222,7 +250,7 @@ function ProjectHomeContent({
         </div>
       )}
       <div className="requirements">
-        {plan.requirements.map((item) => (
+        {shownRequirements.map((item) => (
           <article key={item.id} className={`requirement ${item.state}`}>
             <div className="requirement-head">
               <strong>{item.label}</strong>
@@ -237,6 +265,25 @@ function ProjectHomeContent({
                 <option value="not-needed">Not needed</option>
               </select>
             </div>
+            {item.source && (
+              <details className="requirement-source">
+                <summary>Source request</summary>
+                <blockquote>
+                  <small>
+                    {item.source.name}
+                    {item.source.page && ` · page ${item.source.page}`}
+                  </small>
+                  {item.source.quote}
+                </blockquote>
+              </details>
+            )}
+            {item.kind === "measurement" &&
+              item.state === "done" &&
+              measurementEvidence(item, notes, project.id).issue && (
+                <p className="waiting-label">
+                  {measurementEvidence(item, notes, project.id).issue}
+                </p>
+              )}
             <details>
               <summary>
                 Area, explanation, and evidence
@@ -283,7 +330,8 @@ function ProjectHomeContent({
                         })
                       }
                     />
-                    {note.area} · {(note.text || "Voice memo").slice(0, 80)}
+                    {note.area} ·{" "}
+                    {(measurementText(note) || "Voice memo").slice(0, 80)}
                   </label>
                 ))}
               </fieldset>
@@ -332,6 +380,7 @@ function ProjectHomeContent({
                 {
                   id: crypto.randomUUID(),
                   label: newLabel.trim(),
+                  ...(panel === 3 ? { kind: "delivery" } : {}),
                   area: "",
                   state: "todo",
                   reason: "",
@@ -368,7 +417,9 @@ function ProjectHomeContent({
           </p>
         </div>
         <div className="actions">
-          <button onClick={onEdit}>Edit details</button>
+          <button onClick={onEdit} disabled={busy}>
+            Edit details
+          </button>
           {!project.deviceOnly && scope && (
             <ProjectFolderButton
               onBusy={onFolderBusy}
@@ -377,16 +428,23 @@ function ProjectHomeContent({
               disabled={!connected || busy}
             />
           )}
-          <button onClick={onBack}>All projects</button>
+          <button onClick={onBack} disabled={busy}>
+            All projects
+          </button>
         </div>
       </header>
-      <ProjectVoiceAnswers
-        project={project}
-        scope={scope}
-        source={answerSource}
-        asOf={answerAsOf}
-        onBusy={onVoiceBusy}
-      />
+      <fieldset
+        className="voice-shell"
+        disabled={busy && !busyFlags.current.voice}
+      >
+        <ProjectVoiceAnswers
+          project={project}
+          scope={scope}
+          source={answerSource}
+          asOf={answerAsOf}
+          onBusy={(value) => markBusy("voice", value)}
+        />
+      </fieldset>
       <nav className="project-stages" aria-label="Project workflow">
         {PANELS.map((name, i) => (
           <button
@@ -394,12 +452,17 @@ function ProjectHomeContent({
             aria-current={panel === i ? "page" : undefined}
             title={PANEL_HELP[i]}
             onClick={() => setPanel(i)}
+            disabled={busy}
           >
             {i + 1}. {name}
           </button>
         ))}
       </nav>
-      <div className="home-section" aria-label={PANELS[panel]}>
+      <fieldset
+        className="home-section"
+        aria-label={PANELS[panel]}
+        disabled={busy}
+      >
         {panel === 0 && (
           <>
             <div className="site-overview">
@@ -460,6 +523,18 @@ function ProjectHomeContent({
                 {project.exclusions || "Not recorded"}
               </p>
             </details>
+            <BriefTaskBuilder
+              project={project}
+              plan={plan}
+              onChange={(briefDraft) => update({ ...plan, briefDraft })}
+              onAdd={(requirements) => {
+                const next = { ...plan, requirements, briefDraft: undefined };
+                // Validate the entire saved payload before replacing the review.
+                validateWorkflow(next);
+                update(next);
+              }}
+              onBusy={(value) => markBusy("work", value)}
+            />
             {!project.deviceOnly && (
               <section className="site-copy-control">
                 <h3>Prepare for a weak connection</h3>
@@ -545,6 +620,20 @@ function ProjectHomeContent({
               )}
               <button onClick={onAsk}>Ask about this project</button>
             </div>
+            {onFieldRecord && (
+              <SiteException
+                project={project}
+                plan={plan}
+                disabled={stale}
+                onChange={(exceptionDraft) =>
+                  update({ ...plan, exceptionDraft })
+                }
+                onRecorded={update}
+                onSaveRecord={onFieldRecord}
+                onNotes={onNotes}
+                onBusy={(value) => markBusy("work", value)}
+              />
+            )}
             {checklist}
             <button className="primary" onClick={() => setPanel(2)}>
               Check before leaving <ArrowRight size={16} />
@@ -553,7 +642,7 @@ function ProjectHomeContent({
         )}
         {panel === 2 && (
           <>
-            <h2>Before you leave</h2>
+            <h2>Before leaving job-site</h2>
             <p>
               Check the areas and evidence now, while you can still resolve gaps
               on site.
@@ -573,6 +662,20 @@ function ProjectHomeContent({
                 No outstanding items in this checklist.
               </p>
             )}
+            {onFieldRecord && (
+              <SiteException
+                project={project}
+                plan={plan}
+                disabled={stale}
+                onChange={(exceptionDraft) =>
+                  update({ ...plan, exceptionDraft })
+                }
+                onRecorded={update}
+                onSaveRecord={onFieldRecord}
+                onNotes={onNotes}
+                onBusy={(value) => markBusy("work", value)}
+              />
+            )}
             <label>
               Site lessons / customer-agreed exceptions
               <textarea
@@ -584,6 +687,12 @@ function ProjectHomeContent({
                 placeholder="Record limitations, follow-up work, or anything to remember for the next visit."
               />
             </label>
+            {followUpRecorded && (
+              <p className="hint">
+                A next action is already recorded for each blocked requirement.
+                Add any extra visit notes above.
+              </p>
+            )}
             {checks.length > 0 && (
               <label className="check-label">
                 <input
@@ -591,8 +700,8 @@ function ProjectHomeContent({
                   checked={acknowledged}
                   onChange={(e) => setAcknowledged(e.target.checked)}
                 />
-                I have reviewed the outstanding items and recorded the follow-up
-                above.
+                I reviewed the outstanding items and the follow-up recorded in
+                this project.
               </label>
             )}
             <div className="actions">
@@ -601,7 +710,8 @@ function ProjectHomeContent({
                 className="primary"
                 disabled={
                   checks.length > 0 &&
-                  (!acknowledged || !plan.siteLessons.trim())
+                  (!acknowledged ||
+                    (!plan.siteLessons.trim() && !followUpRecorded))
                 }
                 onClick={() => {
                   update({ ...plan, visit: "captured" });
@@ -632,6 +742,13 @@ function ProjectHomeContent({
             </p>
             <div className="actions">
               <button
+                ref={reportTrigger}
+                className="primary"
+                onClick={openReport}
+              >
+                Preview job handover
+              </button>
+              <button
                 onClick={() =>
                   download(
                     new Blob([deliverySummary(project, plan, notes)], {
@@ -647,6 +764,8 @@ function ProjectHomeContent({
                 Add delivery links / payment details
               </button>
             </div>
+            {plan.requirements.some((item) => item.kind === "delivery") &&
+              checklist}
             <label>
               Delivery status
               <select
@@ -699,7 +818,28 @@ function ProjectHomeContent({
             <button onClick={onRepeat}>Start a repeat visit</button>
           </>
         )}
-      </div>
+      </fieldset>
+      {reportOpen && Report && (
+        <Report
+          project={project}
+          plan={plan}
+          notes={notes}
+          origin={
+            dirty
+              ? "Working copy · checklist changes not yet confirmed"
+              : answerSource === "google"
+                ? "Google workbook record"
+                : answerSource === "copy"
+                  ? "Saved workbook copy"
+                  : "Device record"
+          }
+          asOf={answerAsOf}
+          connected={connected}
+          returnFocusElement={reportTrigger.current}
+          onBusy={(value) => markBusy("work", value)}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
       {(dirty || notice || error) && (
         <footer className={`checklist-save${dirty || error ? "" : " saved"}`}>
           <span>

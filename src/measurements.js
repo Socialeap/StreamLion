@@ -25,6 +25,7 @@ const labels = {
   segment: "Segment",
   diagonal: "Diagonal",
 };
+export const MEASUREMENT_LABELS = [...new Set(Object.values(labels))];
 const words = {
   zero: 0,
   one: 1,

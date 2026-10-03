@@ -30,7 +30,11 @@ import {
   reusableFields,
   validateWorkflow,
 } from "./workflow";
-import { newFieldRecord, sendFieldRecord } from "./field-records";
+import {
+  newFieldRecord,
+  sendFieldRecord,
+  appendFieldRecord,
+} from "./field-records";
 import { emptyWorkspace, reviseNote } from "./model";
 import {
   loadWorkspace,
@@ -647,7 +651,7 @@ export default function App() {
     }
     setStatus("Project restored. Review its details before using it.");
   }
-  async function addNote(context, blob) {
+  async function addNote(context, blob, reservedId) {
     const owner = workspace.jobs.find(
       (project) => project.id === context.jobId,
     );
@@ -656,9 +660,13 @@ export default function App() {
         "Choose an available project before adding field records.",
       );
     const destination = owner.deviceOnly ? "" : bookId;
-    const note = newFieldRecord(context, destination, blob);
+    const note = newFieldRecord(context, destination, blob, reservedId);
+    if (workspace.notes.some((record) => record.id === note.id)) {
+      appendFieldRecord(workspace.notes, note);
+      return note.id;
+    }
     await commit(
-      (w) => ({ ...w, notes: [...w.notes, note] }),
+      (w) => ({ ...w, notes: appendFieldRecord(w.notes, note) }),
       blob ? { id: note.id, blob } : null,
     );
     setStatus(
@@ -679,6 +687,7 @@ export default function App() {
         setOutboxBusy(false);
       }
     }
+    return note.id;
   }
   async function acknowledgeFieldRecord(id) {
     await commit((w) => ({
@@ -1159,6 +1168,8 @@ export default function App() {
             onSiteCopy={keepSiteCopy}
             onFolderBusy={setSyncBusy}
             onVoiceBusy={setCaptureBusy}
+            onOperationBusy={setCaptureBusy}
+            onFieldRecord={addNote}
             answerSource={
               active.deviceOnly
                 ? "device"

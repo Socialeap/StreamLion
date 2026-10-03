@@ -1,7 +1,7 @@
 import { validateNote } from "./workbook.js";
 import { WORKFLOW_AREA } from "./workflow.js";
 
-export function newFieldRecord(context, bookId = "", blob) {
+export function newFieldRecord(context, bookId = "", blob, reservedId) {
   if (
     !context.jobId ||
     !context.area?.trim() ||
@@ -17,7 +17,12 @@ export function newFieldRecord(context, bookId = "", blob) {
     throw new Error(
       "Choose a photo or voice memo up to 5 MB. Short voice memos work best.",
     );
-  const id = crypto.randomUUID();
+  if (
+    reservedId !== undefined &&
+    (typeof reservedId !== "string" || !/^[\w-]{1,100}$/.test(reservedId))
+  )
+    throw new Error("Invalid field record save identity.");
+  const id = reservedId || crypto.randomUUID();
   const text =
     context.text ||
     (blob?.type.startsWith("image/")
@@ -46,6 +51,22 @@ export function newFieldRecord(context, bookId = "", blob) {
         }
       : {}),
   };
+}
+
+export function appendFieldRecord(notes, note) {
+  const previous = notes.find((record) => record.id === note.id);
+  if (!previous) return [...notes, note];
+  if (
+    previous.jobId !== note.jobId ||
+    previous.area !== note.area ||
+    previous.text !== note.text ||
+    (previous.sourceText || previous.text) !== note.sourceText ||
+    !!previous.audioId !== !!note.audioId
+  )
+    throw new Error(
+      "This field record identity already has different wording. Review Field notes before retrying.",
+    );
+  return notes;
 }
 
 // Persist identities before writes; acknowledge only after Sheets verification.

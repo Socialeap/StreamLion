@@ -64,7 +64,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,webmanifest}"],
+        globPatterns: ["**/*.{js,mjs,css,html,svg,png,webmanifest}"],
         // Sign-in redirects and standalone policy/release pages must reach their
         // actual routes rather than receiving the offline workspace shell.
         navigateFallbackDenylist: navigationFallbackDenylist,
