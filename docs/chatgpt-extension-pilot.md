@@ -98,7 +98,7 @@ OAuth settings for a **predefined public client**:
 | MCP resource | `https://streamlion.transcendencemedia.com/mcp-extension` |
 | Client ID | `https://chatgpt.com/oauth/client.json` |
 | Client secret | None; public client with PKCE S256 |
-| Exact callback | `https://chatgpt.com/connector_platform_oauth_redirect` |
+| Exact callbacks | `https://chatgpt.com/connector_platform_oauth_redirect` and owner-approved App registration callback `https://chatgpt.com/connector/oauth/DPNQcee_niD1` |
 | Authorization endpoint | `https://streamlion.transcendencemedia.com/api/extension/authorize` |
 | Token endpoint | `https://streamlion.transcendencemedia.com/api/extension/token` |
 | Revocation endpoint | `https://streamlion.transcendencemedia.com/api/extension/revoke` |
@@ -106,7 +106,7 @@ OAuth settings for a **predefined public client**:
 | Resource metadata | `https://streamlion.transcendencemedia.com/.well-known/oauth-protected-resource/mcp-extension` |
 | Authorization metadata | `https://streamlion.transcendencemedia.com/.well-known/oauth-authorization-server` |
 
-Only the exact client and callback are accepted. This prototype does not implement arbitrary client metadata retrieval, dynamic registration or signed client assertions. If the selected host cannot use this predefined public-client flow, stop and report its actual requirements; do not weaken redirect, account, workbook or token checks.
+Only the exact client and the two listed callbacks are accepted. Authorization responses return to the validated flow callback; code redemption must use that same callback. The registered App callback was inspected and approved by the owner on October 3, 2026. Recreating the App with a different callback requires a separately reviewed exact allowlist change; do not add wildcard paths. This prototype does not implement arbitrary client metadata retrieval, dynamic registration or signed client assertions. If the selected host cannot use this predefined public-client flow, stop and report its actual requirements; do not weaken redirect, account, workbook or token checks.
 
 The first connection uses the existing StreamLion Google session when available. Otherwise the owner signs in through Google, then returns to the connection page. If a workbook has not been selected, select it once in PWA Connections and return. The consent page identifies the account and links the selected workbook before granting access. A workbook link is already provided to ChatGPT by the tool; users should not repeatedly paste workbook IDs or authorize Rube.
 
