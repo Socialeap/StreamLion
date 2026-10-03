@@ -160,7 +160,7 @@ async function tokenExchange(env, params) {
   });
 }
 const refreshing = new Map();
-async function accessToken(env, row) {
+export async function accessToken(env, row) {
   const credentials = await unseal(env, row.credentials, row.session_hash);
   if (credentials.expiresAt > Date.now() + 60000)
     return credentials.accessToken;
@@ -392,10 +392,7 @@ export async function handleGoogle({ request, env, params }) {
           verifier,
           state,
           expiresAt: Date.now() + 600000,
-          returnTo:
-            url.searchParams.get("returnTo") === "purchase"
-              ? "/api/purchase"
-              : "/",
+          returnTo: googleReturnPath(url.searchParams.get("returnTo"), env),
         },
         "oauth-flow",
       );
@@ -509,10 +506,12 @@ export async function handleGoogle({ request, env, params }) {
           ).bind(previous.session_hash),
         );
       await env.GOOGLE_SESSIONS.batch(statements);
+      const returnPath = googleReturnPath(flow.returnTo, env);
       return redirect(
         origin(env) +
-          (flow.returnTo === "/api/purchase" ? flow.returnTo : "/") +
-          "?google=connected",
+          returnPath +
+          (returnPath.includes("?") ? "&" : "?") +
+          "google=connected",
         [clearFlow, setCookie(SESSION, id, MAX_AGE)],
       );
     }
@@ -701,4 +700,30 @@ export async function handleGoogle({ request, env, params }) {
       status,
     );
   }
+}
+
+// A narrowly allowed continuation for the optional extension pilot. All other
+// destinations retain the existing PWA/purchase behavior; no open redirects.
+export function googleReturnPath(value, env) {
+  if (value === "purchase" || value === "/api/purchase") return "/api/purchase";
+  if (
+    env.ENABLE_CHATGPT_EXTENSION === "true" &&
+    typeof value === "string" &&
+    value.length <= 6000 &&
+    value.startsWith("/api/extension/authorize?") &&
+    !value.includes("\\")
+  ) {
+    try {
+      const parsed = new URL(value, origin(env));
+      if (
+        parsed.origin === origin(env) &&
+        parsed.pathname === "/api/extension/authorize" &&
+        !parsed.hash
+      )
+        return parsed.pathname + parsed.search;
+    } catch {
+      /* fall back to the workspace */
+    }
+  }
+  return "/";
 }

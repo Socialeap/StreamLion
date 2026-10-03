@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>StreamLion extension · Local prototype</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f7f8f3;
+        font: 15px system-ui;
+        color: #234e38;
+      }
+      header {
+        padding: 12px 20px;
+        background: #e3edda;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      header p {
+        margin: 3px 0;
+        font-size: 13px;
+      }
+      button {
+        font: inherit;
+        padding: 10px;
+        border: 1px solid #9ab294;
+        border-radius: 8px;
+        background: white;
+        cursor: pointer;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 310px;
+      }
+      iframe {
+        width: 100%;
+        height: calc(100vh - 80px);
+        border: 0;
+        display: block;
+      }
+      aside {
+        padding: 20px;
+        border-left: 1px solid #cad8c4;
+        height: calc(100vh - 120px);
+        overflow: auto;
+      }
+      #messages p {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 14px;
+        background: white;
+        padding: 12px;
+        border-radius: 10px;
+      }
+      @media (max-width: 900px) {
+        main {
+          display: block;
+        }
+        aside {
+          height: auto;
+          border-left: 0;
+          border-top: 1px solid #cad8c4;
+        }
+        header {
+          align-items: flex-start;
+        }
+        iframe {
+          height: calc(100vh - 115px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <strong>Local extension prototype · Synthetic data</strong>
+        <p>
+          No Google connection, AI response, customer writes or charges.
+          “Connect” opens the simulated workbook.
+        </p>
+      </div>
+      <button onclick="location.reload()">Reset demo</button>
+    </header>
+    <main>
+      <iframe
+        id="view"
+        title="StreamLion simulated ChatGPT view"
+        src="/extension.html"
+      ></iframe>
+      <aside>
+        <h2>Conversation preview</h2>
+        <p id="attachment">No project attached</p>
+        <p>
+          Questions and handovers sent from the workspace appear below. A live
+          ChatGPT host supplies the actual answers.
+        </p>
+        <div id="messages" aria-live="polite"></div>
+      </aside>
+    </main>
+    <script type="module" src="/host.js"></script>
+  </body>
+</html>

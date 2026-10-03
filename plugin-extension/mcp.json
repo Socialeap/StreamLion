@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "streamlion-ui": {
+      "type": "streamable-http",
+      "url": "https://streamlion.transcendencemedia.com/mcp-extension"
+    }
+  }
+}
