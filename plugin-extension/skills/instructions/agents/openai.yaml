@@ -1,0 +1,4 @@
+interface:
+  default_prompt: "Help me with my StreamLion projects. I'll ask a question or share a brief; use my connected workbook when needed."
+  display_name: StreamLion
+  short_description: "Projects, readings & handovers"

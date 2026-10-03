@@ -5,6 +5,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "env": {
     "production": {
+      "vars": { "ENABLE_CHATGPT_EXTENSION": "true" },
       "d1_databases": [
         {
           "binding": "GOOGLE_SESSIONS",
