@@ -2,7 +2,7 @@
 
 ## Release boundary
 
-This is an optional prototype alongside the standalone PWA, its two-button ChatGPT handoff, the existing `plugin/` package and `/mcp` endpoint. Those routes and workflows remain available. The pilot uses a separate `/mcp-extension` endpoint and `plugin-extension/` package. It does **not** activate itself on merge. Private tools fail closed unless `ENABLE_CHATGPT_EXTENSION=true`, the existing persistent Google configuration is ready and migration 0006 is present.
+This is an optional prototype alongside the standalone PWA, its two-button ChatGPT handoff, the existing `plugin/` package and `/mcp` endpoint. Those routes and workflows remain available. The pilot uses a separate `/mcp-extension` endpoint and `plugin-extension/` package. The original PR #37 left activation disabled. The owner approved activation on October 3, 2026; this activation revision enables the production flag in Pages and scheduled cleanup. Private tools still fail closed unless the existing persistent Google configuration is ready and migration 0006 is present.
 
 **No Lovable action is required.** GitHub owns source; the owner operates Cloudflare, Google and the owned ChatGPT plugin. Hold production activation and the account-plugin update until this PR is merged and the owner authorizes pilot activation. Record the exact merged main SHA in the receipt. Do not publish a public plugin release as part of pilot setup.
 
@@ -49,10 +49,10 @@ Package the **contents** of `plugin-extension/`, including dotfiles, with `plugi
 
 ```sh
 cd plugin-extension
-zip -qr /tmp/streamlion-extension-0.75.0.zip . -x '*.DS_Store'
+zip -qr /tmp/streamlion-extension-0.75.1.zip . -x '*.DS_Store'
 ```
 
-The package preserves the owned identity `gpt-11b52f5bcfe3bd414f9586be746198d8` and version `0.75.0`. Keep the unchanged `plugin/` package for rollback. A source ZIP is not proof of successful account publication or host compatibility.
+The package preserves the owned identity `gpt-11b52f5bcfe3bd414f9586be746198d8` and version `0.75.1`. Keep the unchanged `plugin/` package for rollback. A source ZIP is not proof of successful account publication or host compatibility.
 
 ## Activation after merge and owner approval
 
@@ -75,7 +75,7 @@ SELECT name, type, sql FROM sqlite_master WHERE name IN (
 
 ### 2. Cloudflare pilot configuration and deployments
 
-After successful preflight, use a reviewed activation change to add `ENABLE_CHATGPT_EXTENSION: "true"` to **production-only vars** in `wrangler.jsonc` and to the cleanup Worker's vars in `ops/wrangler-cleanup.jsonc`. Preview remains without the production database or secrets. Wrangler-managed variables are configured in source, not in the Dashboard variable form. The current prototype intentionally leaves this flag absent.
+After successful preflight, use the owner-approved activation revision containing `ENABLE_CHATGPT_EXTENSION: "true"` in **production-only vars** in `wrangler.jsonc` and in the cleanup Worker's vars in `ops/wrangler-cleanup.jsonc`. Preview remains without the production database or secrets. Wrangler-managed variables are configured in source, not in the Dashboard variable form. Do not redeploy the original disabled PR #37 configuration over an activated pilot.
 
 Deploy the approved merged source to the existing `streamlion` Pages project. Then deploy only `ops/session-cleanup.js` using its existing configuration:
 

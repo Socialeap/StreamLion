@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "gpt-11b52f5bcfe3bd414f9586be746198d8",
-  "version": "0.75.0",
+  "version": "0.75.1",
   "description": "StreamLion extension pilot: Google projects, exact room readings and reviewed changes alongside the ChatGPT conversation.",
   "author": {
     "name": "PASCAL E CHARPENTIER"
@@ -10,17 +10,19 @@
     "com.openai": {
       "interface": {
         "displayName": "StreamLion",
-        "shortDescription": "Open your projects and review changes in this conversation",
+        "shortDescription": "Projects, readings & handovers",
         "longDescription": "Choose your StreamLion Google workbook once. Ask about a job, organize room measurements, review project and checklist changes, and prepare a handover in the same conversation.",
         "developerName": "PASCAL E CHARPENTIER",
         "category": "Productivity",
-        "capabilities": ["skills", "mcp"],
-        "defaultPrompt": "Open my StreamLion workspace. Help me with the selected project; prepare changes for my review before saving.",
+        "capabilities": [
+          "skills",
+          "mcp"
+        ],
+        "defaultPrompt": "Help me with my StreamLion projects. I'll ask a question or share a brief; use my connected workbook when needed.",
         "composerIcon": "./assets/gpt-icon.png",
         "logo": "./assets/gpt-icon.png"
       },
       "onboardingSkill": "./skills/setup/SKILL.md"
     }
-  },
-  "skills": "./skills/"
+  }
 }
