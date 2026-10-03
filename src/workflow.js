@@ -92,7 +92,7 @@ export function validateWorkflow(value, { draft = false } = {}) {
     validateExceptionDraft(value.exceptionDraft);
   if (!draft && JSON.stringify(value).length > 11500)
     throw new Error(
-      "This checklist is full. Shorten the descriptions before saving; nothing has been discarded.",
+      "This checklist is full. Select fewer tasks or shorten the descriptions before saving; nothing has been discarded.",
     );
   return value;
 }

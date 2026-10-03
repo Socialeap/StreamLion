@@ -156,6 +156,69 @@ test("verified checklist retry clears only matching local edits and keeps newer 
 });
 test.after(() => dom.window.close());
 
+test("oversized task additions preserve the reviewed brief and allow a smaller selection to save", async () => {
+  localStorage.clear();
+  const project = {
+    id: "capacity-job",
+    title: "Capacity QA",
+    deviceOnly: true,
+  };
+  const text = Array.from(
+    { length: 35 },
+    (_, i) => `Capture room ${i + 1} ${"x".repeat(100)}`,
+  ).join("\n");
+  let saved;
+  const props = {
+    project,
+    notes: [],
+    scope: "local",
+    onSave: async (plan) => {
+      saved = plan;
+    },
+  };
+  let ui = render(<ProjectHome {...props} />);
+  fireEvent.click(ui.getByText("Paste or choose a brief"));
+  fireEvent.change(ui.getByLabelText("Brief wording"), {
+    target: { value: text },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Organize this brief" }));
+  fireEvent.click(
+    ui.getByLabelText(
+      "I checked the selected tasks against the source, including exclusions.",
+    ),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Add reviewed tasks to checklist" }),
+  );
+  assert.match(ui.getByRole("alert").textContent, /Select fewer tasks/);
+  const key = "streamlion-draft-v1:local:checklist:capacity-job";
+  const retained = JSON.parse(localStorage.getItem(key)).plan;
+  assert.equal(retained.requirements.length, 0);
+  assert.equal(retained.briefDraft.text, text);
+  assert.equal(retained.briefDraft.reviewed, true);
+  assert.equal(retained.briefDraft.suggestions.length, 35);
+  cleanup();
+  ui = render(<ProjectHome {...props} />);
+  const selections = ui.getAllByLabelText("Include this task");
+  for (const checkbox of selections.slice(1)) fireEvent.click(checkbox);
+  fireEvent.click(
+    ui.getByLabelText(
+      "I checked the selected tasks against the source, including exclusions.",
+    ),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Add reviewed tasks to checklist" }),
+  );
+  const accepted = JSON.parse(localStorage.getItem(key)).plan;
+  assert.equal(accepted.requirements.length, 1);
+  assert.equal(accepted.briefDraft, undefined);
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Save checklist" })),
+  );
+  assert.equal(saved.requirements.length, 1);
+  cleanup();
+});
+
 test("site exception retry retains its operation identity across navigation and holds the update gate", async () => {
   localStorage.clear();
   const { newFieldRecord, appendFieldRecord } =

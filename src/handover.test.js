@@ -196,3 +196,31 @@ test("untrusted field text and links cannot inject executable content into downl
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /default-src 'none'/);
 });
+
+test("unchecked evidence identities stay private unless their details are explicitly included", () => {
+  const hidden = {
+    id: "sensitive-record-identity",
+    jobId: "job",
+    area: "Private executive safe room",
+    text: "Private access details",
+    reviewed: false,
+  };
+  const plan = {
+    ...readWorkflow([], project),
+    requirements: [{ ...task, evidence: [hidden.id] }],
+  };
+  const model = handoverModel(project, plan, [hidden]);
+  assert.equal(model.omitted, 1);
+  assert.deepEqual(model.requirements[0].linked, []);
+  assert.doesNotMatch(
+    handoverDocument(model),
+    /Private executive safe room|sensitive-record|Private access details/,
+  );
+  const included = handoverModel(project, plan, [hidden], {
+    includeUnreviewed: true,
+  });
+  assert.equal(included.omitted, 0);
+  assert.equal(included.requirements[0].linked[0].id, hidden.id);
+  assert.match(handoverDocument(included), /Private executive safe room/);
+  assert.match(handoverDocument(included), /Needs review/);
+});

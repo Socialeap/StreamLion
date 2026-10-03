@@ -83,7 +83,7 @@ export function handoverModel(project, plan, notes, options = {}) {
         measurementEvidence(item, notes, project.id).issue
           ? "Reading needs review"
           : status[item.state],
-      linked: records.filter(
+      linked: visible.filter(
         (note) =>
           item.evidence.includes(note.id) ||
           (item.kind === "measurement" &&

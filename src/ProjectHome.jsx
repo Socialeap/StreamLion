@@ -527,9 +527,12 @@ function ProjectHomeContent({
               project={project}
               plan={plan}
               onChange={(briefDraft) => update({ ...plan, briefDraft })}
-              onAdd={(requirements) =>
-                update({ ...plan, requirements, briefDraft: undefined })
-              }
+              onAdd={(requirements) => {
+                const next = { ...plan, requirements, briefDraft: undefined };
+                // Validate the entire saved payload before replacing the review.
+                validateWorkflow(next);
+                update(next);
+              }}
               onBusy={(value) => markBusy("work", value)}
             />
             {!project.deviceOnly && (

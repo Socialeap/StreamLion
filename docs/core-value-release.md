@@ -9,6 +9,7 @@ Open a saved project → **Prepare → Build from project details**, or expand *
 - Explicit requests produce separate capture spaces and tape-reading requirements. Conditional/unclear wording stays a review request, never an inferred positive capture instruction. Exclusions remain visible for the source review.
 - Each task keeps its source passage, source field/file name, and PDF page when available. Importing a file does not upload the original file; saved passages use the existing Google checklist record.
 - Suggestions never automatically become completed work. Identical additions preserve prior status/evidence. A matching task with changed source wording is rejected for explicit review.
+- The complete resulting checklist is validated against the saved-payload limit before a reviewed brief is cleared. Oversized selections keep the source, suggestions and existing tasks intact; select fewer tasks and retry.
 - Corrections and source-review drafts survive navigation and are included in the existing device backup. Before leaving shows unfinished brief reviews.
 - PDF limits: 5 MB, 20 readable pages, 6,000 characters per review; 40 requirements per checklist. Protected, image-only, mixed unreadable, or oversize files produce a clear fallback to pasting relevant wording. There is no OCR or hosted AI. No content is silently truncated into a partial checklist.
 - Tape task labels match the existing Measurements input: Length, Width, Height, Ceiling, Depth, Segment, Diagonal. Other requests remain manually reviewed work; no unsupported geometry is invented.
@@ -29,6 +30,7 @@ Delivery tasks belong in **Delivery**, not the pre-departure checklist. Recorded
 
 - **Print / save PDF** uses the browser's print dialog. **Download shareable report** produces a self-contained HTML report; the existing text summary remains available.
 - Payment fields and unchecked field-record details are omitted by default. The preview provides explicit controls to include them. Source passages and notes retain their wording, including any amounts stated there; review the preview before sharing. Outstanding work and omitted unchecked records remain visible as warnings.
+- Linked evidence follows the same privacy selection: an omitted unchecked record's area and identity are also excluded from requirement evidence summaries.
 - Photo previews can be loaded from this device or, when connected, explicitly from Google. Up to 10 field files are checked, sequentially, to bound memory/network work; original file links remain. Preview resizing never modifies the original. Check the preview for missing/unavailable photos before sharing.
 - The report states whether it uses a device record, saved workbook copy, live Google record or unsaved checklist edits. Recorded customer acceptance is a provider entry, not a customer-authenticated signature.
 - User text is escaped, links accept only HTTP(S) without embedded credentials, and photo data accepts only raster images. Downloaded reports allow no scripts or network subresources.
