@@ -1,4 +1,5 @@
 import "./landing.css";
+import { READINGS } from "./brief-tasks.js";
 import { parseMeasurements } from "./measurements.js";
 import {
   confirmedPurchaseQuote,
@@ -7,29 +8,34 @@ import {
 } from "./landing-value.js";
 import { answerProjectQuestion } from "./project-answers.js";
 import { beforeLeaving } from "./workflow.js";
+import { closeoutNextActions } from "./landing-demo.js";
 import {
-  closeoutNextActions,
-  checklistFromJobDetails,
-} from "./landing-demo.js";
+  sampleJob,
+  sampleSuggestions,
+  applySampleBrief,
+  sampleReading,
+  sampleLockedRoom,
+  syncSampleDeliveryTasks,
+} from "./landing-job.js";
 
 const descriptions = {
   prepare: {
-    benefit: "Turn the agreed work into checks you can act on.",
+    benefit: "Turn client wording into reviewed site tasks.",
     description:
-      "Change the sample brief. Build a checklist. See exactly what is still open before you leave.",
+      "Review each suggested task beside its source. Edit what needs changing, then carry the tasks into the visit.",
     area: "Job brief",
   },
   site: {
-    benefit: "Leave with readings tied to the room.",
+    benefit: "Catch the missing reading before you pack up.",
     description:
-      "Name a space, dictate the readings, and see them organized for your tape check.",
+      "Keep tape-checked readings with the right room. Try a locked room to see how exceptions become next actions.",
     area: "Room readings",
   },
   handover: {
-    benefit: "Know which follow-up comes next.",
+    benefit: "Show your client the work and what needs attention.",
     description:
-      "Change the delivery, acceptance or payment record. See which follow-up comes next and why.",
-    area: "Closeout",
+      "Preview your provider-branded handover. The same tasks, readings and exceptions flow into one report.",
+    area: "Client handover",
   },
 };
 function chooseStep(step) {
@@ -124,89 +130,218 @@ document
   .forEach((input) => input.addEventListener("input", updateValue));
 updateValue();
 
+let demoJob = sampleJob();
+let briefDraft;
+let organizedReading;
+let reportModule;
+let reportPromise;
+const reportImages = {};
 const brief = document.querySelector("#demo-brief");
-const requiredReadings = document.querySelector("#demo-required-readings");
-let checklistProject, checklistPlan;
+const briefReviewed = document.querySelector("#brief-reviewed");
+const tapeReviewed = document.querySelector("#tape-reviewed");
+const keepReadings = document.querySelector("#keep-readings");
+function showBriefSuggestions() {
+  try {
+    briefDraft = sampleSuggestions(demoJob.project, brief.value);
+    briefReviewed.checked = false;
+    const holder = document.querySelector("#task-suggestions");
+    holder.replaceChildren();
+    for (const item of briefDraft.suggestions) {
+      const card = document.createElement("div");
+      card.className = "suggested-task";
+      const label = document.createElement("label"),
+        chosen = document.createElement("input"),
+        title = document.createElement("span");
+      chosen.type = "checkbox";
+      chosen.checked = item.selected;
+      chosen.setAttribute("aria-label", `Include ${item.label}`);
+      title.textContent = item.label;
+      const quote = document.createElement("blockquote");
+      quote.textContent = item.source.quote;
+      const edit = document.createElement("details"),
+        summary = document.createElement("summary");
+      summary.textContent = "Edit this task";
+      edit.append(summary);
+      const wordingLabel = document.createElement("label"),
+        wording = document.createElement("input");
+      wordingLabel.textContent = "Task wording";
+      wording.value = item.label;
+      wording.maxLength = 500;
+      wording.setAttribute("aria-label", `Task wording: ${item.label}`);
+      wordingLabel.append(wording);
+      edit.append(wordingLabel);
+      const resetReview = () => {
+        briefReviewed.checked = false;
+      };
+      chosen.addEventListener("change", () => {
+        item.selected = chosen.checked;
+        resetReview();
+      });
+      wording.addEventListener("input", () => {
+        item.label = wording.value;
+        title.textContent = item.label;
+        resetReview();
+      });
+      label.append(chosen, title);
+      card.append(label, quote);
+      if (["capture", "measurement"].includes(item.kind)) {
+        const areaLabel = document.createElement("label"),
+          area = document.createElement("input");
+        areaLabel.textContent = "Required space";
+        area.value = item.area;
+        area.maxLength = 100;
+        area.addEventListener("input", () => {
+          item.area = area.value;
+          item.label =
+            item.kind === "measurement"
+              ? `Check ${item.area} ${item.reading.toLowerCase()} against the tape`
+              : `Capture ${item.area}`;
+          wording.value = item.label;
+          title.textContent = item.label;
+          resetReview();
+        });
+        areaLabel.append(area);
+        edit.append(areaLabel);
+      }
+      if (item.kind === "measurement") {
+        const readingLabel = document.createElement("label"),
+          reading = document.createElement("select");
+        readingLabel.textContent = "Required reading";
+        for (const name of READINGS) {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          option.selected = name === item.reading;
+          reading.append(option);
+        }
+        reading.addEventListener("change", () => {
+          item.reading = reading.value;
+          item.label = `Check ${item.area} ${item.reading.toLowerCase()} against the tape`;
+          wording.value = item.label;
+          title.textContent = item.label;
+          resetReview();
+        });
+        readingLabel.append(reading);
+        edit.append(readingLabel);
+      }
+      card.append(edit);
+      holder.append(card);
+    }
+    document.querySelector("#brief-status").textContent =
+      "Suggested tasks are ready to review. Delivery stays separate from site checks.";
+  } catch (error) {
+    briefDraft = undefined;
+    document.querySelector("#brief-status").textContent = error.message;
+  }
+}
 function updateChecklist() {
-  const remaining = beforeLeaving(checklistProject, checklistPlan, []);
+  const focusedTask = document.activeElement?.dataset.taskId;
+  const holder = document.querySelector("#checklist-items");
+  holder.replaceChildren();
+  for (const item of demoJob.plan.requirements.filter(
+    (item) => item.kind !== "delivery",
+  )) {
+    const label = document.createElement("label"),
+      input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.taskId = item.id;
+    input.checked = item.state === "done";
+    input.disabled = item.state === "blocked";
+    input.addEventListener("change", () => {
+      item.state = input.checked ? "done" : "todo";
+      updateChecklist();
+    });
+    label.append(
+      input,
+      document.createTextNode(
+        `${item.label}${item.state === "blocked" ? " · access blocked" : ""}`,
+      ),
+    );
+    holder.append(label);
+  }
+  if (focusedTask)
+    [...holder.querySelectorAll("input")]
+      .find((input) => input.dataset.taskId === focusedTask)
+      ?.focus({ preventScroll: true });
+  const remaining = beforeLeaving(demoJob.project, demoJob.plan, demoJob.notes);
   const list = document.querySelector("#checklist-remaining");
   list.replaceChildren();
-  if (remaining.length === checklistPlan.requirements.length) {
-    document.querySelector(".demo-status").textContent =
-      `${remaining.length} job-specific checks built. Tick completed work to reveal what is still open.`;
-    return;
-  }
-  document.querySelector(".demo-status").textContent = remaining.length
-    ? `${remaining.length} ${remaining.length === 1 ? "check" : "checks"} still open before leaving job-site:`
-    : "Job-site checks complete. Next: gather your evidence for the handover.";
+  document.querySelector(".demo-status").textContent = !demoJob.plan
+    .requirements.length
+    ? "Review and add the brief tasks in Prepare to see the site checks."
+    : remaining.length
+      ? `${remaining.length} ${remaining.length === 1 ? "item needs" : "items need"} attention before leaving job-site:`
+      : "Site checks accounted for. Your reviewed readings are ready for the handover.";
   remaining.forEach((item) => {
     const li = document.createElement("li");
-    li.textContent = item.label;
+    li.textContent = `${item.label} — ${item.detail}`;
     list.append(li);
   });
+  updateReportSummary();
 }
-function buildChecklist() {
-  const holder = document.querySelector("#checklist-items");
-  try {
-    const { project, plan, spaces, readings } = checklistFromJobDetails(
-      brief.value,
-      requiredReadings.value,
-    );
-    checklistProject = project;
-    checklistPlan = plan;
-    document.querySelector("#demo-spaces-summary").textContent =
-      spaces.join(" · ") || "None stated in this example";
-    document.querySelector("#demo-readings-summary").textContent =
-      readings.join(" · ") || "None stated in this example";
-    holder.replaceChildren();
-    plan.requirements.forEach((item) => {
-      const label = document.createElement("label"),
-        input = document.createElement("input");
-      input.type = "checkbox";
-      input.addEventListener("change", () => {
-        item.state = input.checked ? "done" : "todo";
-        updateChecklist();
-      });
-      label.append(input, document.createTextNode(item.label));
-      holder.append(label);
-    });
-    updateChecklist();
-  } catch (error) {
-    holder.replaceChildren();
-    document.querySelector("#checklist-remaining").replaceChildren();
-    document.querySelector(".demo-status").textContent = error.message;
-  }
+function updateReportSummary() {
+  const checked = demoJob.notes.filter((note) => note.reviewed).length;
+  const issues = beforeLeaving(
+    demoJob.project,
+    demoJob.plan,
+    demoJob.notes,
+  ).length;
+  document.querySelector("#report-summary").textContent =
+    `${demoJob.plan.requirements.length} brief-linked tasks · ${checked} reviewed field ${checked === 1 ? "record" : "records"} · ${issues} site ${issues === 1 ? "item" : "items"} still needing attention. The report keeps outstanding work visible.`;
 }
-[brief, requiredReadings].forEach((input) =>
-  input.addEventListener("input", () => {
-    document.querySelectorAll("#checklist-items input").forEach((input) => {
-      input.disabled = true;
-    });
-    document.querySelector("#checklist-remaining").replaceChildren();
-    document.querySelector(".demo-status").textContent =
-      "Agreed work changed. Build the checklist again to check the new requirements.";
-  }),
-);
 document
   .querySelector("#build-checklist")
-  .addEventListener("click", buildChecklist);
-buildChecklist();
+  .addEventListener("click", showBriefSuggestions);
+brief.addEventListener("input", () => {
+  briefDraft = undefined;
+  briefReviewed.checked = false;
+  document.querySelector("#task-suggestions").replaceChildren();
+  document.querySelector("#brief-status").textContent =
+    "Brief changed. Suggest tasks again before reviewing.";
+});
+document.querySelector("#use-tasks").addEventListener("click", () => {
+  try {
+    if (!briefDraft)
+      throw new Error("Suggest tasks from the current brief first.");
+    demoJob = applySampleBrief(demoJob, {
+      ...briefDraft,
+      reviewed: briefReviewed.checked,
+    });
+    document.querySelector("#brief-status").textContent =
+      "Reviewed tasks added. Room readings already recorded in this sample are kept.";
+    document.querySelector("#exception-status").textContent = "";
+    document.querySelector("#locked-room").disabled = false;
+    updateChecklist();
+    chooseStep("site");
+  } catch (error) {
+    document.querySelector("#brief-status").textContent = error.message;
+  }
+});
+showBriefSuggestions();
+// A pre-reviewed sample makes every stage explorable; edits require a fresh review.
+demoJob = applySampleBrief(demoJob, { ...briefDraft, reviewed: true });
+updateChecklist();
 
 const dictation = document.querySelector("#dictation");
 const space = document.querySelector("#measurement-space");
+function clearReadingReview() {
+  organizedReading = undefined;
+  tapeReviewed.checked = false;
+  tapeReviewed.disabled = true;
+  keepReadings.disabled = true;
+}
 function organize() {
   const body = document.querySelector("#readings"),
     issues = document.querySelector("#reading-issues");
   body.replaceChildren();
   issues.replaceChildren();
-  if (!space.value.trim()) {
-    issues.textContent =
-      "Name the room or space so these readings stay with the right area.";
-    space.focus();
-    return;
-  }
+  clearReadingReview();
   try {
     const result = parseMeasurements(dictation.value);
+    if (!space.value.trim())
+      throw new Error(
+        "Name the room or space so the readings stay with the right area.",
+      );
     for (const reading of result.entries) {
       const row = document.createElement("tr");
       for (const value of [
@@ -220,43 +355,88 @@ function organize() {
       }
       body.append(row);
     }
-    for (const issue of result.issues) {
-      const message = document.createElement("p");
-      message.textContent = `Check this wording: ${issue.message}`;
-      issues.append(message);
+    if (result.issues.length) {
+      issues.textContent = result.issues
+        .map((issue) => `Check this wording: ${issue.message}`)
+        .join(" ");
+      return;
     }
-    if (!result.entries.length && !result.issues.length)
-      issues.textContent = "Add a reading with a name and units.";
+    organizedReading = sampleReading(
+      demoJob.project.id,
+      space.value,
+      dictation.value,
+    );
+    tapeReviewed.disabled = false;
+    issues.textContent =
+      "Organized. Check the exact values against your tape, then keep the readings.";
   } catch (error) {
     issues.textContent = error.message;
   }
 }
 document.querySelector("#organize").addEventListener("click", organize);
-document.querySelector("#measurement-example").addEventListener("click", () => {
-  space.value = "Kitchen";
-  dictation.value = "Length 12 feet 4 inches. Width 10 feet 2 inches.";
-  organize();
+tapeReviewed.addEventListener("change", () => {
+  keepReadings.disabled = !tapeReviewed.checked || !organizedReading;
+});
+keepReadings.addEventListener("click", () => {
+  if (!organizedReading || !tapeReviewed.checked) return;
+  // Replace only this room's sample batch; other-room evidence stays intact.
+  demoJob.notes = demoJob.notes.filter(
+    (note) => note.area !== organizedReading.area,
+  );
+  demoJob.notes.push({ ...organizedReading, reviewed: true });
+  keepReadings.disabled = true;
+  document.querySelector("#reading-issues").textContent =
+    "Checked readings kept with this room. Mark the matching site tasks complete when the work is done.";
+  updateChecklist();
 });
 [dictation, space].forEach((input) =>
   input.addEventListener("input", () => {
+    clearReadingReview();
     document.querySelector("#readings").replaceChildren();
     document.querySelector("#reading-issues").textContent =
-      "Input changed. Choose Organize readings to check it.";
+      "Input changed. Organize again before checking the readings.";
   }),
 );
 organize();
+document.querySelector("#locked-room").addEventListener("click", () => {
+  try {
+    const task = demoJob.plan.requirements.find(
+      (item) => item.kind === "capture" && item.state !== "blocked",
+    );
+    demoJob = sampleLockedRoom(demoJob, task?.id);
+    document.querySelector("#exception-status").textContent =
+      `${task.area}: access blocked. Next: ask the site contact for access. The exception is linked to this task and appears in the handover.`;
+    document.querySelector("#locked-room").disabled =
+      !demoJob.plan.requirements.some(
+        (item) => item.kind === "capture" && item.state !== "blocked",
+      );
+    updateChecklist();
+  } catch (error) {
+    document.querySelector("#exception-status").textContent = error.message;
+  }
+});
 
 const closeout = ["delivery", "acceptance", "payment"].map((id) =>
   document.getElementById(id),
 );
 function updateCloseout() {
+  demoJob.project.paidAmount =
+    closeout[2].selectedOptions[0].dataset.amount || "";
+  // Contradictory delivery/acceptance choices remain visible in follow-up guidance.
+  demoJob.plan.delivery =
+    closeout[0].value === "Not sent"
+      ? "not-sent"
+      : closeout[1].value === "Accepted"
+        ? "accepted"
+        : "sent";
+  demoJob.plan.deliveredAt =
+    demoJob.plan.delivery !== "not-sent" ? new Date().toISOString() : "";
+  demoJob.plan.acceptedAt =
+    demoJob.plan.delivery === "accepted" ? new Date().toISOString() : "";
+  demoJob.plan = syncSampleDeliveryTasks(demoJob.plan);
   const result = closeoutNextActions(
     ...closeout.map((select) => select.value),
-    {
-      invoiceAmount: "300",
-      paidAmount: closeout[2].selectedOptions[0].dataset.amount || "",
-      currency: "USD",
-    },
+    demoJob.project,
   );
   document.querySelector("#closeout-status").textContent = result.headline;
   document.querySelector("#closeout-balance").textContent =
@@ -278,18 +458,130 @@ function updateCloseout() {
 }
 closeout.forEach((select) => select.addEventListener("change", updateCloseout));
 updateCloseout();
+const reportDialog = document.querySelector("#report-dialog");
+const reportFrame = document.querySelector("#report-frame");
+let reportReturnFocus;
+reportDialog.addEventListener("close", () => reportReturnFocus?.focus());
+const reportButtons = ["preview-report", "print-report"].map((id) =>
+  document.getElementById(id),
+);
+async function prepareReport() {
+  reportModule ||= await (reportPromise ||= import("./handover.js").catch(
+    (error) => {
+      reportPromise = undefined;
+      throw error;
+    },
+  ));
+  demoJob.project.providerName = document
+    .querySelector("#provider-name")
+    .value.trim();
+  const model = reportModule.handoverModel(
+    demoJob.project,
+    demoJob.plan,
+    demoJob.notes,
+    {
+      origin: "Browser-only sample",
+      includeUnreviewed: document.querySelector("#report-unchecked").checked,
+      includePayment: document.querySelector("#report-payment").checked,
+    },
+  );
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reportFrame.onload = null;
+      reject(new Error("Preview timed out"));
+    }, 10000);
+    reportFrame.onload = () => {
+      // Ignore the iframe's initial about:blank load; wait for the actual report.
+      if (!reportFrame.contentDocument?.querySelector(".handover-report"))
+        return;
+      clearTimeout(timeout);
+      reportFrame.onload = null;
+      resolve();
+    };
+    reportFrame.srcdoc = reportModule.handoverDocument(model, reportImages);
+  });
+}
+async function openReport(print) {
+  reportReturnFocus = document.activeElement;
+  reportButtons.forEach((button) => {
+    button.disabled = true;
+  });
+  try {
+    await prepareReport();
+    reportDialog.showModal();
+    if (print) reportFrame.contentWindow.print();
+  } catch {
+    document.querySelector("#report-summary").textContent =
+      "The preview could not load. Your sample is kept; try again.";
+  } finally {
+    reportButtons.forEach((button) => {
+      button.disabled = false;
+    });
+  }
+}
+reportButtons[0].addEventListener("click", () => openReport(false));
+reportButtons[1].addEventListener("click", () => openReport(true));
+document
+  .querySelector("#close-report")
+  .addEventListener("click", () => reportDialog.close());
+let photoBusy = false;
+document
+  .querySelector("#demo-photo")
+  .addEventListener("change", async (event) => {
+    if (photoBusy) return;
+    const file = event.target.files[0],
+      status = document.querySelector("#photo-status");
+    if (!file) return;
+    if (
+      !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+      file.size > 5 * 1024 * 1024
+    ) {
+      status.textContent = "Choose a JPEG, PNG or WebP photo up to 5 MB.";
+      return;
+    }
+    photoBusy = true;
+    event.target.disabled = true;
+    reportButtons.forEach((button) => {
+      button.disabled = true;
+    });
+    let image;
+    try {
+      image = await createImageBitmap(file);
+      const scale = Math.min(1, 900 / Math.max(image.width, image.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
+      canvas
+        .getContext("2d")
+        .drawImage(image, 0, 0, canvas.width, canvas.height);
+      const prior = demoJob.notes.find((note) => note.id === "sample-photo");
+      if (!prior)
+        demoJob.notes.push({
+          id: "sample-photo",
+          jobId: demoJob.project.id,
+          area: "Visitor-added sample photo",
+          text: "Photo selected for this sample handover.",
+          reviewed: true,
+          createdAt: new Date().toISOString(),
+        });
+      reportImages["sample-photo"] = canvas.toDataURL("image/jpeg", 0.75);
+      status.textContent =
+        "Photo ready for the preview. It stays in this browser sample and is not uploaded.";
+      updateReportSummary();
+    } catch {
+      status.textContent = "This image could not be opened. Try another photo.";
+    } finally {
+      image?.close();
+      photoBusy = false;
+      event.target.disabled = false;
+      reportButtons.forEach((button) => {
+        button.disabled = false;
+      });
+    }
+  });
 
 // Synthetic preview uses the same bounded lookup as the actual workspace.
 // It never opens a microphone or connects to a visitor's Google account.
-const sampleProject = {
-  id: "landing-harbor-house",
-  title: "Harbor House",
-  contact1Name: "Alex Morgan",
-  contact1Phone: "+1 202 555 0148",
-  accessInstructions: "Meet Alex at the front entrance. Call on arrival.",
-  deliverables: "Tour link, site notes and checked measurements.",
-  deliveryDestination: "Send the handover to the commissioning company.",
-};
 const sampleQuestions = {
   contact: "Who is the site contact?",
   access: "How do I get in?",
@@ -315,7 +607,7 @@ function showSampleAnswer(topic = sampleTopic) {
   if (!Object.hasOwn(sampleQuestions, topic)) return;
   stopSampleSpeech();
   sampleTopic = topic;
-  const result = answerProjectQuestion(sampleProject, sampleQuestions[topic]);
+  const result = answerProjectQuestion(demoJob.project, sampleQuestions[topic]);
   const answer = result.answers[0];
   document.querySelector("#voice-demo-question").textContent =
     sampleQuestions[topic];
@@ -353,11 +645,11 @@ readButton.addEventListener("click", () => {
     return;
   }
   const answer = answerProjectQuestion(
-    sampleProject,
+    demoJob.project,
     sampleQuestions[sampleTopic],
   ).answers[0];
   const speech = new window.SpeechSynthesisUtterance(
-    `${sampleProject.title}. ${answer.text}`,
+    `${demoJob.project.title}. ${answer.text}`,
   );
   speech.lang = "en-US";
   sampleUtterance = speech;
