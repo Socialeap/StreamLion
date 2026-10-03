@@ -2221,6 +2221,20 @@ dialog .small {
 }
 
 /* Hands-on feature results, with the input and next action kept together. */
+.hero-panels {
+  display: grid;
+}
+.hero-panels > [data-hero-panel] {
+  grid-area: 1 / 1;
+  min-width: 0;
+  align-self: start;
+}
+/* Inactive views still size the shared row, but cannot be seen or focused. */
+.hero-panels > [data-hero-panel][hidden] {
+  display: block !important;
+  visibility: hidden;
+  pointer-events: none;
+}
 .hero-reveal {
   padding: 24px;
   min-height: 310px;
