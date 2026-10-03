@@ -26,3 +26,7 @@ Screenshots and logs are temporary QA artifacts, outside the source tree.
 ## Release gates
 
 After PR merge, deploy the approved merged frontend through the existing Cloudflare Pages build. No backend migration, secret change or provider setup is required by this diff. Verify `/api/welcome` on the deployed revision, try the three stages and report preview, then verify print / PDF saving and optional local-photo selection on a physical Android device. Source/browser QA does not establish a production deployment or device acceptance.
+
+## PR #36 delivery review fix
+
+Closeout selections now synchronize the sample's brief-derived delivery tasks: Sent or accepted delivery marks them checked; reverting to Not sent restores the outstanding-delivery warning. Site tasks and their evidence remain unchanged. Rebuilding sample requirements also respects the current closeout state. Seventeen focused tests and the production build passed. The actual browser report was checked for Sent, Sent + Accepted, and Not sent + Accepted: only Not sent retains the unchecked-delivery warning, and an acceptance selection does not invent sending when delivery is Not sent. No additional release configuration is required.

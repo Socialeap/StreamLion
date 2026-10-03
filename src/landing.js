@@ -15,6 +15,7 @@ import {
   applySampleBrief,
   sampleReading,
   sampleLockedRoom,
+  syncSampleDeliveryTasks,
 } from "./landing-job.js";
 
 const descriptions = {
@@ -432,6 +433,7 @@ function updateCloseout() {
     demoJob.plan.delivery !== "not-sent" ? new Date().toISOString() : "";
   demoJob.plan.acceptedAt =
     demoJob.plan.delivery === "accepted" ? new Date().toISOString() : "";
+  demoJob.plan = syncSampleDeliveryTasks(demoJob.plan);
   const result = closeoutNextActions(
     ...closeout.map((select) => select.value),
     demoJob.project,

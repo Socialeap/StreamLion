@@ -8,6 +8,7 @@ import {
   applySampleBrief,
   sampleReading,
   sampleLockedRoom,
+  syncSampleDeliveryTasks,
 } from "./landing-job.js";
 import { beforeLeaving, measurementEvidence } from "./workflow.js";
 import { handoverModel, handoverDocument } from "./handover.js";
@@ -85,5 +86,48 @@ test("unorganized or ambiguous readings cannot enter the reviewed sample", () =>
   assert.throws(
     () => sampleReading("p", "Kitchen", "Length twelve.", true),
     /unclear wording/,
+  );
+});
+
+test("sent and accepted handovers clear delivery warnings; reverting restores them", () => {
+  const job = prepared();
+  const siteTask = job.plan.requirements.find(
+    (item) => item.kind === "capture",
+  );
+  siteTask.state = "blocked";
+  siteTask.reason = "Locked room";
+  for (const delivery of ["sent", "accepted", "not-sent"]) {
+    const plan = syncSampleDeliveryTasks({ ...job.plan, delivery });
+    const model = handoverModel(job.project, plan, job.notes);
+    const task = plan.requirements.find((item) => item.kind === "delivery");
+    assert.equal(task.state, delivery === "not-sent" ? "todo" : "done");
+    assert.equal(
+      model.warnings.some(
+        (item) => item.detail === "Delivery task not yet checked",
+      ),
+      delivery === "not-sent",
+    );
+    assert.equal(
+      plan.requirements.find((item) => item.id === siteTask.id),
+      siteTask,
+    );
+  }
+});
+test("rebuilding a sent sample keeps new delivery requirements consistent", () => {
+  const job = prepared();
+  job.plan = syncSampleDeliveryTasks({ ...job.plan, delivery: "sent" });
+  const draft = sampleSuggestions(
+    job.project,
+    "Capture Lobby.\nDeliver lobby photos.",
+  );
+  const next = applySampleBrief(job, { ...draft, reviewed: true });
+  assert.equal(next.plan.delivery, "sent");
+  assert.equal(
+    next.plan.requirements.find((item) => item.kind === "delivery").state,
+    "done",
+  );
+  assert.equal(
+    next.plan.requirements.find((item) => item.kind === "capture").state,
+    "todo",
   );
 });

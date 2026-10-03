@@ -61,7 +61,7 @@ export function applySampleBrief(job, draft) {
     scopeSignature: readWorkflow([], project).scopeSignature,
     requirements: appendReviewedTasks([], draft),
   });
-  return { ...job, project, plan };
+  return { ...job, project, plan: syncSampleDeliveryTasks(plan) };
 }
 export function sampleReading(projectId, room, raw, reviewed = false) {
   const result = parseMeasurements(raw);
@@ -119,5 +119,17 @@ export function sampleLockedRoom(job, taskId) {
     ...job,
     plan: validateWorkflow(attachException(job.plan, draft, note.id)),
     notes: [...job.notes, note],
+  };
+}
+
+// Closeout records sending the full sample handover, including its delivery tasks.
+export function syncSampleDeliveryTasks(plan) {
+  return {
+    ...plan,
+    requirements: plan.requirements.map((item) =>
+      item.kind === "delivery"
+        ? { ...item, state: plan.delivery === "not-sent" ? "todo" : "done" }
+        : item,
+    ),
   };
 }
