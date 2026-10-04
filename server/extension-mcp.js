@@ -157,7 +157,11 @@ export function createExtensionMcpServer({ env, request, html }) {
         "Open the StreamLion project workspace inside ChatGPT. Connect a selected Google workbook once, or try the synthetic example. No records are saved by opening it.",
       inputSchema: {},
       securitySchemes: launcherSecurity,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
       _meta: {
         securitySchemes: launcherSecurity,
         ui: { resourceUri: EXTENSION_UI_URI },
@@ -174,7 +178,11 @@ export function createExtensionMcpServer({ env, request, html }) {
         "Open a StreamLion content tab alongside this conversation. Choose a job and explicitly share its context with this thread.",
       inputSchema: {},
       securitySchemes: launcherSecurity,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
       _meta: {
         securitySchemes: launcherSecurity,
         ui: { resourceUri: EXTENSION_UI_URI },
@@ -191,7 +199,11 @@ export function createExtensionMcpServer({ env, request, html }) {
         "Open a synthetic Harbor House job. No customer data, Google access or writes.",
       inputSchema: {},
       securitySchemes: [{ type: "noauth" }],
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
       _meta: {
         securitySchemes: [{ type: "noauth" }],
         ui: { resourceUri: EXTENSION_UI_URI },

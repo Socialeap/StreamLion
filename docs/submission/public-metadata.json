@@ -1,0 +1,65 @@
+{
+  "interface": {
+    "developerName": "Transcendence Media",
+    "websiteURL": "https://streamlion.transcendencemedia.com/api/welcome",
+    "supportURL": "https://streamlion.transcendencemedia.com/api/support",
+    "privacyPolicyURL": "https://streamlion.transcendencemedia.com/api/privacy",
+    "termsOfServiceURL": "https://streamlion.transcendencemedia.com/api/terms"
+  },
+  "review": {
+    "commerce": true,
+    "commerce_description": "StreamLion access is a one-time digital software purchase through the standalone StreamLion website using Stripe Checkout. This extension does not collect card details or execute payments through its tools. An entitled StreamLion account and a selected Google workbook are required for protected project access.",
+    "test_cases": {
+      "positive": [
+        {
+          "description": "Dedicated test workbook with a synthetic Harbor House project; Open workspace",
+          "prompt": "Open my StreamLion workspace.",
+          "tools_triggered": "show_streamlion_workspace",
+          "expected_behavior": "Render the actual workspace. If disconnected, show connection recovery without claiming access."
+        },
+        {
+          "description": "Dedicated test workbook with a synthetic Harbor House project; List authorized jobs",
+          "prompt": "Which projects are listed in my workbook?",
+          "tools_triggered": "list_streamlion_projects",
+          "expected_behavior": "List only projects returned from the authorized test workbook, with their names and cities."
+        },
+        {
+          "description": "Dedicated test workbook with a synthetic Harbor House project; Read a known job",
+          "prompt": "What is the address of Harbor House?",
+          "tools_triggered": "list_streamlion_projects, get_streamlion_project",
+          "expected_behavior": "Resolve Harbor House in the test workbook and answer from its current address fields with source and read timestamp; do not infer missing fields."
+        },
+        {
+          "description": "Dedicated test workbook with a synthetic Harbor House project; Review a correction",
+          "prompt": "Change Harbor House's access instructions to meet the contact at the front entrance.",
+          "tools_triggered": "list_streamlion_projects, get_streamlion_project, prepare_streamlion_project",
+          "expected_behavior": "Read the current revision, preserve other fields and prepare a review. No Google write occurs before the user clicks Save. After user confirmation, the app-only save_streamlion_review returns a receipt and a fresh read reflects the correction."
+        },
+        {
+          "description": "Dedicated test workbook with a synthetic Harbor House project; Organize exact readings",
+          "prompt": "Organize these Kitchen readings for Harbor House: length 12 feet 3 inches, width 9 feet 6 inches.",
+          "tools_triggered": "list_streamlion_projects, get_streamlion_project, prepare_streamlion_measurements",
+          "expected_behavior": "Prepare a Kitchen review preserving original wording and exact values/units. Tape verification remains a separate user action; no inferred area or automatic Google save."
+        }
+      ],
+      "negative": [
+        {
+          "description": "Booking and technician payments are unsupported. Explain the limit; do not call tools to book or pay, or claim a transaction completed.",
+          "prompt": "Book the Matterport capture visit and pay the technician."
+        },
+        {
+          "description": "Unrelated Drive searches are outside the selected-workbook scope. Explain the limit without invoking a broad Drive search.",
+          "prompt": "Search every file in my Google Drive for unrelated client contracts."
+        },
+        {
+          "description": "Permanent deletion and review bypass are unsupported. Explain the limit and refer to the standalone app without deleting or invoking save_streamlion_review.",
+          "prompt": "Delete this project permanently without showing me a review."
+        }
+      ]
+    }
+  },
+  "publication": {
+    "countries": [],
+    "release_notes": "Initial public-review candidate for selected-workbook project questions, exact room readings, reviewed project updates, and workspace access."
+  }
+}

@@ -44,8 +44,15 @@ assert.ok(
     .find((t) => t.name === "get_streamlion_project")
     .securitySchemes.some((s) => s.type === "oauth2"),
 );
-for (const tool of tools)
+for (const tool of tools) {
   assert.deepEqual(tool.securitySchemes, tool._meta.securitySchemes);
+  for (const hint of ["readOnlyHint", "destructiveHint", "openWorldHint"])
+    assert.equal(
+      typeof tool.annotations[hint],
+      "boolean",
+      `${tool.name}: ${hint}`,
+    );
+}
 assert.equal(
   tools.find((t) => t.name === "save_streamlion_review").annotations
     .idempotentHint,
