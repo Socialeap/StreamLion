@@ -12,7 +12,9 @@ python3 scripts/prepare-public-plugin.py /path/to/current.tar.gz /path/to/stream
 ```
 
 The public candidate preserves plugin identity, the original default prompt,
-two skills, references and the 512px PNG lion icon. It removes private App
+two public-specific skills, references and the 512px PNG lion icon. Public skill
+templates live in `docs/submission/skills`; packaging replaces the pilot skills
+and description and checks the resulting ZIP for private pilot wording. It removes private App
 bindings and compatibility overlays from this separate copy, declares the live
 MCP extension endpoint, and includes five positive and three negative cases.
 Countries are unrestricted, as requested by the owner; platform availability
