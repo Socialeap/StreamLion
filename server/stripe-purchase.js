@@ -567,12 +567,13 @@ export async function handlePurchase({ request, env, params }) {
       return json({ error: "Use the StreamLion address." }, 403);
     const stripe = client(env);
     if (path === "config" && request.method === "GET") {
-      await limited(env, "quote:global", 200);
+      // Reject an exhausted network before it can consume other clients' budget.
       await limited(
         env,
         "quote:" + (request.headers.get("CF-Connecting-IP") || "unknown"),
         60,
       );
+      await limited(env, "quote:global", 200);
     }
     if (path === "status" && request.method === "GET") {
       const identity = await getSession(request, env);

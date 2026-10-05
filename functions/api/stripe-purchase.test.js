@@ -610,6 +610,47 @@ test("repeat public quotes reuse a short validated catalog while enforcing a glo
   assert.equal(limited.status, 429);
   assert.equal(globalThis.fetch.mock.callCount(), 3);
 });
+test("network-rejected quotes do not consume shared capacity or call providers", async (t) => {
+  const now = Date.now();
+  t.mock.method(Date, "now", () => now);
+  const f = fixture(t);
+  const quote = (network) =>
+    f.request("config", { headers: { "CF-Connecting-IP": network } });
+  const globalIdentity = await hash("purchase:test:quote:global");
+  const globalCount = () =>
+    f.sql
+      .prepare(
+        "SELECT count FROM streamlion_purchase_limits_v1 WHERE identity=?",
+      )
+      .get(globalIdentity)?.count;
+  for (let i = 0; i < 60; i++)
+    assert.equal((await quote("192.0.2.1")).status, 200);
+  assert.equal(globalCount(), 60);
+  const calls = globalThis.fetch.mock.callCount();
+  const rejected = await Promise.all(
+    Array.from({ length: 200 }, () => quote("192.0.2.1")),
+  );
+  assert.ok(rejected.every((response) => response.status === 429));
+  assert.equal(
+    globalCount(),
+    60,
+    "per-network rejections cannot reserve shared capacity",
+  );
+  assert.equal(globalThis.fetch.mock.callCount(), calls);
+  for (let i = 1; i <= 140; i++)
+    assert.equal((await quote(`198.51.100.${i}`)).status, 200);
+  assert.equal(
+    globalCount(),
+    200,
+    "other clients can use all remaining capacity",
+  );
+  assert.equal(
+    (await quote("203.0.113.1")).status,
+    429,
+    "shared limit remains enforced",
+  );
+  assert.equal(globalThis.fetch.mock.callCount(), calls);
+});
 test("authenticated payment events still fail closed when the committed schema is unavailable", async (t) => {
   const f = fixture(t);
   f.sql.exec("DROP TABLE streamlion_purchase_schema_v2");
