@@ -21,6 +21,7 @@ import {
   readMeasurement,
   measurementNeedsReview,
 } from "../src/measurements.js";
+import { boundedText, RequestBodyError } from "./request-body.js";
 import { validateWorkflow, WORKFLOW_AREA } from "../src/workflow.js";
 
 // The OAuth grant selects the sole workbook. No tool accepts a workbook, URL,
@@ -64,8 +65,13 @@ async function request(env, principal, path, method = "GET", data) {
     );
   }
   try {
-    return await response.json();
-  } catch {
+    return JSON.parse(await boundedText(response, 8 * 1024 * 1024));
+  } catch (error) {
+    if (error instanceof RequestBodyError && error.status === 413)
+      throw new ExtensionError(
+        "This workbook response is too large for the extension. Your records are unchanged. Open the browser workspace and review archival options.",
+        413,
+      );
     throw new ExtensionError(
       "Google returned an unreadable response. Please retry.",
       503,

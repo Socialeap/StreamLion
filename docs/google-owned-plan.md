@@ -1,12 +1,12 @@
 # StreamLion Google-owned workflow — v0.2
 
-Supersedes the older streamlion-app plan's requirement for a hosted project journal. No StreamLion server stores project details. No model API key is required for ChatGPT-hosted extraction or queries.
+Supersedes the older streamlion-app plan's requirement for a hosted project journal. Google Sheets/Drive are the authoritative project record. Cloudflare stores encrypted authorization, counters and purchase state; the optional extension also retains encrypted review drafts for up to 24 hours. No model API key is required for ChatGPT-hosted extraction or queries.
 
 ## Implemented architecture
 
 - Ordinary ChatGPT prepares versioned project files from user-supplied briefs and discusses explicit dated snapshots. The PWA supplies the file contract and project context. A Google connector and the optional private StreamLion plugin are not prerequisites.
-- PWA: React/Vite on existing Cloudflare Pages; direct Google Identity Services token flow, drive.file scope and Google Picker. Access tokens remain in memory; reconnect after expiry. No service-account key or browser client secret.
-- Google: Projects and Observations are append-only, wide revision tables. The PWA retains photos and voice memos through the existing drive.file scope. Its versioned checklist uses a clearly identified Observations record; no headers change. No StreamLion server stores private project data. Explicit opt-in site copies, device drafts, local media, and pending field records are retained on the device.
+- PWA: React/Vite on existing Cloudflare Pages; production persistent Google OAuth with PKCE, encrypted server-side refresh/access credentials, a secure HttpOnly device-session cookie, drive.file and Google Picker. Picker receives a short-lived access token in memory. Production persistent mode fails closed when configuration is unavailable; no service-account key or browser client secret. Sessions expire within 90 days and daily cleanup removes expired authorization.
+- Google: Projects and Observations are append-only, wide revision tables. The PWA retains photos and voice memos through the existing drive.file scope. Its versioned checklist uses a clearly identified Observations record; no headers change. The Google proxy streams records without a separate project database. The optional ChatGPT extension parses authorized records and temporarily stores encrypted, grant-bound review drafts until save/expiry; they are not authoritative records. Explicit opt-in site copies, device drafts, local media, and pending field records are retained on the device.
 - PWA keyword search scans loaded records and is rebuildable. Deeper questions use ordinary ChatGPT plus a dated snapshot. No embedding provider is configured.
 - Manual editor and imported JSON share project-schema.js. Jotform labels were reconciled 2026-09-23; original form remains unmodified.
 
@@ -22,11 +22,13 @@ Fetched Google lists are held in browser memory. Users may explicitly keep a dat
 
 ## Acceptance and remaining gates
 
+Use [launch-readiness.md](launch-readiness.md) as the current evidence matrix; this architectural plan is not a live acceptance receipt.
+
 Source tests: schema validation, sorted histories, duplicate retries, conflict rejection, original transcript retention, draft isolation and recorder regressions. Browser: JSON prefill → review → local save → notes → navigation recovery → query handoff.
 
 Owner activation: Google Cloud OAuth web client; Sheets and Drive APIs; Picker configuration for pre-existing workbooks. The primary customer workflow needs one Google connection in the PWA; ordinary ChatGPT receives an explicit snapshot or brief. No one-click cross-app session is promised. No hidden consumer ChatGPT invocation or webhook-based model execution.
 
-Live Google roundtrip and physical phone voice tools must be tested after OAuth setup. Test scanned PDFs, conflicting emails, exact fractions, app switching and absent tools. Source tests do not prove these outcomes. Calendar scheduling, structured measurement geometry, payment allocations/invoicing and automatic semantic indexing remain later increments. Direct retained voice/photo upload, actionable checklists, site copies, repeat visits, and handover tracking are implemented in the provider workflow increment, subject to the live checks in provider-workflow.md. Current payments are sourced summary fields, not accounting ledgers.
+Live Google roundtrip and physical phone voice tools must be tested after OAuth setup. Test scanned PDFs, conflicting emails, exact fractions, app switching and absent tools. Source tests do not prove these outcomes. Calendar scheduling, spatial geometry reconstruction, payment allocations/invoicing and automatic semantic indexing remain later increments. Exact named-room measurement capture is implemented; production one-time purchase code exists but activation remains separate. Direct retained voice/photo upload, actionable checklists, site copies, repeat visits, and handover tracking are implemented in the provider workflow increment, subject to the live checks in provider-workflow.md. Current payments are sourced summary fields, not accounting ledgers.
 
 ## Build sequence
 

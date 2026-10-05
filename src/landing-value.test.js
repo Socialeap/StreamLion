@@ -57,7 +57,16 @@ test("HTML without JavaScript or a successful quote only advertises standard pri
     assert.equal(document.querySelector(selector).hidden, true);
   assert.equal(
     document.querySelector(".launch-price .button").getAttribute("href"),
-    "/api/purchase",
+    "#demo",
+  );
+  assert.equal(
+    document.querySelector("[data-purchase-cta]").textContent,
+    "Try one job",
+  );
+  assert.equal(document.querySelector(".purchase-guarantee").hidden, true);
+  assert.match(
+    document.querySelector("[data-checkout-note]").textContent,
+    /Sales are not open yet/,
   );
 });
 

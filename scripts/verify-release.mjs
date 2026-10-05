@@ -27,9 +27,15 @@ try {
   const health = await read("/api/health");
   if (
     health.value.status !== "ready" ||
-    health.value.googleMode !== "persistent"
+    health.value.googleMode !== "persistent" ||
+    health.value.schema !== 2 ||
+    health.value.checks?.database !== "ready" ||
+    health.value.upstreamsChecked !== false ||
+    !health.response.headers.get("X-StreamLion-Request-ID")
   )
-    throw new Error("Persistent Google setup is incomplete.");
+    throw new Error(
+      "Persistent Google database readiness or diagnostic headers failed.",
+    );
   const session = await read("/api/google/session");
   if (
     session.value.enabled !== true ||

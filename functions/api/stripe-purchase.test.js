@@ -544,6 +544,86 @@ test("signed paid fulfillment survives replay and concurrent duplicate delivery 
     true,
   );
 });
+test("missing, malformed, invalid and expired webhook signatures do not call Stripe or touch D1", async (t) => {
+  const f = fixture(t);
+  let databaseCalls = 0;
+  const original = f.env.GOOGLE_SESSIONS.prepare;
+  f.env.GOOGLE_SESSIONS.prepare = (...args) => {
+    databaseCalls++;
+    return original(...args);
+  };
+  const body = JSON.stringify({
+    id: "evt_invalid",
+    type: "checkout.session.completed",
+    livemode: false,
+    data: { object: {} },
+  });
+  const old = Math.floor(Date.now() / 1000) - 600;
+  const signature = createHmac("sha256", f.env.STRIPE_WEBHOOK_SECRET)
+    .update(`${old}.${body}`)
+    .digest("hex");
+  for (const value of [
+    null,
+    "garbage",
+    `t=${Math.floor(Date.now() / 1000)},v1=${"a".repeat(64)}`,
+    `t=${old},v1=${signature}`,
+  ]) {
+    assert.equal(
+      (
+        await f.request("webhook", {
+          method: "POST",
+          body,
+          headers: value ? { "Stripe-Signature": value } : {},
+        })
+      ).status,
+      400,
+    );
+  }
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  assert.equal(databaseCalls, 0);
+});
+test("unknown routes, wrong methods and unauthenticated checkout cannot trigger provider preflight", async (t) => {
+  const f = fixture(t);
+  for (const path of ["unknown", "constructor", "toString", "__proto__"])
+    assert.equal((await f.request(path)).status, 404);
+  assert.equal((await f.request("webhook")).status, 405);
+  assert.equal((await f.request("checkout", { method: "POST" })).status, 401);
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+test("repeat public quotes reuse a short validated catalog while enforcing a global budget", async (t) => {
+  const f = fixture(t);
+  for (let i = 0; i < 200; i++) {
+    const response = await f.request("config", {
+      headers: { "CF-Connecting-IP": `synthetic-${i}` },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).amount, 2996);
+  }
+  assert.equal(
+    globalThis.fetch.mock.callCount(),
+    3,
+    "one account preflight and two prices",
+  );
+  const limited = await f.request("config", {
+    headers: { "CF-Connecting-IP": "another-network" },
+  });
+  assert.equal(limited.status, 429);
+  assert.equal(globalThis.fetch.mock.callCount(), 3);
+});
+test("authenticated payment events still fail closed when the committed schema is unavailable", async (t) => {
+  const f = fixture(t);
+  f.sql.exec("DROP TABLE streamlion_purchase_schema_v2");
+  assert.equal(
+    (
+      await f.event("checkout.session.completed", {
+        metadata: { app: "streamlion" },
+      })
+    ).status,
+    503,
+  );
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  assert.equal(await hasPurchase(f.env, "account-a"), false);
+});
 test("a refund arriving before completion remains refunded when stale completion is delivered", async (t) => {
   const f = fixture(t),
     { order } = await f.checkout(),

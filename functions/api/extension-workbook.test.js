@@ -16,12 +16,43 @@ import {
 } from "../../src/workbook.js";
 import { validateFields } from "../../src/project-schema.js";
 import { hash } from "../../server/google-auth.js";
+import { extensionSnapshot } from "../../server/extension-workbook.js";
 async function setup(t) {
   const f = await extensionFixture();
   t.mock.method(globalThis, "fetch", f.fetch);
   const { principal } = await f.connect();
   return { ...f, principal, fixture: f };
 }
+test("oversized Google responses are cancelled before the extension parses or saves them", async (t) => {
+  const f = await setup(t);
+  let reads = 0,
+    cancelled = false;
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        new ReadableStream(
+          {
+            pull(controller) {
+              reads++;
+              controller.enqueue(new Uint8Array(1024 * 1024));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+      ),
+  );
+  await assert.rejects(() => extensionSnapshot(f.env, f.principal), {
+    status: 413,
+  });
+  assert.equal(reads, 9);
+  assert.equal(cancelled, true);
+  assert.equal(f.fixture.writes, 0);
+});
 
 test("draft is encrypted, bound to one grant, and not a Google save; review confirmation is required", async (t) => {
   const f = await setup(t),
