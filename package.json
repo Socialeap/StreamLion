@@ -12,7 +12,8 @@
     "preview:extension": "npm run build:extension && node scripts/preview-extension.mjs",
     "test": "node --import tsx --test src/*.test.js src/*.test.jsx functions/**/*.test.js",
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
-    "smoke:extension": "node scripts/smoke-extension.mjs"
+    "smoke:extension": "node scripts/smoke-extension.mjs",
+    "verify:capacity": "node scripts/verify-capacity.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^2.0.0",
@@ -35,7 +36,7 @@
     "tsx": "^4.23.15",
     "vite": "^7.0.0",
     "vite-plugin-pwa": "^1.0.0",
-    "wrangler": "^4.138.0"
+    "wrangler": "^4.147.0"
   },
   "engines": {
     "node": ">=22"

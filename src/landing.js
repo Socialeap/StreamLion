@@ -677,12 +677,17 @@ document.addEventListener("visibilitychange", () => {
 });
 showSampleAnswer();
 
-// Public checkout remains server-gated; the CTA always reaches the purchase page.
+// The sample remains available without JavaScript or a confirmed live quote.
+// Only a validated live quote can advertise an actionable purchase.
 fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
   .then((r) => (r.ok ? r.json() : null))
   .then(confirmedPurchaseQuote)
   .then((config) => {
     if (!config) return;
+    const purchaseCTA = document.querySelector("[data-purchase-cta]");
+    purchaseCTA.href = "/api/purchase";
+    purchaseCTA.textContent = "Purchase Now!";
+    document.querySelector(".purchase-guarantee").hidden = false;
     const format = (amount) => currency.format(amount / 100);
     document.querySelector(".standard-price .price").textContent = format(
       config.standardAmount,

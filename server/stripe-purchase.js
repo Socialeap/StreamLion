@@ -7,6 +7,13 @@ import {
 } from "./purchase-access.js";
 const API_VERSION = "2026-09-30.endive";
 const LAUNCH_PLACES = 200;
+const purchaseMethods = new Map([
+  ["config", "GET"],
+  ["status", "GET"],
+  ["checkout", "POST"],
+  ["confirm", "POST"],
+  ["webhook", "POST"],
+]);
 const json = (value, status = 200) =>
   new Response(JSON.stringify(value), {
     status,
@@ -104,6 +111,29 @@ async function prices(env, stripe, mode) {
   if (launch && launch.unit_amount >= standard.unit_amount)
     throw new Error("purchase_configuration");
   return { standard, launch };
+}
+// Quotes may share a short validated catalog; checkout always validates fresh
+// prices. Do not cache purchase counts, entitlements or failed provider checks.
+const quoteCatalogs = new Map();
+async function quotePrices(env, stripe, mode) {
+  const key = JSON.stringify([
+    env.STRIPE_SECRET_KEY,
+    env.STRIPE_ACCOUNT_ID,
+    env.STRIPE_PRODUCT_ID,
+    env.STRIPE_PRICE_ID,
+    env.STRIPE_LAUNCH_PRICE_ID,
+    mode,
+  ]);
+  const cached = quoteCatalogs.get(key);
+  if (cached && cached.expires > Date.now()) return cached.promise;
+  if (quoteCatalogs.size >= 8) quoteCatalogs.clear();
+  const entry = { expires: Date.now() + 30000 };
+  entry.promise = prices(env, stripe, mode).catch((error) => {
+    if (quoteCatalogs.get(key) === entry) quoteCatalogs.delete(key);
+    throw error;
+  });
+  quoteCatalogs.set(key, entry);
+  return entry.promise;
 }
 async function boundedJSON(request) {
   const reader = request.body?.getReader();
@@ -392,6 +422,10 @@ const EVENTS = new Set([
   "charge.dispute.funds_reinstated",
 ]);
 async function webhook(request, env, stripe, config) {
+  // Authenticate locally before any database or provider preflight. Unsigned
+  // requests must not consume upstream capacity, even on a cold edge isolate.
+  if (!request.headers.get("Stripe-Signature"))
+    return json({ error: "Invalid event signature." }, 400);
   // Check body length while reading: chunked requests may omit Content-Length.
   const reader = request.body?.getReader();
   let size = 0,
@@ -428,6 +462,7 @@ async function webhook(request, env, stripe, config) {
   if (event.livemode !== (config.mode === "live"))
     return json({ error: "Wrong payment environment." }, 400);
   if (!EVENTS.has(event.type)) return json({ received: true });
+  await preflight(env, stripe);
   if (
     await first(
       env,
@@ -494,6 +529,13 @@ export async function handlePurchase({ request, env, params }) {
       { enabled: false, required, purchased: false },
       path === "webhook" || required ? 503 : 200,
     );
+  const method = purchaseMethods.get(path);
+  if (!method) return json({ error: "Not found." }, 404);
+  if (request.method !== method) {
+    const response = json({ error: "Method not allowed." }, 405);
+    response.headers.set("Allow", method);
+    return response;
+  }
   // Turning on test setup must not enforce purchases for current testers.
   // Price/key setup failures affect checkout; the explicit license flag controls access.
   if (path === "status" && request.method === "GET" && !required) {
@@ -524,12 +566,15 @@ export async function handlePurchase({ request, env, params }) {
     if (url.origin !== config.origin)
       return json({ error: "Use the StreamLion address." }, 403);
     const stripe = client(env);
-    if (path === "config" && request.method === "GET")
+    if (path === "config" && request.method === "GET") {
+      // Reject an exhausted network before it can consume other clients' budget.
       await limited(
         env,
         "quote:" + (request.headers.get("CF-Connecting-IP") || "unknown"),
         60,
       );
+      await limited(env, "quote:global", 200);
+    }
     if (path === "status" && request.method === "GET") {
       const identity = await getSession(request, env);
       return json({
@@ -545,11 +590,11 @@ export async function handlePurchase({ request, env, params }) {
           : false,
       });
     }
-    await preflight(env, stripe);
     if (path === "webhook" && request.method === "POST")
       return await webhook(request, env, stripe, config);
     if (path === "config" && request.method === "GET") {
-      const catalog = await prices(env, stripe, mode);
+      await preflight(env, stripe);
+      const catalog = await quotePrices(env, stripe, mode);
       const used = await first(
         env,
         "SELECT COUNT(*) AS count FROM streamlion_purchases_v1 WHERE mode=? AND promo_slot IS NOT NULL",
@@ -584,6 +629,7 @@ export async function handlePurchase({ request, env, params }) {
         request.headers.get("X-StreamLion-Account") !== identity.google_subject)
     )
       return json({ error: "Your account changed. Reopen this page." }, 403);
+    await preflight(env, stripe);
     if (path === "checkout" && request.method === "POST")
       return json(await createCheckout(env, stripe, identity, config));
     if (path === "confirm" && request.method === "POST") {

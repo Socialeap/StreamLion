@@ -7,6 +7,7 @@ import {
 } from "./google-auth.js";
 import { reserveSignIn } from "./google-limits.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
+import { boundedText, RequestBodyError } from "./request-body.js";
 
 // Pilot supports one pre-registered public client with PKCE. No dynamic registration,
 // arbitrary client URLs, redirect wildcards, or caller-chosen Google accounts.
@@ -297,10 +298,7 @@ export async function handleExtensionAuth({ request, env, params }) {
       return extensionJson({ error: "method_not_allowed" }, 405, {
         Allow: "POST",
       });
-    if (Number(request.headers.get("Content-Length") || 0) > 12000)
-      throw new ExtensionError("Request too large.", 413);
-    const raw = await request.text();
-    if (raw.length > 12000) throw new ExtensionError("Request too large.", 413);
+    const raw = await boundedText(request, 12000);
     const form = new URLSearchParams(raw);
     if (route === "authorize") {
       if (request.headers.get("Origin") !== extensionOrigin(env))
@@ -454,7 +452,8 @@ export async function handleExtensionAuth({ request, env, params }) {
     }
     throw new ExtensionError("unsupported_grant_type");
   } catch (error) {
-    const known = error instanceof ExtensionError;
+    const known =
+      error instanceof ExtensionError || error instanceof RequestBodyError;
     return extensionJson(
       {
         error: known

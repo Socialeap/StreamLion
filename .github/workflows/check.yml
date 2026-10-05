@@ -5,9 +5,13 @@ on:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: app-checks-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,4 +22,5 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx wrangler pages functions build --outdir=/tmp/streamlion-functions --compatibility-flags=nodejs_compat
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run verify:capacity
+      - run: npm audit --audit-level=high
