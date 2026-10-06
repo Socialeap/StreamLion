@@ -22,6 +22,7 @@ export default function useManagedAnswers({
   const [active, setActive] = useState(demo),
     [busy, setBusy] = useState(false);
   const lifetime = useRef(null);
+  const configRequest = useRef(0);
   const turn = useRef(null),
     callbacks = useRef({ onBusy, onResult, onMessage });
   callbacks.current = { onBusy, onResult, onMessage };
@@ -38,37 +39,41 @@ export default function useManagedAnswers({
     callbacks.current.onBusy?.(false);
     if (current && !demo) refresh();
   }
+  async function loadConfig(owner) {
+    const requestId = ++configRequest.current;
+    const current = () =>
+      lifetime.current === owner &&
+      !owner.signal.aborted &&
+      requestId === configRequest.current;
+    try {
+      const response = await fetch("/api/ai/config", {
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: owner.signal,
+      });
+      const data = await response.json();
+      if (!response.ok || typeof data.enabled !== "boolean")
+        throw new Error("config_unavailable");
+      if (current()) {
+        setConfig(data);
+        if (!data.enabled) setActive(false);
+      }
+    } catch {
+      if (current()) {
+        setConfig({ enabled: false, reason: "status_unavailable" });
+        setActive(false);
+      }
+    }
+  }
   function refresh() {
     const owner = lifetime.current;
     if (!owner || source !== "google" || demo) return;
-    fetch("/api/ai/config", {
-      credentials: "same-origin",
-      cache: "no-store",
-      signal: owner.signal,
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (lifetime.current === owner && !owner.signal.aborted && data) {
-          setConfig(data);
-          if (!data.enabled) setActive(false);
-        }
-      })
-      .catch(() => {});
+    loadConfig(owner);
   }
   useEffect(() => {
     const controller = new AbortController();
     lifetime.current = controller;
-    if (!demo && source === "google")
-      fetch("/api/ai/config", {
-        credentials: "same-origin",
-        cache: "no-store",
-        signal: controller.signal,
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (!controller.signal.aborted) setConfig(data);
-        })
-        .catch(() => {});
+    if (!demo && source === "google") loadConfig(controller);
     const hide = () => {
       if (document.hidden && turn.current) {
         cancel();

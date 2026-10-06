@@ -1179,6 +1179,7 @@ export default function App() {
             onVoiceBusy={setCaptureBusy}
             onOperationBusy={setCaptureBusy}
             onFieldRecord={addNote}
+            onAISetup={() => navigate("Connections")}
             answerSource={
               active.deviceOnly
                 ? "device"
@@ -1318,6 +1319,7 @@ export default function App() {
               key={`${active?.deviceOnly ? "local" : bookId}:${selected}`}
               project={active}
               notes={workspace.notes}
+              onAISetup={() => navigate("Connections")}
               source={
                 active?.deviceOnly
                   ? "device"

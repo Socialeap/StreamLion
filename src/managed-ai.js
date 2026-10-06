@@ -156,3 +156,28 @@ export async function demoAnswer(project, question, onEvent, signal) {
   await onEvent({ type: "done", balanceMicros: 0 });
   return text;
 }
+
+export function aiAvailabilityMessage(source, config) {
+  if (source === "device")
+    return "AI answers need a project saved in a selected Google workbook. Open Connections to choose a workbook, then save or open the project there.";
+  if (source === "copy")
+    return "This is a saved Google copy. Reconnect Google and refresh the project before using AI answers.";
+  if (!config)
+    return "Checking AI pilot availability… Saved-detail lookup remains free.";
+  if (config.enabled)
+    return "AI is available. Turn on Use AI pilot for broader questions; the displayed credit price applies.";
+  return (
+    {
+      pilot_paused:
+        "The AI pilot is paused. Saved-detail lookup is available; AI testing must be enabled for a supervised session.",
+      account_not_enabled:
+        "This Google account is not enrolled in the AI pilot. Contact the pilot administrator to arrange access and credits.",
+      connect_google: "Reconnect Google before using AI answers.",
+      select_workbook:
+        "Choose a Google workbook in Connections before using AI answers.",
+      status_unavailable:
+        "AI availability could not be checked. Check your connection and try Check AI availability again.",
+    }[config.reason] ||
+    "AI is unavailable for this account or session. Saved-detail lookup remains available. Check AI availability to try again."
+  );
+}

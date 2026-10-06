@@ -26,6 +26,172 @@ const project = {
   address: "123 Example Street",
 };
 
+test("broader questions stay free until explicit AI opt-in, then use the managed answer route", async () => {
+  const original = globalThis.fetch,
+    requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return url.endsWith("config")
+      ? Response.json({
+          enabled: true,
+          priceMicros: 12500,
+          balanceMicros: 100000,
+        })
+      : new Response(
+          '{"type":"start","source":"Google workbook · read now"}\n{"type":"text","delta":"Room dimensions are required. Source: Requested work."}\n{"type":"text_done","balanceMicros":87500}\n{"type":"done","balanceMicros":87500}\n',
+        );
+  };
+  try {
+    let ui;
+    await act(async () => {
+      ui = render(<Answers project={project} source="google" />);
+    });
+    assert.ok(ui.getByText("Free saved-detail lookup · AI is off"));
+    assert.ok(ui.getByText(/AI is available.*Turn on Use AI pilot/));
+    fireEvent.change(ui.getByRole("textbox"), {
+      target: {
+        value: "are measurements for room dimensions required for this project",
+      },
+    });
+    fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+    assert.match(
+      ui.getByRole("status").textContent,
+      /Question received.*Saved-detail lookup cannot answer/,
+    );
+    assert.equal(requests.filter((r) => r.url.endsWith("answer")).length, 0);
+    fireEvent.click(
+      ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
+    );
+    assert.ok(ui.getByText("AI answers · Luna + Kokoro"));
+    await act(async () => {
+      fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+    });
+    assert.ok(
+      ui.getByText("Room dimensions are required. Source: Requested work."),
+    );
+    assert.equal(requests.filter((r) => r.url.endsWith("answer")).length, 1);
+    assert.equal(
+      JSON.parse(requests.at(-1).options.body).question,
+      "are measurements for room dimensions required for this project",
+    );
+    assert.equal(ui.queryByText(/Question received/), null);
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+  }
+});
+
+for (const [reason, message, setup] of [
+  ["pilot_paused", /AI pilot is paused/, false],
+  ["account_not_enabled", /Google account is not enrolled/, false],
+  ["select_workbook", /Choose a Google workbook in Connections/, true],
+  ["connect_google", /Reconnect Google before using AI answers/, true],
+])
+  test(`AI availability explains ${reason} and retry does not opt in or request an answer`, async () => {
+    const original = globalThis.fetch,
+      requests = [];
+    globalThis.fetch = async (url) => {
+      requests.push(url);
+      return Response.json(
+        requests.length === 1
+          ? { enabled: false, reason }
+          : { enabled: true, priceMicros: 12500, balanceMicros: 100000 },
+      );
+    };
+    try {
+      let ui;
+      await act(async () => {
+        ui = render(
+          <Answers project={project} source="google" onAISetup={() => {}} />,
+        );
+      });
+      assert.ok(ui.getByText(message));
+      assert.equal(
+        Boolean(ui.queryByRole("button", { name: "Open Connections" })),
+        setup,
+      );
+      assert.equal(
+        ui.queryByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
+        null,
+      );
+      await act(async () => {
+        fireEvent.click(
+          ui.getByRole("button", { name: "Check AI availability" }),
+        );
+      });
+      assert.equal(
+        ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" })
+          .checked,
+        false,
+      );
+      assert.deepEqual(requests, ["/api/ai/config", "/api/ai/config"]);
+    } finally {
+      cleanup();
+      globalThis.fetch = original;
+    }
+  });
+
+test("config errors stop AI opt-in, show retry guidance and ignore older configuration responses", async () => {
+  const original = globalThis.fetch;
+  let fail = false,
+    pending,
+    calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 3) return new Promise((resolve) => (pending = resolve));
+    if (fail) throw new Error("Offline");
+    return Response.json({
+      enabled: true,
+      priceMicros: 12500,
+      balanceMicros: 100000,
+    });
+  };
+  try {
+    let ui;
+    await act(async () => {
+      ui = render(<Answers project={project} source="google" />);
+    });
+    fireEvent.click(
+      ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
+    );
+    fail = true;
+    await act(async () => {
+      fireEvent.click(ui.getByRole("button", { name: "Refresh credits" }));
+    });
+    assert.ok(ui.getByText(/AI availability could not be checked/));
+    assert.equal(
+      ui.queryByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
+      null,
+    );
+    await act(async () => {
+      fireEvent.click(
+        ui.getByRole("button", { name: "Check AI availability" }),
+      );
+    });
+    fail = false;
+    await act(async () => {
+      fireEvent.click(
+        ui.getByRole("button", { name: "Check AI availability" }),
+      );
+    });
+    assert.equal(
+      ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" })
+        .checked,
+      false,
+    );
+    await act(async () => {
+      pending(Response.json({ enabled: false, reason: "pilot_paused" }));
+    });
+    assert.ok(
+      ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
+    );
+    assert.equal(calls, 4);
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+  }
+});
+
 test("AI opt-in shows exact price; request sends only identity/question, displays streamed answer and updated credits", async () => {
   const original = globalThis.fetch,
     requests = [];

@@ -71,7 +71,7 @@ export async function handleAI(context) {
     return json({ error: "Method not allowed." }, 405);
   if (!settingsReady(env))
     return path.endsWith("/config")
-      ? json({ enabled: false })
+      ? json({ enabled: false, reason: "pilot_unavailable" })
       : json({ error: "AI pilot is not configured." }, 503);
   // No cross-origin credentialed reads or writes, and no client-chosen origins.
   if (
@@ -85,7 +85,7 @@ export async function handleAI(context) {
     const session = await getSession(request, env);
     if (!session)
       return path.endsWith("/config")
-        ? json({ enabled: false })
+        ? json({ enabled: false, reason: "connect_google" })
         : json({ error: "Connect Google before using AI." }, 401);
     if (
       licenseRequired(env) &&
@@ -94,16 +94,27 @@ export async function handleAI(context) {
       return json({ error: "A StreamLion license is required." }, 402);
     await expireTurns(env.GOOGLE_SESSIONS);
     const wallet = await account(env.GOOGLE_SESSIONS, session.google_subject);
-    if (path.endsWith("/config"))
-      return json(
-        wallet
-          ? {
-              enabled: true,
-              priceMicros: wallet.price_micros,
-              balanceMicros: wallet.balance_micros,
-            }
-          : { enabled: false },
-      );
+    if (path.endsWith("/config")) {
+      if (!session.workbook_id)
+        return json({ enabled: false, reason: "select_workbook" });
+      if (wallet)
+        return json({
+          enabled: true,
+          priceMicros: wallet.price_micros,
+          balanceMicros: wallet.balance_micros,
+        });
+      const policy = await env.GOOGLE_SESSIONS.prepare(
+        "SELECT active,daily_budget_micros FROM streamlion_ai_policy_v1 WHERE id=1",
+      ).first();
+      return json({
+        enabled: false,
+        reason: !policy?.active
+          ? "pilot_paused"
+          : policy.daily_budget_micros < AI_LIMITS.reserveMicros
+            ? "pilot_unavailable"
+            : "account_not_enabled",
+      });
+    }
     if (!wallet || !session.workbook_id)
       return json(
         {
