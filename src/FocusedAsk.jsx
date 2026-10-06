@@ -1,11 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowRight,
   BookOpen,
   Check,
   FileText,
   Mic,
-  MessageCircle,
   Settings2,
   Square,
   Volume2,
@@ -39,6 +39,10 @@ export default function FocusedAsk({
   readAloud,
   onReadAloud,
   ai,
+  decision,
+  onConfirmAI,
+  onChooseFree,
+  onDismissDecision,
   source,
   onAIChange,
   onAISetup,
@@ -48,6 +52,8 @@ export default function FocusedAsk({
 }) {
   const [panel, setPanel] = useState(null);
   const dialog = useRef(null);
+  const [readAloudHost, setReadAloudHost] = useState(null);
+  const openPanel = decision ? "request" : panel;
   const panelId = useId();
   const audio = speaking || ai.audioPlaying;
   const running = listening || audio || ai.busy;
@@ -78,17 +84,39 @@ export default function FocusedAsk({
         ? "Stop AI answer"
         : "Ask by voice";
   useEffect(() => {
+    setReadAloudHost(document.getElementById("ask-read-aloud-controls"));
+  }, []);
+  useEffect(() => {
     const element = dialog.current;
-    if (panel && !element.open) element.showModal();
-    if (!panel && element.open) element.close();
-  }, [panel]);
-  const closePanel = () => setPanel(null);
+    if (openPanel && !element.open) element.showModal();
+    if (!openPanel && element.open) element.close();
+  }, [openPanel]);
+  const closePanel = () => {
+    if (decision) onDismissDecision();
+    setPanel(null);
+  };
+  const readAloudControl = (
+    <label className="check-label ask-read-aloud">
+      <input
+        type="checkbox"
+        checked={readAloud}
+        onChange={(event) => onReadAloud(event.target.checked)}
+      />
+      <Volume2 size={16} aria-hidden="true" />
+      Read aloud
+    </label>
+  );
   return (
     <section
       className="focused-ask"
       data-phase={phase}
       aria-label={`Ask about ${project.title}`}
     >
+      {readAloudHost ? (
+        createPortal(readAloudControl, readAloudHost)
+      ) : (
+        <div className="ask-read-aloud-fallback">{readAloudControl}</div>
+      )}
       <header className="ask-project-bar">
         <button
           className="ask-project-name"
@@ -107,88 +135,13 @@ export default function FocusedAsk({
         </button>
       </header>
       <div className="ask-stage-layout">
-        <nav className="ask-stages" aria-label="Ask stages">
-          {[
-            ["project", FileText, "Project"],
-            ["ask", MessageCircle, "Ask"],
-            ["answer", Volume2, "Answer"],
-          ].map(([value, Icon, label]) => (
-            <button
-              key={value}
-              aria-current={stage === value ? "step" : undefined}
-              disabled={
-                value === "answer" && !result && !ai.busy && stage !== "answer"
-              }
-              onClick={() => onStageChange(value)}
-            >
-              <span>
-                <Icon size={22} aria-hidden="true" />
-              </span>
-              {label}
-            </button>
-          ))}
-        </nav>
         <div className="ask-stage-content">
-          <header className="ask-task-head">
-            <h1>
-              {stage === "project"
-                ? "Choose your project"
-                : stage === "answer"
-                  ? "Your answer"
-                  : "Ask this project"}
-            </h1>
-            <div className="ask-credit-note">
-              {ai.available && !ai.demo ? (
-                <>
-                  <span>{creditLabel(ai.config.priceMicros)} / answer</span>
-                  <span>{creditLabel(ai.config.balanceMicros)} available</span>
-                </>
-              ) : (
-                <span>{ai.demo ? "Demo · no charge" : "Free lookup"}</span>
-              )}
-            </div>
-          </header>
-          <div className="ask-mode-row">
-            {ai.available ? (
-              <label className="check-label">
-                <input
-                  type="checkbox"
-                  checked={ai.active}
-                  disabled={running}
-                  onChange={(event) => onAIChange(event.target.checked)}
-                />
-                {ai.demo ? "Simulated AI" : "Use AI credits"}
-              </label>
-            ) : (
-              <button
-                className="ask-text-button"
-                onClick={() => setPanel("settings")}
-              >
-                Free lookup · AI setup
-              </button>
-            )}
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={readAloud}
-                onChange={(event) => onReadAloud(event.target.checked)}
-              />
-              <Volume2 size={16} aria-hidden="true" />
-              Read aloud
-            </label>
-          </div>
-          {ai.active && !ai.demo && (
-            <p className="ask-data-note">
-              AI uses this project's records.{" "}
-              <button onClick={() => setPanel("settings")}>Details</button>
-            </p>
-          )}
+          <h1 className="sr-only">Ask {project.title}</h1>
           <div
             hidden={stage !== "project"}
             className="ask-project-stage ask-scroll-region"
           >
             {projectPanel}
-            <p className="hint">Questions use this project's saved records.</p>
             <button
               className="primary ask-submit"
               onClick={() => onStageChange("ask")}
@@ -213,6 +166,7 @@ export default function FocusedAsk({
               </button>
               <strong>{primaryLabel}</strong>
               <div
+                hidden={!running}
                 className={`ask-activity ${hearing || audio ? "is-active" : ""}`}
                 aria-hidden="true"
               >
@@ -220,7 +174,10 @@ export default function FocusedAsk({
                   <span key={i} style={{ "--bar": i }} />
                 ))}
               </div>
-              <span className="ask-state" role="status">
+              <span
+                className={`ask-state ${running ? "" : "sr-only"}`}
+                role="status"
+              >
                 {stateText}
               </span>
             </div>
@@ -228,10 +185,12 @@ export default function FocusedAsk({
               className="ask-compose"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (question.trim() && !ai.busy) onAsk();
+                if (question.trim() && !ai.busy && !ai.checking) onAsk();
               }}
             >
-              <label htmlFor={inputId}>Your question</label>
+              <label className="sr-only" htmlFor={inputId}>
+                Your question
+              </label>
               <textarea
                 id={inputId}
                 ref={inputRef}
@@ -243,11 +202,15 @@ export default function FocusedAsk({
               />
               <button
                 className="primary ask-submit"
-                disabled={!question.trim() || ai.busy}
+                disabled={!question.trim() || ai.busy || ai.checking}
                 type="submit"
               >
                 <ArrowRight size={25} aria-hidden="true" />
-                {ai.busy ? "Getting answer…" : "Get answer"}
+                {ai.checking
+                  ? "Checking AI…"
+                  : ai.busy
+                    ? "Getting answer…"
+                    : "Get answer"}
               </button>
             </form>
             {!canListen && (
@@ -261,6 +224,7 @@ export default function FocusedAsk({
               <VoiceIcon size={25} aria-hidden="true" />
               <span role="status">{stateText}</span>
               <div
+                hidden={!audio}
                 className={`ask-activity ${audio ? "is-active" : ""}`}
                 aria-hidden="true"
               >
@@ -280,22 +244,21 @@ export default function FocusedAsk({
                   {result.message && <p>{result.message}</p>}
                   {result.answers.map((item) => (
                     <div key={item.topic}>
-                      <h2>{item.title}</h2>
                       <p className="note-text">{item.text}</p>
-                      <small>
-                        Source: {item.sources.join("; ") || "No saved value"}
-                      </small>
                     </div>
                   ))}
-                  <p className="hint">{result.sourceLabel}</p>
+                  <details className="quiet-details">
+                    <summary>Sources</summary>
+                    {result.answers.map((item) => (
+                      <p className="hint" key={item.topic}>
+                        {item.title}:{" "}
+                        {item.sources.join("; ") || "No saved value"}
+                      </p>
+                    ))}
+                    <p className="hint">{result.sourceLabel}</p>
+                  </details>
                 </>
-              ) : (
-                <p>
-                  {ai.busy
-                    ? "Your answer will appear here."
-                    : "No answer was received. Return to Ask to try again."}
-                </p>
-              )}
+              ) : null}
             </div>
             <div className="ask-answer-actions">
               <button
@@ -349,20 +312,70 @@ export default function FocusedAsk({
       >
         <header>
           <h2 id={panelId}>
-            {panel === "settings"
-              ? "Voice and AI settings"
-              : panel === "context"
-                ? "Project context"
-                : "Optional tools"}
+            {decision
+              ? ai.available
+                ? "Use AI for this workbook?"
+                : "AI unavailable"
+              : panel === "settings"
+                ? "Voice and AI settings"
+                : panel === "context"
+                  ? "Project context"
+                  : "Optional tools"}
           </h2>
           <button aria-label="Close panel" onClick={closePanel}>
             <X size={22} aria-hidden="true" />
           </button>
         </header>
         <div className="ask-dialog-body">
-          {panel === "context" && contextPanel}
-          {panel === "tools" && toolsPanel}
-          {panel === "settings" && (
+          {decision ? (
+            ai.available ? (
+              <>
+                <p>
+                  {ai.demo
+                    ? "Simulated answer · no charge"
+                    : `${creditLabel(ai.config.priceMicros)} per completed answer; ${creditLabel(ai.config.balanceMicros)} remaining.`}
+                </p>
+                <p>
+                  {ai.demo
+                    ? "This demo uses synthetic records and device speech. No providers are contacted."
+                    : "Your question and this project's Google records go to OpenAI. DeepInfra provides voice."}
+                </p>
+                <p className="hint">
+                  Remember this choice for this Google account and workbook. You
+                  can switch to free lookup in Settings.
+                </p>
+              </>
+            ) : (
+              <p role="alert">{aiAvailabilityMessage(source, ai.config)}</p>
+            )
+          ) : null}
+          {decision && !ai.available && source === "google" && (
+            <button onClick={ai.refresh}>Check AI availability</button>
+          )}
+          {decision &&
+            !ai.available &&
+            onAISetup &&
+            (source !== "google" ||
+              ["connect_google", "select_workbook"].includes(
+                ai.config?.reason,
+              )) && <button onClick={onAISetup}>Open Connections</button>}
+          {!decision && panel === "context" && contextPanel}
+          {!decision && panel === "tools" && (
+            <>
+              {result && stage !== "answer" && (
+                <button
+                  onClick={() => {
+                    closePanel();
+                    onStageChange("answer");
+                  }}
+                >
+                  Last answer
+                </button>
+              )}
+              {toolsPanel}
+            </>
+          )}
+          {!decision && panel === "settings" && (
             <>
               <ThemeSwitch
                 initialTheme={document.documentElement.dataset.theme}
@@ -372,6 +385,17 @@ export default function FocusedAsk({
                   ? "Simulated AI is available for this local demo."
                   : aiAvailabilityMessage(source, ai.config)}
               </p>
+              {ai.available && (
+                <label className="check-label">
+                  <input
+                    type="checkbox"
+                    checked={ai.active}
+                    disabled={running}
+                    onChange={(event) => onAIChange(event.target.checked)}
+                  />
+                  {ai.demo ? "Simulated AI" : "Use AI credits"}
+                </label>
+              )}
               {ai.available && (
                 <p>
                   {ai.demo
@@ -423,10 +447,26 @@ export default function FocusedAsk({
               Stop voice
             </button>
           )}
-          <button className="primary" onClick={closePanel}>
-            <Check size={18} aria-hidden="true" />
-            Done
-          </button>
+          {decision ? (
+            <>
+              <button onClick={closePanel}>Cancel</button>
+              <button onClick={onChooseFree}>Use free lookup</button>
+              {ai.available && (
+                <button
+                  className="primary"
+                  disabled={running}
+                  onClick={onConfirmAI}
+                >
+                  Use AI and get answer
+                </button>
+              )}
+            </>
+          ) : (
+            <button className="primary" onClick={closePanel}>
+              <Check size={18} aria-hidden="true" />
+              Done
+            </button>
+          )}
         </footer>
       </dialog>
     </section>

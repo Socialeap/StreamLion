@@ -1,68 +1,65 @@
 # Focused Ask workspace
 
-The Ask page shows one task at a time: Project, Ask, or Answer. A desktop stage
-rail becomes a horizontal icon strip on phones. Context, optional tools and
-voice/AI settings open on demand. Switching views preserves the conversation;
-changing the project or record scope clears it and stops the previous media.
+The selected project, microphone, question and Get answer are the primary
+controls. The Project/Ask/Answer strip, repeated task heading, free-lookup/credit
+corner, mode row, idle status and routine Google-refresh text have been removed.
+Read aloud lives at the top right next to the brand. Its preference and media
+lifecycle still belong to the same conversation component.
 
-The large microphone starts dictation. Final words populate the question, then
-wait for an explicit **Get answer** tap. The user can review the words before a
-paid request. Free lookup remains available; managed AI requires opt-in and
-shows the current per-answer price and available credits in a quiet corner.
+Tap the project name to choose another project. Context, Tools and voice/AI
+Settings open on demand. Ask another returns to the retained question; Last
+answer in Tools restores the preceding answer. A new project/owner scope stops
+media and clears the old conversation. Sources and record freshness remain
+available under the answer's Sources disclosure and in Context.
 
-Listening uses mint, answer preparation amber, and speech playback violet.
-Recognition speech events and playback lifecycle drive the visual state. CSS
-motion stops with reduced-motion preferences. The activity bars are a state
-indicator, not a measured audio waveform; no extra microphone stream or audio
-recording is introduced. Stop remains available during a request or playback,
-including when an optional panel is open.
+Final dictated words wait for an explicit Get answer tap. The first eligible
+AI request shows its current credit quote and provider disclosure, then asks for
+consent. The choice is remembered only for the same Google account, workbook
+and quoted price. A changed quote requires a new confirmation. The user can
+choose free lookup in Settings. Storage contains the choice and an opaque scope
+hash, never credentials, questions, records or audio.
 
-## Visual fidelity check
+An unavailable AI request shows the configuration reason and recovery controls.
+It never quietly substitutes the narrow saved-field lookup for AI. Free lookup
+is still an explicit alternative; unsupported questions retain the question and
+explain that AI is needed, without an empty answer card or long canned speech.
+Availability checks do not submit a question or spend credits. Initial config
+loading blocks Get answer until the availability check finishes.
 
-Compared the generated mobile concept with the rendered implementation:
+Listening is mint, preparation amber, and playback violet. Recognition speech
+and playback events drive the animation; this is a state indicator, not a
+measured waveform. Reduced-motion preferences disable motion. Stop remains
+available during a request or playback, including inside optional panels.
+Routine progress text is announced in the existing state region instead of
+repeated in a second status paragraph. Errors and actionable fallback guidance
+remain visible.
 
-| Element | Rendered result |
-| --- | --- |
-| Layout | Selected project bar, Project/Ask/Answer strip, centered microphone, question, prominent submit button and optional tools. Desktop moves the strip to the left rail. |
-| Typography | Strong task heading and action labels; small muted credit, source and settings text. |
-| Palette | Existing dark navy/slate theme, mint primary actions and selected stage, violet speaking feedback. Existing light mode remains available. |
-| Icons and brand | User-approved mint outline lion derived from the illustration replaces the earlier app image; shared Lucide microphone, stage, settings and tool icons remain consistent. |
-| Spacing and copy | Controls adapt to shorter screens. Project names and prices come from application state; the local fixture explicitly says simulated/no charge rather than displaying production data. |
-
-Long answers and panels can scroll within their own areas. The page keeps a
-scrolling safety fallback for smaller viewports, zoom, multiple alerts and the
-phone keyboard; this change does not promise zero scrolling in every condition.
+Long answers and panels scroll internally. A page-scroll fallback accommodates
+small screens, zoom, extra alerts and the phone keyboard. Local fixture testing
+cannot establish physical Android microphone, keyboard or hosted audio behavior.
 
 ## Validation
 
-- 308 tests passed, including fixed credit units, empty-state Google refresh,
-  explicit submission after dictation, credit opt-in
-  without automatic submission, view switching, scope reset, recognition event
-  guards, playback state and Stop.
-- Production app/extension build, Cloudflare Functions compile, dependency audit
-  (zero vulnerabilities), synthetic capacity verification and diff checks passed.
-- Local browser fixture checked at 430×932, 390×667 and 1440×900. Main controls
-  fit without document overflow; native panels open/close and restore focus.
-  The browser error/warning log was empty in the final check.
-- Fixture answers use synthetic records. No real provider calls, pilot grants,
-  policy changes or provider spending were part of this validation.
+- 313 tests passed, including Workers runtime checks, cumulative-cap concurrency,
+  account/workbook quote rejection, paused-pilot recovery, one-time consent,
+  reopen/changed-price behavior, double taps and explicit dictation submission.
+- App/extension build, Cloudflare Functions compile, synthetic capacity checks,
+  dependency audit (zero vulnerabilities) and diff checks passed.
+- Rendered local fixture checked at 430×932, 390×667 and 1440×900: primary actions
+  fit, panels preserve the question, native consent opens/closes correctly and
+  the browser warning/error log is empty. Temporary viewport overrides reset.
+- Live investigation used read-only policy/wallet/config checks. No provider
+  calls, grants, policy changes or credit spending were part of this revision.
 
 ## Release gates
 
-This is a frontend change. No migration, backend configuration, secret or server
-function change is required. No Lovable action is required.
-
-1. Review and merge the PR through GitHub.
-2. Verify the Cloudflare Pages deployment corresponds to merged `main`.
-3. Apply the fresh PWA update on the owner's phone.
-4. Test the physical Android keyboard, microphone feedback, transcribed-question
-   review, Get answer, speaking feedback, Stop and panel navigation. Retain the
-   prior pilot spending ceiling; do not activate paid testing without the
-   existing operator controls and authorization.
-
-The prior smooth voice-answer acceptance is separate from acceptance of this
-new layout. The local fixture remains development-only and is excluded from the
-production build inputs.
+This revision changes the frontend and the AI Cloudflare Function. It adds no
+migration, secret, provider account, price change or credit grant. The existing
+pilot policy must be reopened separately after the merged code is deployed.
+No Lovable action is required. Follow the exact preflight and bounded activation
+in `docs/AI_PILOT.md`, then refresh the installed PWA and repeat the owner test.
+The original 30-total-attempt/$1 provider allowance remains in force, including
+earlier attempts. Commercial rollout and markup remain separate decisions.
 
 ## Logo and credit display follow-up
 
@@ -84,16 +81,17 @@ The fixed pilot display unit is **12,500 internal micro-units per credit**.
 The current quote therefore shows **1 credit / answer** and the sample balance
 262,500 shows **21 credits available**. Display conversion never divides the
 balance by the current answer price: a future quote change must not relabel
-credits already held. Exact ledger integers, reservation/refund behavior and
-the server's submitted-price check remain unchanged. Fractions retain their
+credits already held. Exact ledger integers, the once-only refund behavior and
+the submitted-price check are preserved; the new cumulative reservation guard
+is described in `docs/AI_PILOT.md`. Fractions retain their
 exact five-decimal representation; missing/invalid values say unavailable.
 
 Pilot allowances are not purchased currency. Commercial bundle prices and
 markup remain undecided until measured provider usage, hosting/operations and
 payment costs are reviewed. The future checkout must disclose bundle price,
 credits received and applicable terms; the Ask view must display the current
-credit charge before submission. No billing, top-up, grant or policy change is
-included here.
+credit charge before submission. This revision introduces no billing, top-up or credit grant. Reopening the
+existing policy is a separate post-deployment action, described above.
 
 The empty Project chooser also retains Refresh from Google, allowing connected
 users to fetch newly added records without leaving Ask.

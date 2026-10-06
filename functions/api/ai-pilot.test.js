@@ -7,6 +7,7 @@ import {
   reserveTurn,
   finishTurn,
   expireTurns,
+  PILOT_CEILING,
 } from "../../server/ai-pilot.js";
 import { hash, seal } from "../../server/google-auth.js";
 import {
@@ -50,6 +51,45 @@ const stream = (events) =>
     headers: { "Content-Type": "text/event-stream" },
   });
 const uuid = "11111111-1111-4111-8111-111111111111";
+
+test("the cumulative allowance remains spent across days and failures; concurrent final attempts reserve only once", async () => {
+  const { sql, db } = fixture();
+  const now = Date.now();
+  try {
+    for (let i = 0; i < PILOT_CEILING.attempts - 1; i++) {
+      await reserveTurn(db, "a", `old-${i}`, 12500, now - 86400000 * (31 - i));
+      await finishTurn(db, "a", `old-${i}`, "failed");
+    }
+    const results = await Promise.allSettled([
+      reserveTurn(db, "a", "last-a", 12500, now),
+      reserveTurn(db, "b", "last-b", 12500, now),
+    ]);
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+    assert.equal(
+      sql.prepare("SELECT COUNT(*) n FROM streamlion_ai_turns_v1").get().n,
+      30,
+    );
+    assert.equal(
+      sql
+        .prepare("SELECT SUM(balance_micros) n FROM streamlion_ai_wallets_v1")
+        .get().n,
+      187500,
+    );
+    await expireTurns(db, now + 300001);
+    await assert.rejects(
+      reserveTurn(db, "b", "tomorrow", 12500, now + 86400000),
+      /pilot_exhausted/,
+    );
+    assert.equal(
+      sql
+        .prepare("SELECT SUM(balance_micros) n FROM streamlion_ai_wallets_v1")
+        .get().n,
+      200000,
+    );
+  } finally {
+    sql.close();
+  }
+});
 
 test("credits reserve atomically, duplicate and rejected accounts do not consume shared budget", async () => {
   const { sql, db } = fixture();
@@ -232,6 +272,9 @@ async function routeFixture() {
       Date.now() + 3600000,
       "selected",
     );
+  const preferenceScope = await hash(
+    JSON.stringify(["ai-preference-v1", "a", "selected"]),
+  );
   const req = (
     path = "/answer",
     body = {
@@ -240,6 +283,7 @@ async function routeFixture() {
       requestId: uuid,
       speech: true,
       priceMicros: 12500,
+      preferenceScope,
     },
     origin = "https://app.example",
   ) =>
@@ -250,13 +294,15 @@ async function routeFixture() {
         Origin: origin,
         "Content-Type": "application/json",
       },
-      ...(path === "/config" ? {} : { body: JSON.stringify(body) }),
+      ...(path === "/config"
+        ? {}
+        : { body: JSON.stringify({ preferenceScope, ...body }) }),
     });
-  return { sql, env, req };
+  return { sql, env, req, preferenceScope };
 }
 
 test("configuration explains missing prerequisites without provider calls, credit debits or reservations", async () => {
-  const { sql, env, req } = await routeFixture(),
+  const { sql, env, req, preferenceScope } = await routeFixture(),
     original = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => {
@@ -274,6 +320,7 @@ test("configuration explains missing prerequisites without provider calls, credi
       enabled: true,
       priceMicros: 12500,
       balanceMicros: 100000,
+      preferenceScope,
     });
     assert.deepEqual(await config({ ENABLE_AI_PILOT: "false" }), {
       enabled: false,
@@ -298,6 +345,9 @@ test("configuration explains missing prerequisites without provider calls, credi
     assert.deepEqual(await config(), {
       enabled: false,
       reason: "pilot_paused",
+      priceMicros: 12500,
+      balanceMicros: 100000,
+      preferenceScope,
     });
     sql.exec(
       "UPDATE streamlion_ai_policy_v1 SET active=1; UPDATE streamlion_ai_wallets_v1 SET enabled=0 WHERE google_subject='a'",
@@ -305,11 +355,13 @@ test("configuration explains missing prerequisites without provider calls, credi
     assert.deepEqual(await config(), {
       enabled: false,
       reason: "account_not_enabled",
+      preferenceScope,
     });
     sql.exec("UPDATE streamlion_ai_policy_v1 SET daily_budget_micros=0");
     assert.deepEqual(await config(), {
       enabled: false,
       reason: "pilot_unavailable",
+      preferenceScope,
     });
     assert.equal(calls, 0);
     assert.equal(
@@ -327,6 +379,94 @@ test("configuration explains missing prerequisites without provider calls, credi
   } finally {
     globalThis.fetch = original;
     sql.close();
+  }
+});
+
+test("a changed account/workbook quote is rejected before Google or provider work", async () => {
+  const { sql, env, req, preferenceScope } = await routeFixture();
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    throw new Error("unexpected fetch");
+  };
+  try {
+    sql.exec(
+      "UPDATE streamlion_google_sessions_v1 SET workbook_id='different-workbook'",
+    );
+    const response = await handleAI({ env, request: req() });
+    assert.equal(response.status, 409);
+    assert.match(
+      (await response.json()).error,
+      /Google account or workbook changed/,
+    );
+    const config = await (
+      await handleAI({ env, request: req("/config") })
+    ).json();
+    assert.match(config.preferenceScope, /^[A-Za-z0-9_-]{43}$/);
+    assert.notEqual(config.preferenceScope, preferenceScope);
+    sql.exec(
+      "UPDATE streamlion_google_sessions_v1 SET workbook_id='selected',google_subject='b'",
+    );
+    const ownerConfig = await (
+      await handleAI({ env, request: req("/config") })
+    ).json();
+    assert.notEqual(ownerConfig.preferenceScope, preferenceScope);
+    assert.equal((await handleAI({ env, request: req() })).status, 409);
+    assert.equal(calls, 0);
+    assert.equal(
+      sql.prepare("SELECT COUNT(*) n FROM streamlion_ai_turns_v1").get().n,
+      0,
+    );
+  } finally {
+    sql.close();
+    globalThis.fetch = original;
+  }
+});
+
+test("an exhausted pilot reports operator action and rejects before any upstream calls or charges", async () => {
+  const { sql, env, req } = await routeFixture();
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    throw new Error("unexpected fetch");
+  };
+  try {
+    for (let i = 0; i < PILOT_CEILING.attempts; i++) {
+      await reserveTurn(
+        env.GOOGLE_SESSIONS,
+        "a",
+        `past-${i}`,
+        12500,
+        Date.now() - 86400000 * (31 - i),
+      );
+      await finishTurn(env.GOOGLE_SESSIONS, "a", `past-${i}`, "failed");
+    }
+    const config = await (
+      await handleAI({ env, request: req("/config") })
+    ).json();
+    assert.equal(config.enabled, false);
+    assert.equal(config.reason, "pilot_exhausted");
+    const response = await handleAI({ env, request: req() });
+    assert.equal(response.status, 429);
+    assert.match((await response.json()).error, /allowance has been used/);
+    assert.equal(calls, 0);
+    assert.equal(
+      sql
+        .prepare(
+          "SELECT balance_micros n FROM streamlion_ai_wallets_v1 WHERE google_subject='a'",
+        )
+        .get().n,
+      100000,
+    );
+    assert.equal(
+      sql.prepare("SELECT COUNT(*) n FROM streamlion_ai_turns_v1").get().n,
+      30,
+    );
+  } finally {
+    sql.close();
+    globalThis.fetch = original;
   }
 });
 test("disabled pilot, cross-origin, missing authentication and missing credits never call providers", async () => {

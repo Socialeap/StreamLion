@@ -69,13 +69,115 @@ Commercial credit top-ups, signed Stripe credit issuance, refund/reconciliation 
 
 ## Answer mode and recovery
 
-The question panel always identifies its current mode: **Free saved-detail lookup · AI is off** or **AI answers · Luna + Kokoro**. Free lookup reads supported saved fields. It cannot infer requirements from a measurement question such as “Are measurements for room dimensions required for this project?” Submitting an unsupported question shows “Question received” with the limitation and a broader-question route. Read answers aloud also speaks a short explanation using device speech; this does not call a provider or spend credits.
+The focused Ask page keeps the credit quote, provider disclosure and AI/free
+choice in Settings or the first-request confirmation. An explicit AI choice
+persists for the same authenticated Google account and selected workbook at the
+same quoted price. `/api/ai/config` returns an opaque `preferenceScope` hash,
+computed from the Google subject and workbook; it is neither a credential nor
+an authorization token. The answer POST must echo this scope and price. A stale
+account/workbook scope or price is rejected before Google/provider work. Every
+answer still reads records server-side from the authenticated selected workbook;
+browser-supplied records are never trusted.
 
-AI answers require a fresh Google-backed project in the authenticated session's selected workbook, an enrolled account with credits, an active pilot policy and the existing provider configuration. Local device records and disconnected Google copies remain in free mode. **Open Connections** directs users to select/reconnect their Google workbook; they must save or reopen the project there. Never send a browser-supplied local project to the answer endpoint or automatically select a workbook, enroll an account, grant credits or enable paid answers.
+Configuration failure disables paid requests while retaining the preference.
+Rechecking availability never automatically sends the pending question. An
+unavailable first request shows the specific reason and offers recovery or an
+explicit free lookup. Narrow free lookup does not pose as an AI response.
+Local-device records and disconnected Google copies cannot enter paid AI.
+An unsupported free question stays in the composer with concise recovery text.
 
-For Google-backed projects, `/api/ai/config` gives safe reasons for an unavailable pilot: `pilot_unavailable`, `connect_google`, `select_workbook`, `pilot_paused` and `account_not_enabled`. Transport or malformed-response failures show retry guidance rather than silently retaining AI opt-in. **Check AI availability** retries only the configuration read; a recovered account still requires explicit **Use AI pilot** opt-in before an answer request. Older `enabled:false` responses receive generic unavailable guidance. Overlapping configuration requests cannot let an older response overwrite a newer result.
+Safe reasons include `pilot_unavailable`, `pilot_paused`, `pilot_exhausted`,
+`credits_exhausted`, `account_not_enabled`, `connect_google`, `select_workbook`
+and a client-side `status_unavailable`. Operator configuration and exhausted
+allowances direct the user to the administrator, rather than an endless retry.
+Initial availability checks block submission; no configuration read charges
+credits or submits a question. Overlapping reads retain their request-order and
+lifetime guards. Rapid double taps cannot reserve a second answer.
 
-This recovery change requires the merged Cloudflare Pages frontend and Functions build. It needs **no migration, new secret/environment setting, wallet grant or policy activation**. Keep activation and Google project setup separate from deployment. Verify the configuration response with no provider spending, refresh the installed PWA, and test unsupported free questions and setup navigation. Then test broader questions on an explicitly approved, Google-backed pilot account within the existing cumulative allowance. Physical Android playback and real provider latency remain separate QA gates.
+## Continuous closed pilot: cumulative ceiling
+
+The owner-approved pilot is capped at **30 total attempts**, including previous,
+failed and expired attempts, across all enrolled accounts and days. The server
+also checks a cumulative provider-reservation ceiling of **1,000,000 micro-USD**
+($1). Each bounded turn reserves 6,000 micro-USD. These reservations are a
+conservative internal accounting estimate, not a provider invoice or final
+customer price; the original $1 actual provider-spend allowance still applies.
+Do not raise these limits, grant credits, enroll more accounts or turn on
+provider auto-recharge without separate owner authorization.
+
+`PILOT_CEILING` is committed in `server/ai-pilot.js`. The reservation inserts
+conditionally under a single SQLite statement, then existing triggers enforce
+wallet, quote, per-account pending/rate and daily shared budget limits. A
+rejected insert charges nothing. Failure refunds customer credits once but
+never releases the cumulative attempt/reservation. `expireTurns` retains the
+ledger. Do not delete turn rows or reset wallets to restart a spent pilot.
+At the cumulative ceiling, config reports `pilot_exhausted` and answer requests
+stop before upstream reads. The atomic reservation remains the race guard.
+
+This bounded pilot can remain open between acceptance tests. This supersedes
+the earlier instruction to pause after every supervised test, while keeping the
+administrator's pause switch and the original spend/attempt ceiling. It is not
+a commercial launch or scale-readiness approval.
+
+### Post-merge Cloudflare activation
+
+HOLD until this PR is merged and Cloudflare Pages **and Functions** are deployed
+from the current merged `main`. Record the main SHA and successful production
+deployment receipt. Keep policy `active=0` during deployment. No migration,
+new secret/environment variable, wallet grant, provider subscription or Lovable
+action is required. Do not activate an older Function that lacks the cumulative
+reservation guard. This revision requires the fresh client to echo
+`preferenceScope`; old cached clients fail safely and must apply the PWA update.
+
+In Cloudflare D1 `streamlion-google-sessions`, first read:
+
+```sql
+SELECT active,price_micros,daily_requests,daily_budget_micros,
+  (SELECT COUNT(*) FROM sqlite_master WHERE name IN(
+    'streamlion_ai_policy_v1','streamlion_ai_wallets_v1','streamlion_ai_turns_v1',
+    'streamlion_ai_turns_time_v1','streamlion_ai_reserve_v1','streamlion_ai_debit_v1',
+    'streamlion_ai_transition_v1','streamlion_ai_refund_v1')) AS ai_markers,
+  (SELECT COUNT(*) FROM streamlion_ai_turns_v1) AS total_attempts,
+  (SELECT COUNT(*) FROM streamlion_ai_turns_v1 WHERE state='reserved') AS pending_attempts,
+  (SELECT COALESCE(SUM(reserve_micros),0) FROM streamlion_ai_turns_v1) AS reserved_micros
+FROM streamlion_ai_policy_v1 WHERE id=1;
+```
+
+Require all eight markers, price 12,500, daily requests 30, daily budget 180,000,
+no pending turn, total attempts below 30 and reservations plus 6,000 at most
+1,000,000. At investigation time: active=0, 9 attempts, no pending turn; the
+business wallet remained enrolled with 262,500 (21 displayed credits). These
+are observations, not values to overwrite. Stop on partial/unexpected state;
+do not regenerate or reapply the existing migration, change secrets, grant or
+reset credits. Verify the business account's existing enrollment separately;
+never print raw session tokens, Google tokens or provider secrets.
+
+Only after the fresh deployment and preflight, resume the **existing approved
+allowance** with this idempotent, guarded policy update:
+
+```sql
+UPDATE streamlion_ai_policy_v1 SET active=1
+WHERE id=1 AND active=0 AND price_micros=12500
+  AND daily_requests=30 AND daily_budget_micros=180000
+  AND (SELECT COUNT(*) FROM sqlite_master WHERE name IN(
+    'streamlion_ai_policy_v1','streamlion_ai_wallets_v1','streamlion_ai_turns_v1',
+    'streamlion_ai_turns_time_v1','streamlion_ai_reserve_v1','streamlion_ai_debit_v1',
+    'streamlion_ai_transition_v1','streamlion_ai_refund_v1'))=8
+  AND (SELECT COUNT(*) FROM streamlion_ai_turns_v1)<30
+  AND (SELECT COALESCE(SUM(reserve_micros),0) FROM streamlion_ai_turns_v1)+6000<=1000000
+  AND NOT EXISTS(SELECT 1 FROM streamlion_ai_turns_v1 WHERE state='reserved');
+```
+
+Read back the policy and allowance; an unknown outcome must be read before a
+retry. On the owner's signed-in business account, **Check AI availability**
+should return enabled with the scoped quote, without provider calls or charges.
+Receipt: main SHA, Pages/Functions production deployment, all eight existing D1
+markers, policy readback and safe config-check result. A saved receipt and a
+physical-phone retest are separate gates. Apply the PWA update, dictate the
+same room-dimension question, confirm the displayed quote once, measure audible
+onset, Stop, reopen and ask again. Subsequent submissions should retain the
+same account/workbook choice. Any real answers count toward the original
+cumulative allowance; no paid checks are part of deployment activation.
 
 Provider contracts checked 2026-10-06:
 
@@ -87,6 +189,6 @@ Provider contracts checked 2026-10-06:
 
 This change requires the merged Cloudflare Pages frontend **and Functions** build. It adds no migration, secrets, environment variables, wallet grants or provider accounts. Keep the existing policy inactive during deployment and verify `/api/ai/config` returns `enabled:false`; record the exact merged SHA and Cloudflare deployment receipt. No Lovable action is required. Refresh the Android PWA so its request contains `audioFormat:"pcm_s16le"` before evaluating the new path; older cached clients remain compatible but use WAV.
 
-Only then resume the existing approved supervised allowance (30 total attempts / $1 provider spend, cumulative with earlier tests). Re-run the same synthetic name/address, missing contact and exact-measurement questions, plus a multi-field question. Record answer words, exact facts, first visible text, first audible voice, total elapsed time and streaming continuity. Test Stop during startup/playback, backgrounding, text-only mode and speech failure/device fallback. Set policy inactive afterward and read back credits; never reset wallets or recycle unknown provider reservations. If startup reaches eight seconds, show the usable text and fallback rather than wait indefinitely; tuning that deadline requires evidence from the pilot.
+Only then resume the existing approved supervised allowance (30 total attempts / $1 provider spend, cumulative with earlier tests). Re-run the same synthetic name/address, missing contact and exact-measurement questions, plus a multi-field question. Record answer words, exact facts, first visible text, first audible voice, total elapsed time and streaming continuity. Test Stop during startup/playback, backgrounding, text-only mode and speech failure/device fallback. For the older supervised workflow, set policy inactive afterward and read back credits; the cumulative closed-pilot release above now supports remaining active between tests. As always, never reset wallets or recycle unknown provider reservations. If startup reaches eight seconds, show the usable text and fallback rather than wait indefinitely; tuning that deadline requires evidence from the pilot.
 
 Further efficiencies to evaluate after timing evidence: larger later phrases to reduce provider request overhead, compressed audio on poor mobile networks (PCM uses 48 KB/s before transport overhead), and reducing Google-read setup through an authoritative, freshness-preserving read strategy. Do not cache stale project facts, prefetch paid speech, enable a premium tier or add another model/provider without approval and measured benefit.

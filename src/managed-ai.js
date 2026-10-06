@@ -173,11 +173,15 @@ export function aiAvailabilityMessage(source, config) {
   if (!config)
     return "Checking AI pilot availability… Saved-detail lookup remains free.";
   if (config.enabled)
-    return "AI is available. Turn on Use AI pilot for broader questions; the displayed credit price applies.";
+    return "AI is available. Choose AI credits for broader questions; the displayed credit price applies.";
   return (
     {
       pilot_paused:
-        "The AI pilot is paused. Saved-detail lookup is available; AI testing must be enabled for a supervised session.",
+        "The AI pilot is paused by the administrator. Your account can use AI once the pilot is reopened; free saved-detail lookup remains available.",
+      pilot_exhausted:
+        "The approved AI pilot allowance has been used. The administrator must authorize another allowance; free saved-detail lookup remains available.",
+      credits_exhausted:
+        "You have no AI credits available for this answer. Free saved-detail lookup remains available.",
       pilot_unavailable:
         "The AI pilot needs administrator configuration before it can be used. Continue with free saved-detail lookup while the administrator completes setup.",
       account_not_enabled:

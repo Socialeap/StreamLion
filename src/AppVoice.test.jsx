@@ -83,12 +83,21 @@ test("Project home and Ask route voice activity into the app update gate", async
     fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
     assert.ok(ui.getByRole("heading", { name: "Connections" }));
     fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
+    assert.ok(
+      ui.container.querySelector(
+        "#ask-read-aloud-controls input[type=checkbox]",
+      ),
+    );
+    assert.equal(ui.queryByRole("navigation", { name: "Ask stages" }), null);
+    assert.equal(ui.queryByRole("heading", { name: "Ask this project" }), null);
     fireEvent.click(ui.getByRole("button", { name: "Voice and AI settings" }));
     fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
     assert.ok(ui.getByRole("heading", { name: "Connections" }));
     assert.equal(instances[0].aborted, true);
     fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
-    fireEvent.click(ui.getByRole("button", { name: "Project", exact: true }));
+    fireEvent.click(
+      ui.getByRole("button", { name: "Synthetic voice site", exact: true }),
+    );
     assert.equal(ui.getByRole("combobox").value, "voice-job");
     fireEvent.click(ui.getByRole("button", { name: "Continue to Ask" }));
     fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));

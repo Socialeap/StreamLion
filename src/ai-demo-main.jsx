@@ -24,9 +24,12 @@ if (import.meta.env.DEV) {
   createRoot(document.getElementById("root")).render(
     <div className="app app-ask">
       <aside className="sidebar">
-        <div className="brand">
-          <img src="/lion-mint.png" width="44" height="44" alt="" />
-          <span>StreamLion</span>
+        <div className="ask-app-header">
+          <div className="brand">
+            <img src="/lion-mint.png" width="44" height="44" alt="" />
+            <span>StreamLion</span>
+          </div>
+          <div id="ask-read-aloud-controls" className="ask-read-aloud-slot" />
         </div>
         <small className="hint">Local demo · no providers or charges</small>
         <nav aria-label="Main">
