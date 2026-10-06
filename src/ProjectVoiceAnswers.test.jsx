@@ -79,6 +79,77 @@ function say(recognition, text, final = true, confidence = 0.9) {
   act(() => recognition.onresult?.({ results: [item] }));
 }
 
+for (const input of ["typed", "dictated"])
+  test(`the reported measurement question gives explicit free-mode feedback and device speech when ${input}`, () => {
+    const original = globalThis.fetch,
+      requests = [];
+    globalThis.fetch = async (...args) => {
+      requests.push(args);
+      throw new Error("Device-only questions must stay local");
+    };
+    try {
+      let setup = 0;
+      const ui = mount({ onAISetup: () => setup++ });
+      assert.ok(ui.getByText("Free saved-detail lookup · AI is off"));
+      assert.ok(
+        ui.getByText(
+          /AI answers need a project saved in a selected Google workbook/,
+        ),
+      );
+      fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
+      assert.equal(setup, 1);
+      fireEvent.click(ui.getByRole("checkbox", { name: "Read answers aloud" }));
+      const question =
+        "are measurements for room dimensions required for this project";
+      if (input === "dictated") {
+        fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));
+        // The final transcript remains editable when confidence is low.
+        say(instances[0], question, true, 0.3);
+      } else {
+        fireEvent.change(ui.getByRole("textbox"), {
+          target: { value: question },
+        });
+      }
+      fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+      assert.match(
+        ui.getByRole("status").textContent,
+        /Question received.*Saved-detail lookup cannot answer/,
+      );
+      assert.equal(spoken.length, 1);
+      assert.match(
+        spoken[0].text,
+        /Saved-detail lookup cannot answer this question/,
+      );
+      assert.equal(
+        ui.getByRole("button", { name: "Open Connections" }).disabled,
+        true,
+      );
+      act(() => spoken[0].onend());
+      fireEvent.click(
+        ui.getByRole("button", { name: "Read explanation aloud" }),
+      );
+      assert.equal(spoken.length, 2);
+      fireEvent.click(ui.getByRole("button", { name: "Stop voice" }));
+      assert.equal(busy.at(-1), false);
+      assert.equal(requests.length, 0);
+    } finally {
+      cleanup();
+      globalThis.fetch = original;
+    }
+  });
+
+test("saved Google copies explain reconnection and never claim the AI pilot is available", () => {
+  const ui = mount({ source: "copy", onAISetup() {} });
+  assert.ok(
+    ui.getByText(/saved Google copy.*Reconnect Google and refresh the project/),
+  );
+  assert.equal(
+    ui.queryByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
+    null,
+  );
+  assert.ok(ui.getByRole("button", { name: "Open Connections" }));
+});
+
 test("typed facts work without speech APIs and do not require a connection", () => {
   delete window.SpeechRecognition;
   delete window.SpeechSynthesisUtterance;
@@ -94,8 +165,11 @@ test("typed facts work without speech APIs and do not require a connection", () 
   );
 });
 
-test("one tap accepts only final speech, stops microphone, and optionally speaks", () => {
-  const ui = mount({ source: "google", asOf: "2026-10-01" });
+test("one tap accepts only final speech, stops microphone, and optionally speaks", async () => {
+  let ui;
+  await act(async () => {
+    ui = mount({ source: "google", asOf: "2026-10-01" });
+  });
   fireEvent.click(ui.getByRole("checkbox", { name: "Read answers aloud" }));
   fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));
   assert.equal(instances[0].continuous, false);
@@ -167,7 +241,10 @@ test("every submission dismisses the keyboard and reveals its answer or guidance
     const input = ui.getByRole("textbox");
     for (const [question, expected] of [
       ["address", /123 Example Street/],
-      ["why is the sky blue?", /I can look up this project's address/],
+      [
+        "why is the sky blue?",
+        /Question received.*Saved-detail lookup cannot answer/,
+      ],
     ]) {
       fireEvent.change(input, { target: { value: question } });
       input.focus();

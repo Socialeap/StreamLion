@@ -127,6 +127,7 @@ export default function ChatGPTPanel({
   source = "device",
   scope,
   onBusy,
+  onAISetup,
 }) {
   let snapshot = "",
     handoffKey = "",
@@ -160,6 +161,7 @@ export default function ChatGPTPanel({
             scope={scope}
             asOf={asOf}
             onBusy={onBusy}
+            onAISetup={onAISetup}
           />
           <h3>Need help thinking it through?</h3>
         </>

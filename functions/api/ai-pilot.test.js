@@ -254,6 +254,81 @@ async function routeFixture() {
     });
   return { sql, env, req };
 }
+
+test("configuration explains missing prerequisites without provider calls, credit debits or reservations", async () => {
+  const { sql, env, req } = await routeFixture(),
+    original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    throw new Error("unexpected fetch");
+  };
+  const config = async (overrides = {}, request = req("/config")) => {
+    const response = await handleAI({ request, env: { ...env, ...overrides } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    return response.json();
+  };
+  try {
+    assert.deepEqual(await config(), {
+      enabled: true,
+      priceMicros: 12500,
+      balanceMicros: 100000,
+    });
+    assert.deepEqual(await config({ ENABLE_AI_PILOT: "false" }), {
+      enabled: false,
+      reason: "pilot_unavailable",
+    });
+    assert.deepEqual(await config({ OPENAI_API_KEY: "" }), {
+      enabled: false,
+      reason: "pilot_unavailable",
+    });
+    assert.deepEqual(
+      await config({}, new Request("https://app.example/api/ai/config")),
+      { enabled: false, reason: "connect_google" },
+    );
+    sql.exec("UPDATE streamlion_google_sessions_v1 SET workbook_id=''");
+    assert.deepEqual(await config(), {
+      enabled: false,
+      reason: "select_workbook",
+    });
+    sql.exec(
+      "UPDATE streamlion_google_sessions_v1 SET workbook_id='selected'; UPDATE streamlion_ai_policy_v1 SET active=0",
+    );
+    assert.deepEqual(await config(), {
+      enabled: false,
+      reason: "pilot_paused",
+    });
+    sql.exec(
+      "UPDATE streamlion_ai_policy_v1 SET active=1; UPDATE streamlion_ai_wallets_v1 SET enabled=0 WHERE google_subject='a'",
+    );
+    assert.deepEqual(await config(), {
+      enabled: false,
+      reason: "account_not_enabled",
+    });
+    sql.exec("UPDATE streamlion_ai_policy_v1 SET daily_budget_micros=0");
+    assert.deepEqual(await config(), {
+      enabled: false,
+      reason: "pilot_unavailable",
+    });
+    assert.equal(calls, 0);
+    assert.equal(
+      sql.prepare("SELECT COUNT(*) n FROM streamlion_ai_turns_v1").get().n,
+      0,
+    );
+    assert.equal(
+      sql
+        .prepare(
+          "SELECT balance_micros b FROM streamlion_ai_wallets_v1 WHERE google_subject='a'",
+        )
+        .get().b,
+      100000,
+    );
+  } finally {
+    globalThis.fetch = original;
+    sql.close();
+  }
+});
 test("disabled pilot, cross-origin, missing authentication and missing credits never call providers", async () => {
   const { sql, env, req } = await routeFixture();
   const original = globalThis.fetch;

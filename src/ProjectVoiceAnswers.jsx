@@ -8,7 +8,7 @@ import {
 } from "./project-answers.js";
 
 import useManagedAnswers from "./useManagedAnswers.js";
-import { creditDollars } from "./managed-ai.js";
+import { creditDollars, aiAvailabilityMessage } from "./managed-ai.js";
 
 const preferenceKey = "streamlion-read-answers-v1";
 const speechErrors = {
@@ -30,7 +30,7 @@ export default function ProjectVoiceAnswers(props) {
   return <VoiceAnswers key={key} {...props} />;
 }
 
-function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
+function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
   const inputId = useId();
   const inputRef = useRef(null);
   const answerRef = useRef(null);
@@ -124,10 +124,18 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
   }
 
   function speak(answer) {
-    if (!canSpeak || document.hidden || answer.kind !== "answer") return;
+    if (
+      !canSpeak ||
+      document.hidden ||
+      !["answer", "unsupported"].includes(answer.kind)
+    )
+      return;
     cancelMedia();
     setListening(false);
-    const fullText = answer.answers.map((item) => item.text).join(". ");
+    const fullText =
+      answer.kind === "unsupported"
+        ? "Saved-detail lookup cannot answer this question. For broader questions, enable the AI pilot on an eligible Google project. The setup steps are shown on screen."
+        : answer.answers.map((item) => item.text).join(". ");
     const text =
       fullText.length > 1200
         ? `${fullText.slice(0, 1200)}. More saved details are shown on screen.`
@@ -259,6 +267,37 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
       className="project-voice"
       aria-label={`Quick answers for ${project.title}`}
     >
+      {!ai.demo && (
+        <div className="fact-answer">
+          <strong>
+            {ai.active
+              ? "AI answers · Luna + Kokoro"
+              : "Free saved-detail lookup · AI is off"}
+          </strong>
+          {!ai.active && (
+            <>
+              <p className="hint">{aiAvailabilityMessage(source, ai.config)}</p>
+              {(source !== "google" ||
+                ["connect_google", "select_workbook"].includes(
+                  ai.config?.reason,
+                )) &&
+                onAISetup && (
+                  <button
+                    onClick={onAISetup}
+                    disabled={listening || speaking || ai.busy}
+                  >
+                    Open Connections
+                  </button>
+                )}
+              {source === "google" && !ai.available && (
+                <button onClick={ai.refresh} disabled={ai.busy}>
+                  Check AI availability
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
       {ai.available && (
         <div className="fact-answer">
           <label className="check-label">
@@ -401,12 +440,17 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
             </div>
           ))}
           <p className="hint">{result.sourceLabel}</p>
-          {canSpeak && result.kind === "answer" && !speaking && !ai.busy && (
-            <button onClick={() => speak(result)}>
-              <Volume2 size={18} aria-hidden="true" />
-              Read answer aloud
-            </button>
-          )}
+          {canSpeak &&
+            ["answer", "unsupported"].includes(result.kind) &&
+            !speaking &&
+            !ai.busy && (
+              <button onClick={() => speak(result)}>
+                <Volume2 size={18} aria-hidden="true" />
+                {result.kind === "unsupported"
+                  ? "Read explanation aloud"
+                  : "Read answer aloud"}
+              </button>
+            )}
         </div>
       )}
       {!ai.active && (

@@ -78,6 +78,7 @@ function ProjectHomeContent({
   initial,
   onEdit,
   onAsk,
+  onAISetup,
   onMeasurements,
   onBack,
   onNotes,
@@ -453,6 +454,7 @@ function ProjectHomeContent({
           project={project}
           scope={scope}
           source={answerSource}
+          onAISetup={onAISetup}
           asOf={answerAsOf}
           onBusy={(value) => markBusy("voice", value)}
         />

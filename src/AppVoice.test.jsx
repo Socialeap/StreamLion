@@ -74,6 +74,11 @@ test("Project home and Ask route voice activity into the app update gate", async
       ui.getByRole("button", { name: "Update StreamLion" }).disabled,
       false,
     );
+    fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
+    assert.ok(ui.getByRole("heading", { name: "Connections" }));
+    fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
+    fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
+    assert.ok(ui.getByRole("heading", { name: "Connections" }));
     assert.equal(instances[0].aborted, true);
     fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
     assert.equal(ui.getByRole("combobox").value, "voice-job");
