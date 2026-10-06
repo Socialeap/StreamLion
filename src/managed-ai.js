@@ -59,21 +59,49 @@ export function createAudioPlayer(
   const nodes = new Set();
   return {
     // Called in the submit/microphone user gesture, before the first network await.
+    available: Boolean(context),
     unlock: async () => {
-      if (context) await context.resume();
+      if (!context || closed)
+        throw new Error("Hosted audio cannot play in this browser.");
+      await context.resume();
+      if (context.state !== "running")
+        throw new Error("Audio playback is blocked.");
     },
-    async append(base64) {
+    async append(base64, format = "wav", sampleRate = 24000) {
       if (!context || closed)
         throw new Error("Hosted audio cannot play in this browser.");
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-      const buffer = await context.decodeAudioData(bytes.buffer);
+      let buffer;
+      if (format === "pcm_s16le") {
+        if (
+          sampleRate !== 24000 ||
+          !bytes.length ||
+          bytes.length % 2 ||
+          bytes.length > 9600
+        )
+          throw new Error("Invalid voice audio frame.");
+        buffer = context.createBuffer(1, bytes.length / 2, sampleRate);
+        const channel = buffer.getChannelData(0),
+          view = new DataView(bytes.buffer);
+        for (let i = 0; i < channel.length; i++)
+          channel[i] = view.getInt16(i * 2, true) / 32768;
+      } else if (format === "wav") {
+        buffer = await context.decodeAudioData(bytes.buffer);
+      } else throw new Error("Unsupported voice audio format.");
       if (closed) return;
       if (context.state !== "running")
         throw new Error("Audio playback is blocked.");
+      if (
+        Math.max(next - context.currentTime, 0) + buffer.duration > 60 ||
+        nodes.size >= 512
+      )
+        throw new Error("Voice playback queue is too large.");
       const source = context.createBufferSource();
       source.buffer = buffer;
       source.connect(context.destination);
-      next = Math.max(next, context.currentTime + 0.04);
+      // Add the cushion only at startup or after a real underrun. Re-applying
+      // it to every arriving small frame would insert gaps into the voice.
+      if (next <= context.currentTime) next = context.currentTime + 0.08;
       source.start(next);
       next += buffer.duration;
       nodes.add(source);
@@ -86,6 +114,8 @@ export function createAudioPlayer(
       const deadline = Date.now() + 120000;
       while (nodes.size && !closed && !signal.aborted && Date.now() < deadline)
         await new Promise((resolve) => setTimeout(resolve, 50));
+      if (nodes.size && !closed && !signal.aborted)
+        throw new Error("Voice playback timed out.");
     },
     stop() {
       closed = true;

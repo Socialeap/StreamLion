@@ -103,3 +103,74 @@ test("demo separates the location name from its street address and never calls a
   assert.match(events[0].source, /simulated/);
   assert.equal(creditDollars(12500), "$0.0125");
 });
+
+test("PCM playback converts signed little-endian samples without decoding a whole file", async () => {
+  let instance;
+  class Context {
+    constructor() {
+      instance = this;
+      this.currentTime = 0;
+      this.state = "suspended";
+      this.sources = [];
+    }
+    async resume() {
+      this.state = "running";
+    }
+    async decodeAudioData() {
+      throw new Error("PCM must not wait for file decoding");
+    }
+    createBuffer(channels, samples, rate) {
+      assert.equal(channels, 1);
+      assert.equal(rate, 24000);
+      const data = new Float32Array(samples);
+      return { duration: samples / rate, getChannelData: () => data, data };
+    }
+    createBufferSource() {
+      const source = {
+        connect() {},
+        disconnect() {},
+        start(t) {
+          this.time = t;
+        },
+        stop() {
+          this.stopped = true;
+        },
+      };
+      this.sources.push(source);
+      return source;
+    }
+    async close() {
+      this.closed = true;
+    }
+  }
+  const player = createAudioPlayer(Context);
+  await player.unlock();
+  const bytes = Buffer.from([0, 128, 0, 0, 255, 127]);
+  await player.append(bytes.toString("base64"), "pcm_s16le", 24000);
+  instance.currentTime = 0.04; // Packet arrival must not re-add the startup cushion.
+  await player.append(bytes.toString("base64"), "pcm_s16le", 24000);
+  assert.deepEqual(
+    [...instance.sources[0].buffer.data],
+    [-1, 0, 32767 / 32768],
+  );
+  assert.equal(instance.sources[1].time, instance.sources[0].time + 3 / 24000);
+  await assert.rejects(player.append("AA==", "pcm_s16le"), /Invalid/);
+  await assert.rejects(
+    player.append(bytes.toString("base64"), "pcm_s16le", 44100),
+    /Invalid/,
+  );
+  player.stop();
+  assert.ok(instance.sources.every((s) => s.stopped));
+  assert.ok(instance.closed);
+  await assert.rejects(
+    player.append(bytes.toString("base64"), "pcm_s16le"),
+    /cannot play/,
+  );
+});
+
+test("audio unavailable is known before a hosted speech request starts", async () => {
+  const player = createAudioPlayer(null);
+  assert.equal(player.available, false);
+  await assert.rejects(player.unlock(), /cannot play/);
+  player.stop();
+});

@@ -12,6 +12,7 @@ import { hash, seal } from "../../server/google-auth.js";
 import {
   streamAnswer,
   synthesize,
+  streamSpeech,
   responseEvents,
   projectContext,
   takePhrase,
@@ -194,9 +195,14 @@ test("provider adapters use fixed endpoints, bounded output, no history retentio
   const payload = JSON.parse(calls[0].options.body);
   assert.equal(payload.model, "gpt-6-luna");
   assert.equal(payload.store, false);
-  assert.equal(payload.max_output_tokens, 300);
+  assert.equal(payload.max_output_tokens, 240);
+  assert.deepEqual(payload.text, { verbosity: "low" });
+  assert.match(payload.instructions, /exact recorded fractions/);
   assert.equal(payload.tools, undefined);
-  assert.equal(JSON.parse(calls[1].options.body).preset_voice, "af_heart");
+  assert.deepEqual(JSON.parse(calls[1].options.body).preset_voice, [
+    "af_heart",
+  ]);
+  assert.equal(JSON.parse(calls[1].options.body).output_format, "wav");
 });
 async function routeFixture() {
   const { sql, db } = fixture();
@@ -349,7 +355,7 @@ test("end-to-end route reads the selected workbook, streams text and speech, cha
     const events = (await response.text()).trim().split("\n").map(JSON.parse);
     await Promise.all(tasks);
     assert.deepEqual(
-      events.map((e) => e.type),
+      events.filter((e) => e.type !== "text_done").map((e) => e.type),
       ["start", "text", "audio", "audio", "done"],
     );
     assert.equal(events.at(-1).balanceMicros, 87500);
@@ -485,3 +491,120 @@ for (const scenario of [
       sql.close();
     }
   });
+
+test("PCM route completes text and credits before speech ends, cancels upstream on disconnect, and never retries", async () => {
+  const { sql, env, req } = await routeFixture(),
+    original = globalThis.fetch;
+  const project = makeRevision({ title: "Synthetic venue" }, null, "project");
+  let speechCalls = 0,
+    pcm,
+    cancelled = false;
+  globalThis.fetch = async (url, options) => {
+    if (url.includes("sheets.googleapis.com")) {
+      return url.includes("batchGet")
+        ? Response.json({
+            valueRanges: Object.keys(TABS).map((tab) => ({
+              values: [
+                TABS[tab],
+                ...(tab === "Projects" ? [rowFor(project, TABS.Projects)] : []),
+              ],
+            })),
+          })
+        : Response.json({
+            properties: { title: "Synthetic workbook" },
+            sheets: Object.keys(TABS).map((title) => ({
+              properties: { title, gridProperties: { rowCount: 20 } },
+            })),
+          });
+    }
+    if (url.includes("api.openai.com"))
+      return stream([
+        { type: "response.output_text.delta", delta: "Synthetic venue. " },
+        { type: "response.completed" },
+      ]);
+    speechCalls++;
+    assert.equal(
+      url,
+      "https://api.deepinfra.com/v1/text-to-speech/af_heart/stream",
+    );
+    assert.equal(JSON.parse(options.body).output_format, "pcm");
+    return new Response(
+      new ReadableStream({
+        start(c) {
+          pcm = c;
+          c.enqueue(new Uint8Array(2401));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      { headers: { "Content-Type": "audio/pcm" } },
+    );
+  };
+  const tasks = [];
+  try {
+    const response = await handleAI({
+      request: req("/answer", {
+        projectId: "project",
+        question: "Name?",
+        requestId: uuid,
+        speech: true,
+        audioFormat: "pcm_s16le",
+        priceMicros: 12500,
+      }),
+      env,
+      waitUntil: (task) => tasks.push(task),
+    });
+    const reader = response.body.getReader(),
+      decoder = new TextDecoder();
+    let pending = "",
+      events = [];
+    while (
+      !events.some((e) => e.type === "text_done") ||
+      !events.some((e) => e.type === "audio")
+    ) {
+      const { value } = await reader.read();
+      pending += decoder.decode(value, { stream: true });
+      let end;
+      while ((end = pending.indexOf("\n")) >= 0) {
+        events.push(JSON.parse(pending.slice(0, end)));
+        pending = pending.slice(end + 1);
+      }
+    }
+    const audio = events.find((e) => e.type === "audio");
+    assert.equal(audio.format, "pcm_s16le");
+    assert.equal(audio.sampleRate, 24000);
+    assert.equal(Buffer.from(audio.audio, "base64").length, 2400);
+    assert.equal(
+      events.find((e) => e.type === "text_done").balanceMicros,
+      87500,
+    );
+    assert.equal(
+      events.some((e) => e.type === "done"),
+      false,
+    );
+    assert.equal(
+      sql.prepare("SELECT state FROM streamlion_ai_turns_v1").get().state,
+      "complete",
+    );
+    // Provider remains open; one odd network byte is retained, never sent as a partial sample.
+    pcm.enqueue(new Uint8Array(9599));
+    const next = await reader.read();
+    assert.match(decoder.decode(next.value), /pcm_s16le/);
+    await reader.cancel();
+    await Promise.all(tasks);
+    assert.equal(cancelled, true);
+    assert.equal(speechCalls, 1);
+    assert.equal(
+      sql
+        .prepare(
+          "SELECT balance_micros FROM streamlion_ai_wallets_v1 WHERE google_subject='a'",
+        )
+        .get().balance_micros,
+      87500,
+    );
+  } finally {
+    globalThis.fetch = original;
+    sql.close();
+  }
+});

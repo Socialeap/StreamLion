@@ -29,6 +29,7 @@ export default function useManagedAnswers({
     const current = turn.current;
     turn.current = null;
     if (current) {
+      clearTimeout(current.flushTimer);
       current.controller.abort();
       current.player?.stop();
       window.speechSynthesis?.cancel();
@@ -99,7 +100,8 @@ export default function useManagedAnswers({
     callbacks.current.onBusy?.(true);
     let text = "",
       label = "",
-      audioFailed = false;
+      audioFailed = false,
+      textComplete = false;
     const result = (complete = false) => ({
       kind: complete ? "answer" : "partial",
       answers: [
@@ -116,6 +118,17 @@ export default function useManagedAnswers({
       ],
       sourceLabel: label,
     });
+    const flush = () => {
+      clearTimeout(current.flushTimer);
+      current.flushTimer = null;
+      if (turn.current === current)
+        callbacks.current.onResult(result(textComplete));
+    };
+    const updateBalance = (event) =>
+      setConfig((previous) => ({
+        ...previous,
+        balanceMicros: event.balanceMicros ?? previous?.balanceMicros,
+      }));
     const emit = async (event) => {
       if (turn.current !== current) return;
       if (event.type === "start") {
@@ -126,11 +139,21 @@ export default function useManagedAnswers({
       }
       if (event.type === "text") {
         text += event.delta;
-        callbacks.current.onResult(result());
+        // Tokens accumulate outside React; render at most every 50 ms.
+        if (!current.flushTimer) current.flushTimer = setTimeout(flush, 50);
       }
       if (event.type === "audio" && !audioFailed) {
         try {
-          await current.player?.append(event.audio);
+          await current.player?.append(
+            event.audio,
+            event.format,
+            event.sampleRate,
+          );
+          if (turn.current !== current) return;
+          if (!current.audioStarted) {
+            current.audioStarted = true;
+            callbacks.current.onMessage("Speaking answer…");
+          }
         } catch {
           audioFailed = true;
           callbacks.current.onMessage(
@@ -140,14 +163,26 @@ export default function useManagedAnswers({
       }
       if (event.type === "speech_error") {
         audioFailed = true;
-        callbacks.current.onMessage(event.message);
+        callbacks.current.onMessage(
+          `${event.message} Use Read answer aloud for device speech.`,
+        );
       }
-      if (event.type === "done") {
-        callbacks.current.onResult(result(true));
-        setConfig((previous) => ({
-          ...previous,
-          balanceMicros: event.balanceMicros ?? previous.balanceMicros,
-        }));
+      if (
+        (event.type === "text_done" || event.type === "done") &&
+        !textComplete
+      ) {
+        textComplete = true;
+        flush();
+        updateBalance(event);
+        if (event.type === "text_done" && speech && !demo) {
+          callbacks.current.onMessage(
+            audioFailed
+              ? "Your answer is ready. Use Read answer aloud for device speech."
+              : current.audioStarted
+                ? "Speaking answer…"
+                : "Answer ready. Preparing voice…",
+          );
+        }
       }
     };
     try {
@@ -159,6 +194,8 @@ export default function useManagedAnswers({
           "Hosted audio is blocked. Your text answer will still appear.",
         );
       }
+      if (controller.signal.aborted)
+        throw new DOMException("Stopped", "AbortError");
       if (demo) {
         const answer = await demoAnswer(
           project,
@@ -186,7 +223,8 @@ export default function useManagedAnswers({
             projectId: project.id,
             question,
             requestId: crypto.randomUUID(),
-            speech,
+            speech: speech && !audioFailed,
+            audioFormat: "pcm_s16le",
             priceMicros: config.priceMicros,
           }),
         });
@@ -200,14 +238,17 @@ export default function useManagedAnswers({
             : "AI answer complete. Credits updated.",
         );
     } catch (error) {
-      if (turn.current === current)
+      if (turn.current === current) {
+        if (!textComplete && (text || current.flushTimer)) flush();
         callbacks.current.onMessage(
           error.name === "AbortError"
             ? "AI stopped. Check credits before asking again."
             : error.message,
         );
+      }
       if (!demo && turn.current === current) refresh();
     } finally {
+      clearTimeout(current.flushTimer);
       if (turn.current === current) {
         // Keep demo utterance cancellable until the next action/unmount.
         current.player?.stop();
