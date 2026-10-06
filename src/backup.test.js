@@ -149,6 +149,27 @@ test("damaged backups and record collisions preserve existing data and drafts", 
   assert.equal((await loadWorkspace()).jobs[0].title, "Newer work");
   assert.equal(await (await getAudio("note")).text(), "exact-original");
 });
+test("unassigned notes still require valid content and unknown draft keys stay rejected", async () => {
+  await reset();
+  const original = JSON.stringify({ area: "Kitchen", text: "6 7/16 inches" });
+  for (const key of [
+    "streamlion-draft-v1:local:project:",
+    "streamlion-draft-v1:local:measurements:",
+    "streamlion-draft-v1:local:checklist:",
+    "streamlion-draft-v1:local:note:bad/id",
+    "streamlion-draft-v1:local:unknown:",
+  ]) {
+    localStorage.setItem(key, original);
+    await assert.rejects(createBackup(), /Unrecognized backup draft/);
+    assert.equal(localStorage.getItem(key), original);
+    localStorage.removeItem(key);
+  }
+  const key = "streamlion-draft-v1:local:note:";
+  const invalid = JSON.stringify({ area: "Kitchen", text: 123 });
+  localStorage.setItem(key, invalid);
+  await assert.rejects(createBackup(), /Invalid backup note draft/);
+  assert.equal(localStorage.getItem(key), invalid);
+});
 test("a localStorage quota failure rolls back the IndexedDB restore and added drafts", async () => {
   const backup = await fixture();
   await reset();

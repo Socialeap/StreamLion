@@ -175,7 +175,9 @@ function validatePayload(payload) {
       throw new Error("Invalid backup draft.");
     if (entry.key.startsWith(draftPrefix)) {
       if (
-        !/^streamlion-draft-v1:(local|[\w-]{1,100}):(?:(?:project|note|measurements|checklist):[\w-]{1,100}|pending-write)$/.test(
+        // Fieldnotes accepts text before a project is selected. Retain that
+        // known unassigned note draft without assigning it to another project.
+        !/^streamlion-draft-v1:(local|[\w-]{1,100}):(?:(?:project|measurements|checklist):[\w-]{1,100}|note:[\w-]{0,100}|pending-write)$/.test(
           entry.key,
         )
       )
