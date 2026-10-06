@@ -7,6 +7,8 @@ import {
   projectContext,
   streamAnswer,
   synthesize,
+  streamSpeech,
+  SPEECH_PCM,
   takePhrase,
 } from "./ai-providers.js";
 
@@ -57,6 +59,7 @@ async function account(db, subject) {
     .first();
 }
 export async function handleAI(context) {
+  const requestStarted = Date.now();
   const { request, env } = context,
     path = new URL(request.url).pathname;
   if (!["/api/ai/config", "/api/ai/answer"].includes(path))
@@ -124,7 +127,8 @@ export async function handleAI(context) {
       !/^[\w-]{1,100}$/.test(input.projectId) ||
       typeof input.requestId !== "string" ||
       !/^[0-9a-f-]{36}$/.test(input.requestId) ||
-      !["boolean"].includes(typeof input.speech)
+      !["boolean"].includes(typeof input.speech) ||
+      (input.audioFormat !== undefined && input.audioFormat !== "pcm_s16le")
     )
       return json({ error: "Check the question and selected project." }, 400);
     if (input.priceMicros !== wallet.price_micros)
@@ -185,6 +189,7 @@ export async function handleAI(context) {
           },
         }),
         writer = stream.writable.getWriter();
+      writer.closed.catch(() => controller.abort());
       const stopStream = () =>
         streamController.error(new Error("AI stream stopped."));
       controller.signal.addEventListener("abort", stopStream, { once: true });
@@ -197,6 +202,7 @@ export async function handleAI(context) {
       let textComplete = false,
         speechFailed = false,
         speechCount = 0,
+        audioBytes = 0,
         phrase = "",
         speechQueue = Promise.resolve();
       const enqueueSpeech = (text) => {
@@ -205,9 +211,30 @@ export async function handleAI(context) {
         speechQueue = speechQueue.then(async () => {
           if (controller.signal.aborted || speechFailed) return;
           try {
-            const audio = await synthesize(env, text, controller.signal);
-            firstAudioMs ??= Date.now() - started;
-            await send({ type: "audio", audio });
+            firstSpeechRequestMs ??= Date.now() - started;
+            if (input.audioFormat === "pcm_s16le") {
+              for await (const audio of streamSpeech(
+                env,
+                text,
+                controller.signal,
+              )) {
+                audioBytes += Buffer.from(audio, "base64").length;
+                if (audioBytes > 3 * SPEECH_PCM.maxBytes)
+                  throw new Error("speech_size");
+                firstAudioMs ??= Date.now() - started;
+                await send({
+                  type: "audio",
+                  audio,
+                  format: "pcm_s16le",
+                  sampleRate: SPEECH_PCM.sampleRate,
+                });
+              }
+            } else {
+              // Installed older clients still require complete, decodable WAV files.
+              const audio = await synthesize(env, text, controller.signal);
+              firstAudioMs ??= Date.now() - started;
+              await send({ type: "audio", audio });
+            }
           } catch {
             if (controller.signal.aborted) return;
             speechFailed = true;
@@ -223,7 +250,8 @@ export async function handleAI(context) {
       };
       const started = Date.now();
       let firstTextMs = null,
-        firstAudioMs = null;
+        firstAudioMs = null,
+        firstSpeechRequestMs = null;
       const work = (async () => {
         try {
           await send({
@@ -255,6 +283,14 @@ export async function handleAI(context) {
             "complete",
           );
           textComplete = true;
+          const balanceMicros = (
+            await env.GOOGLE_SESSIONS.prepare(
+              "SELECT balance_micros FROM streamlion_ai_wallets_v1 WHERE google_subject=?",
+            )
+              .bind(session.google_subject)
+              .first()
+          )?.balance_micros;
+          await send({ type: "text_done", balanceMicros });
           enqueueSpeech(phrase);
           await speechQueue;
           await send({
@@ -262,15 +298,20 @@ export async function handleAI(context) {
             timings: {
               firstTextMs,
               firstAudioMs,
+              firstSpeechRequestMs,
+              setupMs: started - requestStarted,
+              requestFirstTextMs:
+                firstTextMs == null
+                  ? null
+                  : started - requestStarted + firstTextMs,
+              requestFirstAudioMs:
+                firstAudioMs == null
+                  ? null
+                  : started - requestStarted + firstAudioMs,
+              requestTotalMs: Date.now() - requestStarted,
               totalMs: Date.now() - started,
             },
-            balanceMicros: (
-              await env.GOOGLE_SESSIONS.prepare(
-                "SELECT balance_micros FROM streamlion_ai_wallets_v1 WHERE google_subject=?",
-              )
-                .bind(session.google_subject)
-                .first()
-            )?.balance_micros,
+            balanceMicros,
           });
         } catch {
           controller.signal.removeEventListener("abort", stopStream);
