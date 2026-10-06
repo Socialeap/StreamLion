@@ -591,6 +591,8 @@ test("unknown routes, wrong methods and unauthenticated checkout cannot trigger 
   assert.equal(globalThis.fetch.mock.callCount(), 0);
 });
 test("repeat public quotes reuse a short validated catalog while enforcing a global budget", async (t) => {
+  const now = Date.now();
+  t.mock.method(Date, "now", () => now);
   const f = fixture(t);
   for (let i = 0; i < 200; i++) {
     const response = await f.request("config", {

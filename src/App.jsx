@@ -386,11 +386,13 @@ export default function App() {
   async function refresh() {
     setSyncBusy(true);
     setError("");
+    setStatus("Refreshing Google records…");
     try {
       const data = await readWorkbook(bookId);
       await acceptRemote(data);
       setStatus("Google records refreshed " + new Date().toLocaleTimeString());
     } catch (e) {
+      setStatus("Google refresh failed · records were not updated");
       setError(e.message);
     } finally {
       setSyncBusy(false);
@@ -399,6 +401,7 @@ export default function App() {
   async function showProjectsFromGoogle() {
     setSyncBusy(true);
     setError("");
+    setStatus("Refreshing Google records…");
     try {
       const data = await readWorkbook(bookId);
       await acceptRemote(data);
@@ -406,6 +409,7 @@ export default function App() {
       setEditing(null);
       setPage("Projects");
     } catch (e) {
+      setStatus("Google refresh failed · records were not updated");
       setError(e.message);
     } finally {
       setSyncBusy(false);

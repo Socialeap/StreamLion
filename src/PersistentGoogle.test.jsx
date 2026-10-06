@@ -157,6 +157,41 @@ test("a remembered Google project reopens after its workbook has been verified",
     localStorage.clear();
   }
 });
+test("a failed Google refresh replaces the success status, preserves records and can be retried", async () => {
+  const original = globalThis.fetch;
+  const fetchWorkbook = workbookFetch([]);
+  let fail = false;
+  globalThis.fetch = async (url, options) => {
+    if (fail && url.startsWith("/api/google/sheets?"))
+      return new Response("", { status: 403 });
+    return fetchWorkbook(url, options);
+  };
+  try {
+    const ui = render(<App />);
+    await ui.findByRole("button", { name: "Automatically restored job" });
+    await ui.findByText("Google records refreshed", { exact: true });
+    fail = true;
+    fireEvent.click(ui.getByRole("button", { name: "Refresh from Google" }));
+    await ui.findByText("Google refresh failed · records were not updated");
+    assert.equal(
+      ui.queryByText("Google records refreshed", { exact: true }),
+      null,
+    );
+    assert.ok(ui.getByRole("button", { name: "Automatically restored job" }));
+    fail = false;
+    fireEvent.click(ui.getByRole("button", { name: "Refresh from Google" }));
+    await ui.findByText(/^Google records refreshed /);
+    assert.equal(
+      ui.queryByText("Google refresh failed · records were not updated"),
+      null,
+    );
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+    disconnectGoogle();
+    localStorage.clear();
+  }
+});
 test("a remembered archived project leaves the restored workbook on the Projects list", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = workbookFetch([], "archived");
