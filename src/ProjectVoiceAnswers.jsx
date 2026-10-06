@@ -29,6 +29,8 @@ export default function ProjectVoiceAnswers(props) {
 
 function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
   const inputId = useId();
+  const inputRef = useRef(null);
+  const answerRef = useRef(null);
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState(null);
   const [message, setMessage] = useState("");
@@ -52,6 +54,10 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
   const canSpeak =
     !!window.speechSynthesis && !!window.SpeechSynthesisUtterance;
   const canListen = !!Recognition && window.isSecureContext !== false;
+
+  useEffect(() => {
+    if (result) answerRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [result]);
 
   function cancelMedia() {
     clearTimeout(timer.current);
@@ -144,6 +150,8 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
   // Recognition callbacks outlive their render; use the latest user preference.
   function ask(text, topicId, automaticSpeech = readAloudRef.current) {
     cancelMedia();
+    // Dismiss the phone keyboard so the result is visible after submission.
+    inputRef.current?.blur();
     setListening(false);
     setSpeaking(false);
     setMessage("");
@@ -179,6 +187,8 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
           .join(" ")
           .trim();
         setQuestion(text);
+        if (text)
+          setMessage("Words received. Tap Get answer now, or keep speaking.");
         if (!text || readings.some((item) => !item.isFinal)) return;
         // Some engines report zero for unavailable confidence. Only defer
         // known low-confidence results, retaining wording for user correction.
@@ -272,19 +282,21 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
         <label htmlFor={inputId}>Your question about {project.title}</label>
         <div>
           <input
+            ref={inputRef}
             id={inputId}
             value={question}
-            disabled={listening}
             maxLength={500}
             placeholder="Who is the site contact?"
             onChange={(event) => {
               cancelMedia();
+              setListening(false);
               setSpeaking(false);
+              setMessage("");
               setQuestion(event.target.value);
               setResult(null);
             }}
           />
-          <button type="submit" disabled={listening || !question.trim()}>
+          <button type="submit" disabled={!question.trim()}>
             Get answer
           </button>
         </div>
@@ -317,7 +329,12 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
         </p>
       )}
       {result && (
-        <div className="fact-answer voice-answer" role="status">
+        <div
+          ref={answerRef}
+          className="fact-answer voice-answer"
+          role="status"
+          aria-atomic="true"
+        >
           {result.message && <p>{result.message}</p>}
           {result.answers.map((item) => (
             <div key={item.topic}>

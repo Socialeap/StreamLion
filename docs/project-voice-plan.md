@@ -13,8 +13,12 @@ and remembered on this browser. No OpenAI/Gemini API key or LLM bill is required
    exact saved field names. Unknown values stay unknown; refuse arbitrary calculations,
    measurements, conditional advice, changes, and unsupported questions.
 2. Use one browser speech session per tap, English (`en-US`) in this prototype.
-   Show recognized wording; submit only final readings. Low-confidence wording
-   stays editable for confirmation. Limit listening to 20 seconds; allow cancel.
+   Show recognized wording; automatically submit only final readings. The user
+   can tap **Get answer** as soon as words appear, including interim readings,
+   or edit them; either action stops recognition and ignores late callbacks.
+   Low-confidence wording stays editable for confirmation. Limit listening to
+   20 seconds; allow cancel. Dismiss the keyboard and bring each answer or
+   unsupported-question guidance into view, above the mobile navigation.
 3. Offer opt-in browser speech playback plus manual read/stop. Stop microphone
    before playback to prevent feedback. Keep text available if audio fails.
 4. Put the same controls on Project home and Ask, keeping the selected project
@@ -58,6 +62,10 @@ revision. No backend activation/configuration is required. On physical Android:
 4. Cancel, switch project, and background while listening; confirm no old answer/audio.
 5. Disconnect/offline: verify copy labels and typed answers, without a live-Google claim.
 6. Ask an unsupported question and verify the existing optional ChatGPT handoff.
+7. While words are visible and **Cancel listening** still appears, tap
+   **Get answer**. Verify listening stops and the answer is visible immediately.
+   Repeat by editing the recognized words, then submitting; repeat an unsupported
+   question and verify visible guidance rather than an apparently inactive button.
 
 Browser mocks prove lifecycle logic, not hardware speech accuracy or browser
 permission behavior. Physical Android speech/playback and live deployment remain
