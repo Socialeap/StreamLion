@@ -125,6 +125,7 @@
 .voice-question button { flex-shrink: 0; min-height: 44px; }
 .voice-preference { margin: 12px 0; }
 .voice-answer h3 { margin: 0 0 8px; }
+.voice-answer { scroll-margin-top: 24px; scroll-margin-bottom: 110px; }
 .voice-answer > div + div { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px; }
 .voice-answer small, .voice-answer p { overflow-wrap: anywhere; }
 .voice-privacy { font-size: 12px; margin-bottom: 0; }

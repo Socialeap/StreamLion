@@ -121,6 +121,87 @@ test("low confidence retains editable words and requires Get answer", () => {
   assert.match(ui.getByRole("status").textContent, /123 Example Street/);
 });
 
+test("Get answer accepts interim words without waiting for recognition to end", () => {
+  const ui = mount();
+  fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));
+  const recognition = instances[0];
+  const lateResult = recognition.onresult;
+  const lateEnd = recognition.onend;
+  say(recognition, "What is the address?", false);
+  assert.equal(ui.getByRole("button", { name: "Get answer" }).disabled, false);
+  fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+  assert.equal(recognition.aborts, 1);
+  assert.equal(busy.at(-1), false);
+  assert.match(ui.getByRole("status").textContent, /123 Example Street/);
+  act(() => {
+    lateResult({
+      results: [Object.assign([{ transcript: "payment" }], { isFinal: true })],
+    });
+    lateEnd();
+  });
+  assert.equal(ui.getByRole("textbox").value, "What is the address?");
+  assert.match(ui.getByRole("status").textContent, /123 Example Street/);
+});
+
+test("editing interim words stops recognition and submits the corrected question", () => {
+  const ui = mount();
+  fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));
+  say(instances[0], "contact", false);
+  assert.equal(ui.getByRole("textbox").disabled, false);
+  fireEvent.change(ui.getByRole("textbox"), { target: { value: "address" } });
+  assert.equal(instances[0].aborts, 1);
+  assert.equal(busy.at(-1), false);
+  assert.ok(ui.getByRole("button", { name: "Ask by voice" }));
+  fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+  assert.match(ui.getByRole("status").textContent, /123 Example Street/);
+});
+
+test("every submission dismisses the keyboard and reveals its answer or guidance", () => {
+  const previous = window.HTMLElement.prototype.scrollIntoView;
+  const revealed = [];
+  window.HTMLElement.prototype.scrollIntoView = function () {
+    revealed.push(this.textContent);
+  };
+  try {
+    const ui = mount();
+    const input = ui.getByRole("textbox");
+    for (const [question, expected] of [
+      ["address", /123 Example Street/],
+      ["why is the sky blue?", /I can look up this project's address/],
+    ]) {
+      fireEvent.change(input, { target: { value: question } });
+      input.focus();
+      fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+      assert.notEqual(document.activeElement, input);
+      assert.match(revealed.at(-1), expected);
+      assert.match(ui.getByRole("status").textContent, expected);
+    }
+  } finally {
+    window.HTMLElement.prototype.scrollIntoView = previous;
+  }
+});
+
+test("Get answer reveals the site contact again after recording has already finished", () => {
+  const previous = window.HTMLElement.prototype.scrollIntoView;
+  const revealed = [];
+  window.HTMLElement.prototype.scrollIntoView = function () {
+    revealed.push(this.textContent);
+  };
+  try {
+    const ui = mount();
+    fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));
+    say(instances[0], "who is the site contact");
+    assert.equal(ui.queryByRole("button", { name: "Cancel listening" }), null);
+    assert.match(ui.getByRole("status").textContent, /Example Manager/);
+    const previousReveals = revealed.length;
+    fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+    assert.equal(revealed.length, previousReveals + 1);
+    assert.match(revealed.at(-1), /Example Manager/);
+  } finally {
+    window.HTMLElement.prototype.scrollIntoView = previous;
+  }
+});
+
 for (const initiallyEnabled of [true, false]) {
   test(`read-aloud can be ${initiallyEnabled ? "disabled" : "enabled"} while recognition is active`, () => {
     window.localStorage.setItem(
