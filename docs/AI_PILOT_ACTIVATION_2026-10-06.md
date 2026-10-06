@@ -15,7 +15,7 @@ This is setup evidence, not live-provider or Android acceptance.
 
 ## Remaining gates
 
-1. Review/merge the activation PR and verify its exact Cloudflare production deployment SHA. No merge is implied by this receipt. The PR changes the feature flag and documentation, not provider secrets, migration SQL, application code or customer pricing.
+1. Review/merge the activation PR and verify its exact Cloudflare production deployment SHA. No merge is implied by this receipt. The PR changes the feature flag and documentation, plus MCP dependency pins for GHSA-6qxp-vccf-f47h (client 2.2.0 and SDK 1.31.0). Provider secrets, migration SQL, application code and customer pricing are unchanged.
 2. Verify authenticated config is still disabled with policy inactive after deployment. Do not activate if either key, selected synthetic workbook or schema is invalid.
 3. Start the supervised test session by setting policy `active=1`; verify only approved wallets can use the pilot. Reconnect the second account and grant its 15 answers once from its authenticated immutable Google subject.
 4. Test real GPT text, Kokoro audio, accuracy, timing, cancellation, failures, isolation and deductions within the approved total allowance. Record results and provider usage; setup/CI alone proves none of these.
