@@ -170,6 +170,8 @@ export function aiAvailabilityMessage(source, config) {
     {
       pilot_paused:
         "The AI pilot is paused. Saved-detail lookup is available; AI testing must be enabled for a supervised session.",
+      pilot_unavailable:
+        "The AI pilot needs administrator configuration before it can be used. Continue with free saved-detail lookup while the administrator completes setup.",
       account_not_enabled:
         "This Google account is not enrolled in the AI pilot. Contact the pilot administrator to arrange access and credits.",
       connect_google: "Reconnect Google before using AI answers.",
