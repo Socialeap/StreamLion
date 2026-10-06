@@ -61,8 +61,8 @@ test("the quiet credit quote is visible before opt-in and one submission starts 
     await act(async () => {
       ui = render(<Answers {...props} source="google" />);
     });
-    assert.ok(ui.getByText("1.25¢ / answer"));
-    assert.ok(ui.getByText("26.25¢ available"));
+    assert.ok(ui.getByText("1 credit / answer"));
+    assert.ok(ui.getByText("21 credits available"));
     assert.equal(
       ui.getByRole("checkbox", { name: "Use AI credits" }).checked,
       false,
@@ -78,7 +78,7 @@ test("the quiet credit quote is visible before opt-in and one submission starts 
       );
     });
     assert.equal(requests.filter((r) => r.url.endsWith("answer")).length, 1);
-    assert.ok(ui.getByText("25¢ available"));
+    assert.ok(ui.getByText("20 credits available"));
     fireEvent.click(ui.getByRole("button", { name: "Context", exact: true }));
     fireEvent.click(ui.getByRole("button", { name: "Done", exact: true }));
     assert.equal(requests.filter((r) => r.url.endsWith("answer")).length, 1);

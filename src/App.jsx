@@ -900,9 +900,9 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <img
-            src="/lion.png"
-            width="32"
-            height="32"
+            src="/lion-mint.png"
+            width="44"
+            height="44"
             alt=""
             aria-hidden="true"
           />

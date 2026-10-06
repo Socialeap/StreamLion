@@ -306,7 +306,10 @@ test("AI opt-in shows exact price; request sends only identity/question, display
     await act(async () => {
       ui = render(<Answers project={project} source="google" />);
     });
-    assert.match(ui.getByText(/per completed answer/).textContent, /\$0.0125/);
+    assert.match(
+      ui.getByText(/per completed answer/).textContent,
+      /1 credit per completed answer/,
+    );
     fireEvent.click(
       ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
     );
@@ -321,7 +324,10 @@ test("AI opt-in shows exact price; request sends only identity/question, display
         "The location name is Synthetic venue. Source: Project name.",
       ),
     );
-    assert.match(ui.getByText(/per completed answer/).textContent, /\$0.0875/);
+    assert.match(
+      ui.getByText(/per completed answer/).textContent,
+      /7 credits remaining/,
+    );
     const payload = JSON.parse(
       requests.find((r) => r.url.endsWith("answer")).options.body,
     );

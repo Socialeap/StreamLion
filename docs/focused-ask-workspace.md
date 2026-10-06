@@ -26,7 +26,7 @@ Compared the generated mobile concept with the rendered implementation:
 | Layout | Selected project bar, Project/Ask/Answer strip, centered microphone, question, prominent submit button and optional tools. Desktop moves the strip to the left rail. |
 | Typography | Strong task heading and action labels; small muted credit, source and settings text. |
 | Palette | Existing dark navy/slate theme, mint primary actions and selected stage, violet speaking feedback. Existing light mode remains available. |
-| Icons and brand | Existing StreamLion lion image retained; shared Lucide microphone, stage, settings and tool icons replace the concept's generated brand artwork. |
+| Icons and brand | User-approved mint outline lion derived from the illustration replaces the earlier app image; shared Lucide microphone, stage, settings and tool icons remain consistent. |
 | Spacing and copy | Controls adapt to shorter screens. Project names and prices come from application state; the local fixture explicitly says simulated/no charge rather than displaying production data. |
 
 Long answers and panels can scroll within their own areas. The page keeps a
@@ -35,7 +35,8 @@ phone keyboard; this change does not promise zero scrolling in every condition.
 
 ## Validation
 
-- 306 tests passed, including explicit submission after dictation, credit opt-in
+- 308 tests passed, including fixed credit units, empty-state Google refresh,
+  explicit submission after dictation, credit opt-in
   without automatic submission, view switching, scope reset, recognition event
   guards, playback state and Stop.
 - Production app/extension build, Cloudflare Functions compile, dependency audit
@@ -62,3 +63,37 @@ function change is required. No Lovable action is required.
 The prior smooth voice-answer acceptance is separate from acceptance of this
 new layout. The local fixture remains development-only and is excluded from the
 production build inputs.
+
+## Logo and credit display follow-up
+
+The approved mint lion master is retained in
+`assets/branding/lion-mint-source.png`; transparent app, 192/512px PWA and 64px
+favicon derivatives are under `public/lion-mint*.png`. Versioned URLs avoid
+reusing older icon cache entries. The app, local fixture, purchase page, welcome
+page and public legal/support pages use these assets. Installed home-screen
+icons may need the browser's normal manifest refresh or reinstall after release.
+
+The built-in image-generation tool derived the logo from the approved concept.
+Extraction prompt: isolate the top-left right-facing mint lion, preserve its
+head/mane proportions, remove the wordmark and all UI/background, and output a
+centered transparent square. Refinement prompt: preserve that silhouette and
+render clean mint strokes without texture, gradients, decorations or lettering.
+Production sizes are mechanical resizes of the retained master.
+
+The fixed pilot display unit is **12,500 internal micro-units per credit**.
+The current quote therefore shows **1 credit / answer** and the sample balance
+262,500 shows **21 credits available**. Display conversion never divides the
+balance by the current answer price: a future quote change must not relabel
+credits already held. Exact ledger integers, reservation/refund behavior and
+the server's submitted-price check remain unchanged. Fractions retain their
+exact five-decimal representation; missing/invalid values say unavailable.
+
+Pilot allowances are not purchased currency. Commercial bundle prices and
+markup remain undecided until measured provider usage, hosting/operations and
+payment costs are reviewed. The future checkout must disclose bundle price,
+credits received and applicable terms; the Ask view must display the current
+credit charge before submission. No billing, top-up, grant or policy change is
+included here.
+
+The empty Project chooser also retains Refresh from Google, allowing connected
+users to fetch newly added records without leaving Ask.

@@ -25,7 +25,7 @@ if (import.meta.env.DEV) {
     <div className="app app-ask">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/lion.png" width="32" height="32" alt="" />
+          <img src="/lion-mint.png" width="44" height="44" alt="" />
           <span>StreamLion</span>
         </div>
         <small className="hint">Local demo · no providers or charges</small>

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   readAnswerStream,
   createAudioPlayer,
-  creditDollars,
+  creditLabel,
+  AI_CREDIT_MICROS,
   demoAnswer,
 } from "./managed-ai.js";
 
@@ -101,7 +102,21 @@ test("demo separates the location name from its street address and never calls a
   assert.doesNotMatch(answer, /123 Example Street/);
   assert.equal(events[0].priceMicros, 0);
   assert.match(events[0].source, /simulated/);
-  assert.equal(creditDollars(12500), "$0.0125");
+});
+
+test("fixed credit units retain balances across price changes without rounding ledger values", () => {
+  assert.equal(AI_CREDIT_MICROS, 12500);
+  assert.equal(creditLabel(12500), "1 credit");
+  assert.equal(creditLabel(262500), "21 credits");
+  assert.equal(creditLabel(0), "0 credits");
+  assert.equal(creditLabel(1), "0.00008 credits");
+  assert.equal(creditLabel(18750), "1.5 credits");
+  // A future charge can change while an existing balance retains its units.
+  assert.equal(creditLabel(25000), "2 credits");
+  assert.equal(creditLabel(262500), "21 credits");
+  for (const invalid of [undefined, NaN, Infinity, -1, "12500", 1.5]) {
+    assert.equal(creditLabel(invalid), "Credits unavailable");
+  }
 });
 
 test("PCM playback converts signed little-endian samples without decoding a whole file", async () => {

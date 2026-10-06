@@ -129,7 +129,7 @@ export default function Purchase({ onPurchased }) {
   return (
     <section className="purchase-card" aria-labelledby="purchase-title">
       <a className="purchase-brand" href="/api/welcome">
-        <img src="/lion.png" alt="" width="36" height="36" />
+        <img src="/lion-mint.png" alt="" width="36" height="36" />
         StreamLion
       </a>
       <h1 id="purchase-title">

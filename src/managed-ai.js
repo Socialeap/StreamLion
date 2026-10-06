@@ -1,5 +1,13 @@
-export const creditDollars = (micros) =>
-  `$${(micros / 1000000).toFixed(micros % 10000 ? 4 : 2)}`;
+// Fixed pilot display unit. Never divide balances by the current answer price:
+// changing that price must not change the number of credits already held.
+export const AI_CREDIT_MICROS = 12500;
+export function creditLabel(micros) {
+  if (!Number.isSafeInteger(micros) || micros < 0) return "Credits unavailable";
+  const credits = micros / AI_CREDIT_MICROS;
+  // Integer ledger units are exact to five decimal places in this conversion.
+  const count = credits.toFixed(5).replace(/\.?0+$/, "");
+  return `${count} ${credits === 1 ? "credit" : "credits"}`;
+}
 
 export async function readAnswerStream(response, onEvent, signal) {
   if (!response.ok) {

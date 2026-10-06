@@ -157,6 +157,7 @@ export default function ChatGPTPanel({
         <section className="ask-empty">
           <h1>Choose your project</h1>
           {projectChooser}
+          {refreshProject}
           <p>Open a project to ask by voice or type.</p>
         </section>
       );

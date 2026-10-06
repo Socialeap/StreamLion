@@ -8,7 +8,7 @@ import {
 } from "./project-answers.js";
 
 import useManagedAnswers from "./useManagedAnswers.js";
-import { creditDollars, aiAvailabilityMessage } from "./managed-ai.js";
+import { creditLabel, aiAvailabilityMessage } from "./managed-ai.js";
 import FocusedAsk from "./FocusedAsk.jsx";
 
 const preferenceKey = "streamlion-read-answers-v1";
@@ -415,7 +415,7 @@ function VoiceAnswers({
           <p className="hint">
             {ai.demo
               ? "Local fixture and device speech. Live model quality and hosted voice latency still need testing."
-              : `${creditDollars(ai.config.priceMicros)} per completed answer · ${creditDollars(ai.config.balanceMicros)} pilot credits remaining. Your question and Google project records go to OpenAI; answer text goes to DeepInfra for voice. No question audio is stored by StreamLion.`}
+              : `${creditLabel(ai.config.priceMicros)} per completed answer · ${creditLabel(ai.config.balanceMicros)} remaining. Your question and Google project records go to OpenAI; answer text goes to DeepInfra for voice. No question audio is stored by StreamLion.`}
           </p>
           {!ai.demo && (
             <button onClick={ai.refresh} disabled={ai.busy}>

@@ -12,11 +12,8 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { aiAvailabilityMessage } from "./managed-ai.js";
+import { aiAvailabilityMessage, creditLabel } from "./managed-ai.js";
 import ThemeSwitch from "./ThemeSwitch.jsx";
-
-const cents = (micros) =>
-  `${(micros / 10000).toFixed(2).replace(/\.?0+$/, "")}¢`;
 
 // Presentation changes never replace the conversation owner or its media lifecycle.
 export default function FocusedAsk({
@@ -143,8 +140,8 @@ export default function FocusedAsk({
             <div className="ask-credit-note">
               {ai.available && !ai.demo ? (
                 <>
-                  <span>{cents(ai.config.priceMicros)} / answer</span>
-                  <span>{cents(ai.config.balanceMicros)} available</span>
+                  <span>{creditLabel(ai.config.priceMicros)} / answer</span>
+                  <span>{creditLabel(ai.config.balanceMicros)} available</span>
                 </>
               ) : (
                 <span>{ai.demo ? "Demo · no charge" : "Free lookup"}</span>
@@ -379,7 +376,7 @@ export default function FocusedAsk({
                 <p>
                   {ai.demo
                     ? "This demo uses simulated answers and device speech, with no provider spending."
-                    : `${cents(ai.config.priceMicros)} per completed answer; ${cents(ai.config.balanceMicros)} credits remaining.`}
+                    : `${creditLabel(ai.config.priceMicros)} per completed answer; ${creditLabel(ai.config.balanceMicros)} remaining.`}
                 </p>
               )}
               {source === "google" && !ai.demo && (
@@ -405,6 +402,11 @@ export default function FocusedAsk({
                   </p>
                 </details>
               )}
+              <p className="hint">
+                Pilot credits are internal allowances. Purchase pricing and
+                service markup are not finalized. The displayed credit charge is
+                checked before each AI request.
+              </p>
               <p className="hint">
                 Free lookup uses saved project details. With AI credits enabled,
                 your question and Google project records go to OpenAI; answer
