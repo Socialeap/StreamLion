@@ -7,7 +7,7 @@
     "production": {
       "vars": {
         "ENABLE_CHATGPT_EXTENSION": "true",
-        "ENABLE_AI_PILOT": "false",
+        "ENABLE_AI_PILOT": "true",
       },
       "d1_databases": [
         {

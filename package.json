@@ -44,6 +44,8 @@
   "overrides": {
     "rollup": "npm:@rollup/wasm-node@4.63.4",
     "esbuild": "npm:esbuild-wasm@0.28.2",
-    "sharp": "0.35.5"
+    "sharp": "0.35.5",
+    "@modelcontextprotocol/client": "2.2.0",
+    "@modelcontextprotocol/sdk": "1.31.0"
   }
 }
