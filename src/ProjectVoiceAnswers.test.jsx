@@ -181,6 +181,27 @@ test("every submission dismisses the keyboard and reveals its answer or guidance
   }
 });
 
+test("Get answer reveals the site contact again after recording has already finished", () => {
+  const previous = window.HTMLElement.prototype.scrollIntoView;
+  const revealed = [];
+  window.HTMLElement.prototype.scrollIntoView = function () {
+    revealed.push(this.textContent);
+  };
+  try {
+    const ui = mount();
+    fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));
+    say(instances[0], "who is the site contact");
+    assert.equal(ui.queryByRole("button", { name: "Cancel listening" }), null);
+    assert.match(ui.getByRole("status").textContent, /Example Manager/);
+    const previousReveals = revealed.length;
+    fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+    assert.equal(revealed.length, previousReveals + 1);
+    assert.match(revealed.at(-1), /Example Manager/);
+  } finally {
+    window.HTMLElement.prototype.scrollIntoView = previous;
+  }
+});
+
 for (const initiallyEnabled of [true, false]) {
   test(`read-aloud can be ${initiallyEnabled ? "disabled" : "enabled"} while recognition is active`, () => {
     window.localStorage.setItem(
