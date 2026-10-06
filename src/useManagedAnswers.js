@@ -4,6 +4,25 @@ import {
   readAnswerStream,
   demoAnswer,
 } from "./managed-ai.js";
+const preferenceKey = (scope) => `streamlion-ai-choice-v1:${scope}`;
+function savedChoice(scope) {
+  if (!scope) return null;
+  try {
+    const choice = JSON.parse(
+      window.localStorage.getItem(preferenceKey(scope)),
+    );
+    if (
+      choice?.mode === "free" ||
+      (choice?.mode === "ai" &&
+        Number.isSafeInteger(choice.priceMicros) &&
+        choice.priceMicros >= 0)
+    )
+      return { ...choice, scope };
+  } catch {
+    /* Storage is optional; consent is still required in this session. */
+  }
+  return null;
+}
 export default function useManagedAnswers({
   project,
   source,
@@ -19,9 +38,43 @@ export default function useManagedAnswers({
   const [config, setConfig] = useState(
     demo ? { enabled: true, priceMicros: 0, balanceMicros: 0 } : null,
   );
-  const [active, setActive] = useState(demo),
-    [busy, setBusy] = useState(false),
+  const [choice, setChoice] = useState(
+    demo ? { mode: "ai", priceMicros: 0 } : null,
+  );
+  const choiceRef = useRef(choice);
+  const [busy, setBusy] = useState(false),
     [audioPlaying, setAudioPlaying] = useState(false);
+  const mode = demo
+    ? choice?.mode
+    : source !== "google"
+      ? "free"
+      : choice?.scope === config?.preferenceScope
+        ? choice?.mode
+        : null;
+  const active = Boolean(
+    config?.enabled &&
+    mode === "ai" &&
+    choice?.priceMicros === config.priceMicros,
+  );
+  function setActive(value) {
+    const next = {
+      scope: config?.preferenceScope,
+      mode: value ? "ai" : "free",
+      priceMicros: config?.priceMicros,
+    };
+    choiceRef.current = next;
+    setChoice(next);
+    if (next.scope) {
+      try {
+        window.localStorage.setItem(
+          preferenceKey(next.scope),
+          JSON.stringify(next),
+        );
+      } catch {
+        /* A session-only choice is safe when storage is unavailable. */
+      }
+    }
+  }
   const lifetime = useRef(null);
   const configRequest = useRef(0);
   const turn = useRef(null),
@@ -54,16 +107,32 @@ export default function useManagedAnswers({
         signal: owner.signal,
       });
       const data = await response.json();
-      if (!response.ok || typeof data.enabled !== "boolean")
+      if (
+        !response.ok ||
+        typeof data.enabled !== "boolean" ||
+        (data.enabled &&
+          (!/^[A-Za-z0-9_-]{43}$/.test(data.preferenceScope || "") ||
+            !Number.isSafeInteger(data.priceMicros) ||
+            data.priceMicros < 0 ||
+            !Number.isSafeInteger(data.balanceMicros) ||
+            data.balanceMicros < 0))
+      )
         throw new Error("config_unavailable");
       if (current()) {
         setConfig(data);
-        if (!data.enabled) setActive(false);
+        // Availability must not erase a user's choice when the operator pauses AI.
+        if (
+          data.preferenceScope &&
+          choiceRef.current?.scope !== data.preferenceScope
+        ) {
+          const next = savedChoice(data.preferenceScope);
+          choiceRef.current = next;
+          setChoice(next);
+        }
       }
     } catch {
       if (current()) {
         setConfig({ enabled: false, reason: "status_unavailable" });
-        setActive(false);
       }
     }
   }
@@ -96,6 +165,8 @@ export default function useManagedAnswers({
     };
   }, []);
   async function ask(question, speech) {
+    // A rapid second tap must not cancel and charge a second paid turn.
+    if (turn.current && !turn.current.finished) return;
     cancel();
     const controller = new AbortController(),
       current = {
@@ -142,6 +213,7 @@ export default function useManagedAnswers({
         label = event.source;
         callbacks.current.onMessage(
           demo ? "Demo answer arriving…" : "AI answer arriving…",
+          { status: true },
         );
       }
       if (event.type === "text") {
@@ -160,7 +232,7 @@ export default function useManagedAnswers({
           if (!current.audioStarted) {
             current.audioStarted = true;
             setAudioPlaying(true);
-            callbacks.current.onMessage("Speaking answer…");
+            callbacks.current.onMessage("Speaking answer…", { status: true });
           }
         } catch {
           audioFailed = true;
@@ -191,6 +263,7 @@ export default function useManagedAnswers({
               : current.audioStarted
                 ? "Speaking answer…"
                 : "Answer ready. Preparing voice…",
+            audioFailed ? undefined : { status: true },
           );
         }
       }
@@ -243,6 +316,7 @@ export default function useManagedAnswers({
             speech: speech && !audioFailed,
             audioFormat: "pcm_s16le",
             priceMicros: config.priceMicros,
+            preferenceScope: config.preferenceScope,
           }),
         });
         await readAnswerStream(response, emit, controller.signal);
@@ -253,6 +327,7 @@ export default function useManagedAnswers({
           demo
             ? "Demo complete. No providers contacted or credits spent."
             : "AI answer complete. Credits updated.",
+          { status: true },
         );
     } catch (error) {
       if (turn.current === current) {
@@ -265,6 +340,7 @@ export default function useManagedAnswers({
       }
       if (!demo && turn.current === current) refresh();
     } finally {
+      current.finished = true;
       clearTimeout(current.flushTimer);
       if (turn.current === current) {
         // Keep demo utterance cancellable until the next action/unmount.
@@ -279,8 +355,12 @@ export default function useManagedAnswers({
   return {
     available: config?.enabled,
     active,
+    mode,
+    needsConsent: Boolean(config?.enabled && mode !== "free" && !active),
+    checking: source === "google" && !demo && config === null,
     setActive,
     busy,
+    isPending: () => Boolean(turn.current && !turn.current.finished),
     audioPlaying,
     ask,
     cancel,

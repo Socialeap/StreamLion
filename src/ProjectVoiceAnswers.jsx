@@ -58,6 +58,12 @@ function VoiceAnswers({
     }
   });
   const [stage, setStage] = useState("ask");
+  const [decision, setDecision] = useState(null);
+  const decisionRef = useRef(null);
+  function requestDecision(pending) {
+    decisionRef.current = pending;
+    setDecision(pending);
+  }
   const [hearing, setHearing] = useState(false);
   const readAloudRef = useRef(readAloud);
   const session = useRef(null);
@@ -81,7 +87,8 @@ function VoiceAnswers({
     source,
     onBusy,
     onResult: setResult,
-    onMessage: setMessage,
+    onMessage: (text, event) =>
+      setMessage(layout === "workspace" && event?.status ? "" : text),
   });
   const aiRef = useRef(ai);
   aiRef.current = ai;
@@ -190,24 +197,78 @@ function VoiceAnswers({
   }
 
   // Recognition callbacks outlive their render; use the latest user preference.
-  function ask(text, topicId, automaticSpeech = readAloudRef.current) {
+  function prepareAnswer() {
     cancelMedia();
     // Dismiss the phone keyboard so the result is visible after submission.
     inputRef.current?.blur();
     setListening(false);
     setSpeaking(false);
     setMessage("");
+    requestDecision(null);
+  }
+  function getAIAnswer({ text, speech }) {
+    if (aiRef.current.isPending()) return;
+    prepareAnswer();
+    setResult(null);
     setStage("answer");
-    if (aiRef.current.active) {
-      aiRef.current.ask(text, automaticSpeech);
-      return;
-    }
+    aiRef.current.ask(text, speech);
+  }
+  function getFreeAnswer({ text, topicId, speech }, explicit = false) {
+    prepareAnswer();
     const answer = {
       ...answerProjectQuestion(project, text, topicId),
       sourceLabel: answerSourceLabel(source, asOf),
     };
+    if (layout === "workspace" && answer.kind === "unsupported") {
+      setResult(null);
+      setStage("ask");
+      if (explicit)
+        setMessage(
+          "This question needs AI. Choose AI in Settings, or ask for a saved project detail.",
+        );
+      else requestDecision({ text, topicId, speech });
+      return;
+    }
+    setStage("answer");
     setResult(answer);
-    if (automaticSpeech) speak(answer);
+    if (speech) speak(answer);
+  }
+  function ask(text, topicId, speech = readAloudRef.current) {
+    const pending = { text, topicId, speech };
+    const currentAI = aiRef.current;
+    if (currentAI.busy || currentAI.isPending()) return;
+    if (layout === "workspace") {
+      if (currentAI.checking) {
+        setMessage("Checking AI availability…");
+        return;
+      }
+      if (
+        currentAI.needsConsent ||
+        (source === "google" &&
+          !currentAI.available &&
+          currentAI.mode !== "free")
+      ) {
+        prepareAnswer();
+        requestDecision(pending);
+        return;
+      }
+    }
+    if (currentAI.active) getAIAnswer(pending);
+    else getFreeAnswer(pending);
+  }
+  function confirmAI() {
+    const pending = decisionRef.current;
+    if (!pending || !aiRef.current.available) return;
+    decisionRef.current = null;
+    aiRef.current.setActive(true);
+    getAIAnswer(pending);
+  }
+  function chooseFree() {
+    const pending = decisionRef.current;
+    if (!pending) return;
+    decisionRef.current = null;
+    aiRef.current.setActive(false);
+    getFreeAnswer(pending, true);
   }
 
   function startVoice() {
@@ -216,7 +277,11 @@ function VoiceAnswers({
     setSpeaking(false);
     setResult(null);
     setQuestion("");
-    setMessage("Listening… ask one question about this project.");
+    setMessage(
+      layout === "workspace"
+        ? ""
+        : "Listening… ask one question about this project.",
+    );
     setListening(true);
     setStage("ask");
     busyCallback.current?.(true);
@@ -241,7 +306,7 @@ function VoiceAnswers({
           .join(" ")
           .trim();
         setQuestion(text);
-        if (text)
+        if (text && layout !== "workspace")
           setMessage("Words received. Tap Get answer now, or keep speaking.");
         if (!text || readings.some((item) => !item.isFinal)) return;
         // Some engines report zero for unavailable confidence. Only defer
@@ -259,7 +324,7 @@ function VoiceAnswers({
         if (layout === "workspace") {
           cancelMedia();
           setListening(false);
-          setMessage("Question ready. Tap Get answer when you are ready.");
+          setMessage("");
           return;
         }
         ask(text);
@@ -301,6 +366,7 @@ function VoiceAnswers({
     setListening(false);
     setSpeaking(false);
     setMessage("");
+    requestDecision(null);
     setQuestion(value);
     setResult(null);
   }
@@ -348,6 +414,10 @@ function VoiceAnswers({
         readAloud={readAloud}
         onReadAloud={changeReadAloud}
         ai={ai}
+        decision={decision}
+        onConfirmAI={confirmAI}
+        onChooseFree={chooseFree}
+        onDismissDecision={() => requestDecision(null)}
         source={source}
         onAIChange={changeAI}
         onAISetup={onAISetup}

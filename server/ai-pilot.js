@@ -1,4 +1,4 @@
-import { getSession } from "./google-auth.js";
+import { getSession, hash } from "./google-auth.js";
 import { getExtensionProject } from "./extension-workbook.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
 import { boundedText } from "./request-body.js";
@@ -24,6 +24,9 @@ const settingsReady = (env) =>
   env.OPENAI_API_KEY &&
   env.DEEPINFRA_API_KEY &&
   env.GOOGLE_SESSIONS;
+// The owner's closed-pilot allowance is cumulative, including failed attempts.
+// Raising this ceiling requires a separately authorized rollout.
+export const PILOT_CEILING = { attempts: 30, reserveMicros: 1000000 };
 export async function expireTurns(db, now = Date.now()) {
   await db
     .prepare(
@@ -35,12 +38,27 @@ export async function expireTurns(db, now = Date.now()) {
 export async function reserveTurn(db, subject, id, price, now = Date.now()) {
   // SQLite triggers atomically check both account capacity and shared capacity,
   // then debit credits. No rejected account consumes the global budget.
-  return db
+  const reserved = await db
     .prepare(
-      "INSERT INTO streamlion_ai_turns_v1(google_subject,request_id,created_at,price_micros,reserve_micros) VALUES(?,?,?,?,?)",
+      "INSERT INTO streamlion_ai_turns_v1(google_subject,request_id,created_at,price_micros,reserve_micros) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_ai_turns_v1) < ? AND (SELECT COALESCE(SUM(reserve_micros),0) FROM streamlion_ai_turns_v1) + ? <= ?",
     )
-    .bind(subject, id, now, price, AI_LIMITS.reserveMicros)
+    .bind(
+      subject,
+      id,
+      now,
+      price,
+      AI_LIMITS.reserveMicros,
+      PILOT_CEILING.attempts,
+      AI_LIMITS.reserveMicros,
+      PILOT_CEILING.reserveMicros,
+    )
     .run();
+  if (
+    !Number.isSafeInteger(reserved.meta?.changes) ||
+    reserved.meta.changes < 1
+  )
+    throw new Error("pilot_exhausted");
+  return reserved;
 }
 export async function finishTurn(db, subject, id, state) {
   return db
@@ -53,7 +71,7 @@ export async function finishTurn(db, subject, id, state) {
 async function account(db, subject) {
   return db
     .prepare(
-      "SELECT w.balance_micros,p.price_micros,p.daily_budget_micros FROM streamlion_ai_wallets_v1 w JOIN streamlion_ai_policy_v1 p ON p.id=1 WHERE w.google_subject=? AND w.enabled=1 AND p.active=1 AND p.daily_budget_micros>=6000",
+      "SELECT w.balance_micros,p.price_micros,p.daily_budget_micros,p.active FROM streamlion_ai_wallets_v1 w JOIN streamlion_ai_policy_v1 p ON p.id=1 WHERE w.google_subject=? AND w.enabled=1",
     )
     .bind(subject)
     .first();
@@ -94,14 +112,45 @@ export async function handleAI(context) {
       return json({ error: "A StreamLion license is required." }, 402);
     await expireTurns(env.GOOGLE_SESSIONS);
     const wallet = await account(env.GOOGLE_SESSIONS, session.google_subject);
+    const eligible =
+      wallet?.active === 1 &&
+      wallet.daily_budget_micros >= AI_LIMITS.reserveMicros;
+    // An opaque preference key, never a session token or raw Google identity.
+    const preferenceScope = session.workbook_id
+      ? await hash(
+          JSON.stringify([
+            "ai-preference-v1",
+            session.google_subject,
+            session.workbook_id,
+          ]),
+        )
+      : null;
+    const totals = await env.GOOGLE_SESSIONS.prepare(
+      "SELECT COUNT(*) AS attempts,COALESCE(SUM(reserve_micros),0) AS reserved FROM streamlion_ai_turns_v1",
+    ).first();
+    const exhausted =
+      totals.attempts >= PILOT_CEILING.attempts ||
+      totals.reserved + AI_LIMITS.reserveMicros > PILOT_CEILING.reserveMicros;
     if (path.endsWith("/config")) {
       if (!session.workbook_id)
         return json({ enabled: false, reason: "select_workbook" });
-      if (wallet)
+      const quote = {
+        preferenceScope,
+        ...(wallet
+          ? {
+              priceMicros: wallet.price_micros,
+              balanceMicros: wallet.balance_micros,
+            }
+          : {}),
+      };
+      if (eligible && exhausted)
+        return json({ enabled: false, reason: "pilot_exhausted", ...quote });
+      if (eligible && wallet.balance_micros < wallet.price_micros)
+        return json({ enabled: false, reason: "credits_exhausted", ...quote });
+      if (eligible)
         return json({
           enabled: true,
-          priceMicros: wallet.price_micros,
-          balanceMicros: wallet.balance_micros,
+          ...quote,
         });
       const policy = await env.GOOGLE_SESSIONS.prepare(
         "SELECT active,daily_budget_micros FROM streamlion_ai_policy_v1 WHERE id=1",
@@ -113,15 +162,24 @@ export async function handleAI(context) {
           : policy.daily_budget_micros < AI_LIMITS.reserveMicros
             ? "pilot_unavailable"
             : "account_not_enabled",
+        ...quote,
       });
     }
-    if (!wallet || !session.workbook_id)
+    if (!eligible || !session.workbook_id)
       return json(
         {
           error:
             "This account is not enabled for the AI pilot. Select a Google workbook.",
         },
         403,
+      );
+    if (exhausted)
+      return json(
+        {
+          error:
+            "The approved AI pilot allowance has been used. No credits were charged.",
+        },
+        429,
       );
     if (
       !(request.headers.get("Content-Type") || "").startsWith(
@@ -142,6 +200,14 @@ export async function handleAI(context) {
       (input.audioFormat !== undefined && input.audioFormat !== "pcm_s16le")
     )
       return json({ error: "Check the question and selected project." }, 400);
+    if (input.preferenceScope !== preferenceScope)
+      return json(
+        {
+          error:
+            "Your Google account or workbook changed. Check AI availability before asking again.",
+        },
+        409,
+      );
     if (input.priceMicros !== wallet.price_micros)
       return json(
         {

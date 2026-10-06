@@ -898,15 +898,22 @@ export default function App() {
   return (
     <div className={`app${page === "Ask" && !editing ? " app-ask" : ""}`}>
       <aside className="sidebar">
-        <div className="brand">
-          <img
-            src="/lion-mint.png"
-            width="44"
-            height="44"
-            alt=""
-            aria-hidden="true"
-          />
-          <span>StreamLion</span>
+        <div
+          className={page === "Ask" && !editing ? "ask-app-header" : undefined}
+        >
+          <div className="brand">
+            <img
+              src="/lion-mint.png"
+              width="44"
+              height="44"
+              alt=""
+              aria-hidden="true"
+            />
+            <span>StreamLion</span>
+          </div>
+          {page === "Ask" && !editing && (
+            <div id="ask-read-aloud-controls" className="ask-read-aloud-slot" />
+          )}
         </div>
         <nav aria-label="Main">
           {[
@@ -965,7 +972,7 @@ export default function App() {
         <div className="app-utility">{page !== "Ask" && <ThemeSwitch />}</div>
         {newerVersion && (
           <section className="sync-bar" aria-label="App update">
-            <span>
+            <span className={page === "Ask" ? "sr-only" : undefined}>
               {page === "Ask"
                 ? "Update available. "
                 : "A new version is ready. "}

@@ -40,51 +40,84 @@ const props = {
   toolsPanel: <p>Optional handoff</p>,
 };
 
-test("the quiet credit quote is visible before opt-in and one submission starts one paid turn", async () => {
-  const original = globalThis.fetch;
-  const requests = [];
+test("AI consent appears only on submission, is scoped to the account/workbook/quote, and survives reopening", async () => {
+  const original = globalThis.fetch,
+    requests = [];
+  let config = {
+    enabled: true,
+    priceMicros: 12500,
+    balanceMicros: 262500,
+    preferenceScope: "a".repeat(43),
+  };
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
     return url.endsWith("config")
-      ? Response.json({
-          enabled: true,
-          priceMicros: 12500,
-          balanceMicros: 262500,
-        })
+      ? Response.json(config)
       : new Response(
           '{"type":"text","delta":"Sam Example is the contact."}\n{"type":"text_done","balanceMicros":250000}\n{"type":"done"}\n',
         );
   };
   window.localStorage.clear();
   let ui;
-  try {
+  const open = async () => {
     await act(async () => {
       ui = render(<Answers {...props} source="google" />);
     });
-    assert.ok(ui.getByText("1 credit / answer"));
-    assert.ok(ui.getByText("21 credits available"));
-    assert.equal(
-      ui.getByRole("checkbox", { name: "Use AI credits" }).checked,
-      false,
-    );
-    fireEvent.click(ui.getByRole("checkbox", { name: "Use AI credits" }));
     fireEvent.change(ui.getByRole("textbox"), {
       target: { value: "Who is the site contact?" },
     });
-    assert.equal(requests.filter((r) => r.url.endsWith("answer")).length, 0);
-    await act(async () => {
+  };
+  const submit = async () =>
+    act(async () =>
       fireEvent.click(
         ui.getByRole("button", { name: "Get answer", exact: true }),
-      );
+      ),
+    );
+  const paid = () => requests.filter((r) => r.url.endsWith("answer"));
+  try {
+    await open();
+    assert.equal(ui.queryByText(/credits remaining/), null);
+    assert.equal(ui.queryByRole("navigation", { name: "Ask stages" }), null);
+    await submit();
+    assert.equal(paid().length, 0);
+    assert.ok(ui.getByRole("dialog", { name: "Use AI for this workbook?" }));
+    assert.ok(
+      ui.getByText("1 credit per completed answer; 21 credits remaining."),
+    );
+    await act(async () => {
+      const button = ui.getByRole("button", { name: "Use AI and get answer" });
+      fireEvent.click(button);
+      fireEvent.click(button);
     });
-    assert.equal(requests.filter((r) => r.url.endsWith("answer")).length, 1);
-    assert.ok(ui.getByText("20 credits available"));
-    fireEvent.click(ui.getByRole("button", { name: "Context", exact: true }));
-    fireEvent.click(ui.getByRole("button", { name: "Done", exact: true }));
-    assert.equal(requests.filter((r) => r.url.endsWith("answer")).length, 1);
+    assert.equal(paid().length, 1);
+    assert.equal(
+      JSON.parse(paid()[0].options.body).preferenceScope,
+      config.preferenceScope,
+    );
+    assert.ok(ui.getByText("Sam Example is the contact."));
+    cleanup();
+    await open();
+    await submit();
+    assert.equal(paid().length, 2);
+    assert.equal(ui.queryByRole("dialog"), null);
+    cleanup();
+    config = { ...config, preferenceScope: "b".repeat(43) };
+    await open();
+    await submit();
+    assert.ok(ui.getByRole("dialog", { name: "Use AI for this workbook?" }));
+    assert.equal(paid().length, 2);
+    cleanup();
+    config = { ...config, preferenceScope: "a".repeat(43), priceMicros: 25000 };
+    await open();
+    await submit();
+    assert.ok(
+      ui.getByText("2 credits per completed answer; 21 credits remaining."),
+    );
+    assert.equal(paid().length, 2);
   } finally {
     cleanup();
     globalThis.fetch = original;
+    window.localStorage.clear();
   }
 });
 
@@ -99,19 +132,13 @@ test("stage and utility switches preserve the question and answer without an ext
   fireEvent.click(ui.getByRole("button", { name: "Done", exact: true }));
   assert.equal(ui.getByRole("textbox").value, "Who is the site contact?");
   fireEvent.click(ui.getByRole("button", { name: "Get answer", exact: true }));
-  assert.equal(
-    ui
-      .getByRole("button", { name: "Answer", exact: true })
-      .getAttribute("aria-current"),
-    "step",
-  );
+  assert.equal(ui.container.querySelector(".ask-answer-stage").hidden, false);
   assert.ok(ui.getByText(/Sam Example/));
-  fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
+  fireEvent.click(ui.getByRole("button", { name: "Ask another", exact: true }));
   assert.equal(ui.getByRole("textbox").value, "Who is the site contact?");
   fireEvent.click(ui.getByRole("button", { name: "Tools", exact: true }));
   assert.ok(ui.getByText("Optional handoff"));
-  fireEvent.click(ui.getByRole("button", { name: "Close panel" }));
-  fireEvent.click(ui.getByRole("button", { name: "Answer", exact: true }));
+  fireEvent.click(ui.getByRole("button", { name: "Last answer", exact: true }));
   assert.ok(ui.getByText(/Sam Example/));
   ui.rerender(
     <Answers {...props} project={{ id: "other", title: "Other site" }} />,
@@ -119,6 +146,113 @@ test("stage and utility switches preserve the question and answer without an ext
   assert.equal(ui.queryByText(/Sam Example/), null);
   assert.equal(ui.getByRole("textbox").value, "");
   cleanup();
+});
+
+test("a paused pilot never impersonates an AI answer and availability retry spends nothing", async () => {
+  const original = globalThis.fetch,
+    calls = [];
+  const scope = "a".repeat(43);
+  window.localStorage.clear();
+  window.localStorage.setItem(
+    `streamlion-ai-choice-v1:${scope}`,
+    JSON.stringify({ mode: "ai", priceMicros: 12500 }),
+  );
+  let config = {
+    enabled: false,
+    reason: "pilot_paused",
+    preferenceScope: scope,
+    priceMicros: 12500,
+    balanceMicros: 262500,
+  };
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    return Response.json(config);
+  };
+  let ui;
+  try {
+    await act(async () => {
+      ui = render(<Answers {...props} source="google" />);
+    });
+    fireEvent.change(ui.getByRole("textbox"), {
+      target: { value: "Who is the site contact?" },
+    });
+    fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+    assert.ok(ui.getByRole("dialog", { name: "AI unavailable" }));
+    assert.match(
+      ui.getByRole("alert").textContent,
+      /paused by the administrator/,
+    );
+    assert.equal(ui.queryByText(/Sam Example/), null);
+    assert.equal(ui.queryByText(/Question received/), null);
+    config = { ...config, enabled: true };
+    await act(async () => {
+      fireEvent.click(
+        ui.getByRole("button", { name: "Check AI availability" }),
+      );
+    });
+    assert.ok(ui.getByRole("button", { name: "Use AI and get answer" }));
+    assert.equal(calls.filter((url) => url.endsWith("answer")).length, 0);
+    fireEvent.click(ui.getByRole("button", { name: "Use free lookup" }));
+    assert.ok(ui.getByText(/Sam Example/));
+    assert.equal(
+      JSON.parse(
+        window.localStorage.getItem(`streamlion-ai-choice-v1:${scope}`),
+      ).mode,
+      "free",
+    );
+    assert.equal(calls.filter((url) => url.endsWith("answer")).length, 0);
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+    window.localStorage.clear();
+  }
+});
+
+test("initial configuration blocks submission; unsupported free lookup retains the question with actionable recovery", async () => {
+  const original = globalThis.fetch;
+  let resolveConfig,
+    calls = 0;
+  globalThis.fetch = () => {
+    calls++;
+    return new Promise((resolve) => {
+      resolveConfig = resolve;
+    });
+  };
+  window.localStorage.clear();
+  let ui;
+  try {
+    await act(async () => {
+      ui = render(<Answers {...props} source="google" />);
+    });
+    fireEvent.change(ui.getByRole("textbox"), {
+      target: { value: "Are room dimensions required?" },
+    });
+    assert.equal(
+      ui.getByRole("button", { name: "Checking AI…" }).disabled,
+      true,
+    );
+    await act(async () => {
+      resolveConfig(
+        Response.json({ enabled: false, reason: "pilot_unavailable" }),
+      );
+    });
+    fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+    assert.match(
+      ui.getByRole("alert").textContent,
+      /administrator configuration/,
+    );
+    fireEvent.click(ui.getByRole("button", { name: "Use free lookup" }));
+    assert.equal(
+      ui.getByRole("textbox").value,
+      "Are room dimensions required?",
+    );
+    assert.ok(ui.getByText(/This question needs AI/));
+    assert.equal(ui.queryByText(/Saved-detail lookup cannot answer/), null);
+    assert.equal(calls, 1);
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+  }
 });
 
 test("dictation shows real listening state but final words wait for explicit Get answer", () => {

@@ -20,6 +20,7 @@ const { render, renderHook, fireEvent, act, cleanup } =
   await import("@testing-library/react");
 const { default: Answers } = await import("./ProjectVoiceAnswers.jsx");
 const { default: useManagedAnswers } = await import("./useManagedAnswers.js");
+test.beforeEach(() => window.localStorage.clear());
 const project = {
   id: "project",
   title: "Synthetic venue",
@@ -49,6 +50,7 @@ test("hosted voice animation starts on queued PCM audio and clears on Stop while
     url.endsWith("config")
       ? Response.json({
           enabled: true,
+          preferenceScope: "a".repeat(43),
           priceMicros: 12500,
           balanceMicros: 100000,
         })
@@ -118,6 +120,7 @@ test("broader questions stay free until explicit AI opt-in, then use the managed
     return url.endsWith("config")
       ? Response.json({
           enabled: true,
+          preferenceScope: "a".repeat(43),
           priceMicros: 12500,
           balanceMicros: 100000,
         })
@@ -131,7 +134,7 @@ test("broader questions stay free until explicit AI opt-in, then use the managed
       ui = render(<Answers project={project} source="google" />);
     });
     assert.ok(ui.getByText("Free saved-detail lookup · AI is off"));
-    assert.ok(ui.getByText(/AI is available.*Turn on Use AI pilot/));
+    assert.ok(ui.getByText(/AI is available.*Choose AI credits/));
     fireEvent.change(ui.getByRole("textbox"), {
       target: {
         value: "are measurements for room dimensions required for this project",
@@ -179,7 +182,12 @@ for (const [reason, message, setup] of [
       return Response.json(
         requests.length === 1
           ? { enabled: false, reason }
-          : { enabled: true, priceMicros: 12500, balanceMicros: 100000 },
+          : {
+              enabled: true,
+              preferenceScope: "a".repeat(43),
+              priceMicros: 12500,
+              balanceMicros: 100000,
+            },
       );
     };
     try {
@@ -215,7 +223,7 @@ for (const [reason, message, setup] of [
     }
   });
 
-test("config errors stop AI opt-in, show retry guidance and ignore older configuration responses", async () => {
+test("config errors disable AI until recovery without erasing consent or accepting older responses", async () => {
   const original = globalThis.fetch;
   let fail = false,
     pending,
@@ -226,6 +234,7 @@ test("config errors stop AI opt-in, show retry guidance and ignore older configu
     if (fail) throw new Error("Offline");
     return Response.json({
       enabled: true,
+      preferenceScope: "a".repeat(43),
       priceMicros: 12500,
       balanceMicros: 100000,
     });
@@ -261,7 +270,7 @@ test("config errors stop AI opt-in, show retry guidance and ignore older configu
     assert.equal(
       ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" })
         .checked,
-      false,
+      true,
     );
     await act(async () => {
       pending(Response.json({ enabled: false, reason: "pilot_paused" }));
@@ -284,6 +293,7 @@ test("AI opt-in shows exact price; request sends only identity/question, display
     return url.endsWith("config")
       ? Response.json({
           enabled: true,
+          preferenceScope: "a".repeat(43),
           priceMicros: 12500,
           balanceMicros: 100000,
         })
@@ -349,6 +359,7 @@ test("Stop aborts a pending answer and stale responses cannot replace a changed 
     url.endsWith("config")
       ? Response.json({
           enabled: true,
+          preferenceScope: "a".repeat(43),
           priceMicros: 12500,
           balanceMicros: 100000,
         })
@@ -400,6 +411,7 @@ test("text completion is visible before stalled audio and Stop clears batched/st
     url.endsWith("config")
       ? Response.json({
           enabled: true,
+          preferenceScope: "a".repeat(43),
           priceMicros: 12500,
           balanceMicros: 100000,
         })
@@ -477,6 +489,7 @@ for (const completion of ["text_done", "legacy-done"])
       url.endsWith("config")
         ? Response.json({
             enabled: true,
+            preferenceScope: "a".repeat(43),
             priceMicros: 12500,
             balanceMicros: 100000,
           })
@@ -525,6 +538,7 @@ for (const failure of [429, 503, "network"])
       if (url.endsWith("config"))
         return Response.json({
           enabled: true,
+          preferenceScope: "a".repeat(43),
           priceMicros: 12500,
           balanceMicros: 100000,
         });
@@ -583,6 +597,7 @@ for (const completed of [false, true])
       url.endsWith("config")
         ? Response.json({
             enabled: true,
+            preferenceScope: "a".repeat(43),
             priceMicros: 12500,
             balanceMicros: 100000,
           })
