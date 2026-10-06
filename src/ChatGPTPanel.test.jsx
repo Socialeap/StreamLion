@@ -33,6 +33,52 @@ function clipboard(writeText) {
   });
 }
 
+test("empty Ask keeps Google refresh reachable and can reveal newly fetched projects", async () => {
+  let refreshes = 0;
+  function Workspace() {
+    const [jobs, setJobs] = React.useState([]);
+    return (
+      <ChatGPTPanel
+        compact
+        source="google"
+        projectChooser={
+          <label>
+            Project to discuss
+            <select>
+              <option>Choose a project</option>
+              {jobs.map((job) => (
+                <option key={job.id}>{job.title}</option>
+              ))}
+            </select>
+          </label>
+        }
+        refreshProject={
+          <button
+            onClick={() => {
+              refreshes++;
+              setJobs([project]);
+            }}
+          >
+            Refresh from Google
+          </button>
+        }
+      />
+    );
+  }
+  const ui = render(<Workspace />);
+  try {
+    assert.equal(ui.queryByRole("option", { name: project.title }), null);
+    await act(async () =>
+      fireEvent.click(ui.getByRole("button", { name: "Refresh from Google" })),
+    );
+    assert.equal(refreshes, 1);
+    assert.ok(ui.getByRole("option", { name: project.title }));
+    assert.ok(ui.getByRole("button", { name: "Refresh from Google" }));
+  } finally {
+    cleanup();
+  }
+});
+
 test("Ask copies the selected data separately from opening ChatGPT and explains how to paste", async () => {
   let copied = "",
     opened = [];

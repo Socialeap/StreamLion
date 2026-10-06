@@ -20,7 +20,8 @@ export default function useManagedAnswers({
     demo ? { enabled: true, priceMicros: 0, balanceMicros: 0 } : null,
   );
   const [active, setActive] = useState(demo),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [audioPlaying, setAudioPlaying] = useState(false);
   const lifetime = useRef(null);
   const configRequest = useRef(0);
   const turn = useRef(null),
@@ -36,6 +37,7 @@ export default function useManagedAnswers({
       window.speechSynthesis?.cancel();
     }
     setBusy(false);
+    setAudioPlaying(false);
     callbacks.current.onBusy?.(false);
     if (current && !demo) refresh();
   }
@@ -157,10 +159,12 @@ export default function useManagedAnswers({
           if (turn.current !== current) return;
           if (!current.audioStarted) {
             current.audioStarted = true;
+            setAudioPlaying(true);
             callbacks.current.onMessage("Speaking answer…");
           }
         } catch {
           audioFailed = true;
+          setAudioPlaying(false);
           callbacks.current.onMessage(
             "Audio could not play. Your answer is shown; use Read answer aloud for device speech.",
           );
@@ -168,6 +172,7 @@ export default function useManagedAnswers({
       }
       if (event.type === "speech_error") {
         audioFailed = true;
+        setAudioPlaying(false);
         callbacks.current.onMessage(
           `${event.message} Use Read answer aloud for device speech.`,
         );
@@ -215,6 +220,13 @@ export default function useManagedAnswers({
         ) {
           const utterance = new window.SpeechSynthesisUtterance(answer);
           utterance.lang = "en-US";
+          utterance.onstart = () => {
+            if (turn.current === current) setAudioPlaying(true);
+          };
+          const ended = () => {
+            if (turn.current === current) setAudioPlaying(false);
+          };
+          utterance.onend = utterance.onerror = ended;
           window.speechSynthesis?.speak(utterance);
         }
       } else {
@@ -258,6 +270,7 @@ export default function useManagedAnswers({
         // Keep demo utterance cancellable until the next action/unmount.
         current.player?.stop();
         setBusy(false);
+        if (!demo) setAudioPlaying(false);
         callbacks.current.onBusy?.(false);
         if (!demo) turn.current = null;
       }
@@ -268,6 +281,7 @@ export default function useManagedAnswers({
     active,
     setActive,
     busy,
+    audioPlaying,
     ask,
     cancel,
     refresh,

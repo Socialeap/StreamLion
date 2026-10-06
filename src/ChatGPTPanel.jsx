@@ -128,6 +128,9 @@ export default function ChatGPTPanel({
   scope,
   onBusy,
   onAISetup,
+  compact = false,
+  projectChooser,
+  refreshProject,
 }) {
   let snapshot = "",
     handoffKey = "",
@@ -147,6 +150,107 @@ export default function ChatGPTPanel({
     }
   } catch (e) {
     error = e.message;
+  }
+  if (compact) {
+    if (!project)
+      return (
+        <section className="ask-empty">
+          <h1>Choose your project</h1>
+          {projectChooser}
+          {refreshProject}
+          <p>Open a project to ask by voice or type.</p>
+        </section>
+      );
+    const fieldRecords = notes.filter((note) => note.jobId === project.id);
+    return (
+      <ProjectVoiceAnswers
+        project={project}
+        source={source}
+        scope={scope}
+        asOf={asOf}
+        onBusy={onBusy}
+        onAISetup={onAISetup}
+        layout="workspace"
+        projectPanel={projectChooser}
+        contextPanel={
+          <>
+            {refreshProject}
+            <p className="hint">
+              {source === "google"
+                ? "Selected Google project"
+                : source === "copy"
+                  ? "Saved Google copy"
+                  : "Saved on this device"}{" "}
+              · {asOf}
+            </p>
+            <dl className="ask-context-fields">
+              {PROJECT_FIELDS.filter((field) => project[field.key]).map(
+                (field) => (
+                  <div key={field.key}>
+                    <dt>{field.label}</dt>
+                    <dd>{project[field.key]}</dd>
+                  </div>
+                ),
+              )}
+            </dl>
+            <h3>Field records</h3>
+            {fieldRecords.length ? (
+              fieldRecords.map((note, index) => (
+                <article key={note.id || index}>
+                  <h4>
+                    {note.area || "Unassigned area"} ·{" "}
+                    {note.reviewed ? "Reviewed" : "Unreviewed"}
+                  </h4>
+                  <p>{note.text}</p>
+                </article>
+              ))
+            ) : (
+              <p>No field records saved.</p>
+            )}
+          </>
+        }
+        toolsPanel={
+          <>
+            <h3>Use your own ChatGPT</h3>
+            <p className="hint">
+              Optional: discuss a dated project copy in your own account.
+            </p>
+            {error ? (
+              <p role="alert" className="error">
+                {error}
+              </p>
+            ) : (
+              <ProjectChatHandoff key={handoffKey} snapshot={snapshot} />
+            )}
+            {snapshot && (
+              <details className="quiet-details">
+                <summary>Project snapshot and backup</summary>
+                <p>
+                  This dated copy does not give ChatGPT a live Google
+                  connection.
+                </p>
+                <button
+                  onClick={() =>
+                    download(
+                      new Blob([snapshot], { type: "application/json" }),
+                      "streamlion-chat-snapshot.json",
+                    )
+                  }
+                >
+                  Download project snapshot
+                </button>
+                <pre className="context-preview">{snapshot}</pre>
+              </details>
+            )}
+            <p className="hint">
+              Your ChatGPT account limits apply to this optional handoff.
+              StreamLion's free lookup is free; managed AI answers use the
+              displayed credits.
+            </p>
+          </>
+        }
+      />
+    );
   }
   return (
     <section className="intake-panel chat-panel">
@@ -194,8 +298,9 @@ export default function ChatGPTPanel({
         </details>
       )}
       <p className="hint">
-        Review proposed changes here before saving. ChatGPT account limits
-        apply; StreamLion does not charge for questions.
+        Review proposed changes here before saving. ChatGPT account limits apply
+        to this optional handoff. Saved-detail lookup is free; managed AI
+        answers use credits when enabled.
       </p>
     </section>
   );

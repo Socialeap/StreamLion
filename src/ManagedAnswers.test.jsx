@@ -26,6 +26,90 @@ const project = {
   address: "123 Example Street",
 };
 
+test("hosted voice animation starts on queued PCM audio and clears on Stop while retaining text", async () => {
+  const original = globalThis.fetch;
+  let streamController, asking, hook;
+  const nodes = [];
+  window.AudioContext = class {
+    state = "running";
+    currentTime = 0;
+    resume = async () => {};
+    close = async () => {};
+    createBuffer = () => ({
+      duration: 0.01,
+      getChannelData: () => new Float32Array(2),
+    });
+    createBufferSource() {
+      const node = { connect() {}, start() {}, stop() {}, disconnect() {} };
+      nodes.push(node);
+      return node;
+    }
+  };
+  globalThis.fetch = async (url) =>
+    url.endsWith("config")
+      ? Response.json({
+          enabled: true,
+          priceMicros: 12500,
+          balanceMicros: 100000,
+        })
+      : new Response(
+          new ReadableStream({
+            start(controller) {
+              streamController = controller;
+            },
+          }),
+        );
+  const send = (event) =>
+    streamController.enqueue(
+      new TextEncoder().encode(JSON.stringify(event) + "\n"),
+    );
+  const results = [];
+  try {
+    await act(async () => {
+      hook = renderHook(() =>
+        useManagedAnswers({
+          project,
+          source: "google",
+          onResult: (result) => results.push(result),
+          onMessage() {},
+        }),
+      );
+    });
+    await act(async () => {
+      asking = hook.result.current.ask("Contact?", true);
+    });
+    assert.equal(hook.result.current.busy, true);
+    assert.equal(hook.result.current.audioPlaying, false);
+    await act(async () => {
+      send({ type: "text", delta: "Contact: Sam." });
+      send({
+        type: "audio",
+        audio: "AAABAA==",
+        format: "pcm_s16le",
+        sampleRate: 24000,
+      });
+      send({ type: "text_done", balanceMicros: 87500 });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.equal(nodes.length, 1);
+    assert.equal(hook.result.current.audioPlaying, true);
+    assert.equal(results.at(-1).answers[0].text, "Contact: Sam.");
+    await act(async () => {
+      hook.result.current.cancel();
+      send({ type: "done" });
+      streamController.close();
+      await asking;
+    });
+    assert.equal(hook.result.current.audioPlaying, false);
+    assert.equal(hook.result.current.busy, false);
+    assert.equal(results.length, 1);
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+    delete window.AudioContext;
+  }
+});
+
 test("broader questions stay free until explicit AI opt-in, then use the managed answer route", async () => {
   const original = globalThis.fetch,
     requests = [];
@@ -222,7 +306,10 @@ test("AI opt-in shows exact price; request sends only identity/question, display
     await act(async () => {
       ui = render(<Answers project={project} source="google" />);
     });
-    assert.match(ui.getByText(/per completed answer/).textContent, /\$0.0125/);
+    assert.match(
+      ui.getByText(/per completed answer/).textContent,
+      /1 credit per completed answer/,
+    );
     fireEvent.click(
       ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
     );
@@ -237,7 +324,10 @@ test("AI opt-in shows exact price; request sends only identity/question, display
         "The location name is Synthetic venue. Source: Project name.",
       ),
     );
-    assert.match(ui.getByText(/per completed answer/).textContent, /\$0.0875/);
+    assert.match(
+      ui.getByText(/per completed answer/).textContent,
+      /7 credits remaining/,
+    );
     const payload = JSON.parse(
       requests.find((r) => r.url.endsWith("answer")).options.body,
     );

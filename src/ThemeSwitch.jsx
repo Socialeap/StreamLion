@@ -2,8 +2,10 @@ import { useLayoutEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { THEME_KEY, preferredTheme, applyTheme } from "./theme.js";
 
-export default function ThemeSwitch() {
-  const [theme, setTheme] = useState(preferredTheme);
+export default function ThemeSwitch({ initialTheme } = {}) {
+  const [theme, setTheme] = useState(() =>
+    ["light", "dark"].includes(initialTheme) ? initialTheme : preferredTheme(),
+  );
   const [error, setError] = useState("");
   useLayoutEffect(() => {
     applyTheme(theme);

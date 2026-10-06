@@ -896,13 +896,13 @@ export default function App() {
     setPage(p);
   };
   return (
-    <div className="app">
+    <div className={`app${page === "Ask" && !editing ? " app-ask" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
           <img
-            src="/lion.png"
-            width="32"
-            height="32"
+            src="/lion-mint.png"
+            width="44"
+            height="44"
             alt=""
             aria-hidden="true"
           />
@@ -951,23 +951,29 @@ export default function App() {
         </nav>
         <div className="workspace-status">
           <span>
-            {bookId ? "Google workbook" : "Local device"}
-            <br />
+            {page !== "Ask" && (
+              <>
+                {bookId ? "Google workbook" : "Local device"}
+                <br />
+              </>
+            )}
             <span role="status">{status}</span>
           </span>
         </div>
       </aside>
       <main>
-        <div className="app-utility">
-          <ThemeSwitch />
-        </div>
+        <div className="app-utility">{page !== "Ask" && <ThemeSwitch />}</div>
         {newerVersion && (
           <section className="sync-bar" aria-label="App update">
             <span>
-              A new version is ready.{" "}
+              {page === "Ask"
+                ? "Update available. "
+                : "A new version is ready. "}
               {editing || page === "Field notes" || page === "Measurements"
                 ? "Finish this edit or return to Projects before updating."
-                : "Saved drafts will be kept."}
+                : page === "Ask"
+                  ? "Drafts kept."
+                  : "Saved drafts will be kept."}
             </span>
             <button
               disabled={
@@ -1026,10 +1032,10 @@ export default function App() {
           </section>
         )}
 
-        {bookId && (
+        {bookId && (page !== "Ask" || !(remote && hasGoogleSession())) && (
           <div className="sync-bar">
             <span>
-              Google-owned records ·{" "}
+              {page === "Ask" ? "Google · " : "Google-owned records · "}
               {remote && hasGoogleSession()
                 ? "connected"
                 : siteCopy
@@ -1037,12 +1043,13 @@ export default function App() {
                   : "reconnect needed"}
             </span>
             <button
+              aria-label="Refresh from Google"
               disabled={disabled || !!editing || !hasGoogleSession()}
               onClick={async () => {
                 await refresh(); /* Keep unresolved writes until the same operation is retried. */
               }}
             >
-              Refresh from Google
+              {page === "Ask" ? "Refresh" : "Refresh from Google"}
             </button>
           </div>
         )}
@@ -1289,33 +1296,38 @@ export default function App() {
           </>
         ) : page === "Ask" ? (
           <>
-            <header className="page-head">
-              <div>
-                <h1 title="Open a conversation about a project or a site note.">
-                  Ask StreamLion
-                </h1>
-                <p>
-                  Ask by voice or type. Get answers from your saved project
-                  details.
-                </p>
-              </div>
-            </header>
-            <label>
-              Project to discuss
-              <select
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                title="Choose the project whose saved details you want to ask about."
-              >
-                <option value="">Choose a project</option>
-                {workspace.jobs.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {j.title}
-                  </option>
-                ))}
-              </select>
-            </label>
             <ChatGPTPanel
+              compact
+              refreshProject={
+                bookId && (
+                  <button
+                    disabled={disabled || !hasGoogleSession()}
+                    onClick={async () => {
+                      await refresh();
+                    }}
+                  >
+                    Refresh from Google
+                  </button>
+                )
+              }
+              projectChooser={
+                <label>
+                  Project to discuss
+                  <select
+                    value={selected}
+                    disabled={disabled}
+                    onChange={(e) => setSelected(e.target.value)}
+                    title="Choose the project whose saved details you want to ask about."
+                  >
+                    <option value="">Choose a project</option>
+                    {workspace.jobs.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        {j.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              }
               key={`${active?.deviceOnly ? "local" : bookId}:${selected}`}
               project={active}
               notes={workspace.notes}
