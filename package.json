@@ -44,8 +44,6 @@
   "overrides": {
     "rollup": "npm:@rollup/wasm-node@4.63.4",
     "esbuild": "npm:esbuild-wasm@0.28.2",
-    "miniflare": {
-      "sharp": "0.35.5"
-    }
+    "sharp": "0.35.5"
   }
 }
