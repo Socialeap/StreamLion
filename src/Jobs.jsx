@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Plus, FileText, NotebookPen } from "lucide-react";
+import {
+  Plus,
+  FileText,
+  NotebookPen,
+  ClipboardCheck,
+  FolderOpen,
+} from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
 import { searchProjects } from "./project-schema";
 import { WORKFLOW_AREA, readWorkflow, progressLabel } from "./workflow";
 
@@ -73,14 +80,14 @@ export default function Jobs({
       </header>
       <div className="metrics">
         <div className="metric">
-          <FileText />
+          <FileText aria-hidden="true" />
           <div>
             <strong>{rows.length}</strong>
             <span>Projects and named drafts</span>
           </div>
         </div>
         <div className="metric">
-          <NotebookPen />
+          <NotebookPen aria-hidden="true" />
           <div>
             <strong>
               {
@@ -92,6 +99,7 @@ export default function Jobs({
           </div>
         </div>
         <div className="metric">
+          <ClipboardCheck aria-hidden="true" />
           <div>
             <strong>{pendingCount}</strong>
             <span>Details pending review</span>
@@ -125,6 +133,7 @@ export default function Jobs({
         </section>
       ) : (
         <section className="project-list" aria-label="Projects">
+          <SectionHeading icon={FolderOpen}>Project records</SectionHeading>
           <table className="project-table">
             <thead>
               <tr>

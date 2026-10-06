@@ -6,17 +6,24 @@ import {
   BACKUP_LIMIT,
 } from "./backup.js";
 import { download } from "./storage.js";
+import { Archive, Download, LoaderCircle } from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
+import DownloadNotice from "./DownloadNotice.jsx";
 
 export default function BackupPanel({ disabled, onBusy, onRestored }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
+    [downloadName, setDownloadName] = useState(""),
+    [workingLabel, setWorkingLabel] = useState("Working…"),
     [selected, setSelected] = useState(null);
-  async function act(task) {
+  async function act(task, label = "Working…") {
     setBusy(true);
     onBusy?.(true);
     setError("");
     setNotice("");
+    setDownloadName("");
+    setWorkingLabel(label);
     try {
       await task();
     } catch (e) {
@@ -27,8 +34,10 @@ export default function BackupPanel({ disabled, onBusy, onRestored }) {
     }
   }
   return (
-    <section className="editor" aria-label="Device backup">
-      <h2>Keep a device backup</h2>
+    <section className="editor section-card" aria-label="Device backup">
+      <SectionHeading icon={Archive} tone="blue">
+        Keep a device backup
+      </SectionHeading>
       <p>
         Save unfinished drafts, waiting field records, photos, voice memos and
         any workbook copies kept on this device.
@@ -38,18 +47,29 @@ export default function BackupPanel({ disabled, onBusy, onRestored }) {
         onClick={() =>
           act(async () => {
             const file = await createBackup();
-            download(
-              file,
-              `streamlion-backup-${new Date().toISOString().slice(0, 10)}.json`,
-            );
-            setNotice(
-              "Backup download started. Keep the file somewhere safe; it contains your project details. Google sign-in is not included.",
-            );
-          })
+            const name = `streamlion-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            download(file, name);
+            setDownloadName(name);
+          }, "Preparing backup…")
         }
       >
-        {busy ? "Working…" : "Download device backup"}
+        {busy ? (
+          <LoaderCircle size={18} className="loading-icon" aria-hidden="true" />
+        ) : (
+          <Download size={18} aria-hidden="true" />
+        )}
+        {busy ? workingLabel : "Download device backup"}
       </button>
+      {busy && (
+        <p className="hint" role="status">
+          {workingLabel} Keep StreamLion open.
+        </p>
+      )}
+      <DownloadNotice fileName={downloadName} label="Backup" />
+      <p className="hint backup-privacy">
+        Keep the file somewhere safe; it contains your project details. Google
+        sign-in is not included.
+      </p>
       <details>
         <summary>Restore a device backup</summary>
         <p>

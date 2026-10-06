@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, MessageCircle } from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
 import { PROJECT_FIELDS, intakeFor } from "./project-schema";
 import { projectContext, readWorkflow } from "./workflow";
 import ProjectVoiceAnswers from "./ProjectVoiceAnswers.jsx";
@@ -148,9 +149,9 @@ export default function ChatGPTPanel({
   }
   return (
     <section className="intake-panel chat-panel">
-      <h2>
+      <SectionHeading icon={MessageCircle} tone="violet">
         {project ? `Ask about ${project.title}` : "Choose a project above"}
-      </h2>
+      </SectionHeading>
       {project && (
         <>
           <ProjectVoiceAnswers

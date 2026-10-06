@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { ListChecks } from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
 import { suggestTasks, appendReviewedTasks, READINGS } from "./brief-tasks.js";
 
 const empty = {
@@ -57,7 +59,9 @@ export default function BriefTaskBuilder({
   return (
     <section className="brief-builder" aria-label="Brief to site tasks">
       <p className="wizard-eyebrow">1. Organize · 2. Review · 3. Add</p>
-      <h3>Turn the brief into site tasks</h3>
+      <SectionHeading icon={ListChecks} level={3}>
+        Turn the brief into site tasks
+      </SectionHeading>
       <p>
         Get separate capture, measurement, and delivery tasks. Check each
         suggestion beside the customer's exact wording.

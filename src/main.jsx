@@ -6,6 +6,8 @@ import LicenseGate from "./LicenseGate.jsx";
 import "./purchase.css";
 import { offerUpdate } from "./updates.js";
 import "./style.css";
+import { preferredTheme, applyTheme } from "./theme.js";
+applyTheme(preferredTheme());
 const updateSW = registerSW({
   onNeedRefresh() {
     offerUpdate(() => updateSW(true));

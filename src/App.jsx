@@ -16,6 +16,7 @@ import {
   Ruler,
 } from "lucide-react";
 import Jobs from "./Jobs";
+import ThemeSwitch from "./ThemeSwitch.jsx";
 import { googleSignInFailure } from "./google-signin-errors.js";
 import Notes from "./Notes";
 import Measurements from "./MeasurementCapture.jsx";
@@ -918,6 +919,7 @@ export default function App() {
             <button
               key={label}
               aria-label={label}
+              aria-current={page === label ? "page" : undefined}
               disabled={disabled}
               className={page === label ? "active" : ""}
               onClick={() => navigate(label)}
@@ -956,6 +958,9 @@ export default function App() {
         </div>
       </aside>
       <main>
+        <div className="app-utility">
+          <ThemeSwitch />
+        </div>
         {newerVersion && (
           <section className="sync-bar" aria-label="App update">
             <span>
