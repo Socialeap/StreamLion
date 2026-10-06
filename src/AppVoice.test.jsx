@@ -20,6 +20,12 @@ Object.defineProperty(globalThis, "navigator", {
   configurable: true,
 });
 window.scrollTo = () => {};
+dom.window.HTMLDialogElement.prototype.showModal = function () {
+  this.setAttribute("open", "");
+};
+dom.window.HTMLDialogElement.prototype.close = function () {
+  this.removeAttribute("open");
+};
 const { render, fireEvent, act, cleanup } =
   await import("@testing-library/react");
 const { default: App } = await import("./App.jsx");
@@ -77,11 +83,14 @@ test("Project home and Ask route voice activity into the app update gate", async
     fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
     assert.ok(ui.getByRole("heading", { name: "Connections" }));
     fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
+    fireEvent.click(ui.getByRole("button", { name: "Voice and AI settings" }));
     fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
     assert.ok(ui.getByRole("heading", { name: "Connections" }));
     assert.equal(instances[0].aborted, true);
     fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
+    fireEvent.click(ui.getByRole("button", { name: "Project", exact: true }));
     assert.equal(ui.getByRole("combobox").value, "voice-job");
+    fireEvent.click(ui.getByRole("button", { name: "Continue to Ask" }));
     fireEvent.click(ui.getByRole("button", { name: "Ask by voice" }));
     assert.equal(
       ui.getByRole("button", { name: "Update StreamLion" }).disabled,

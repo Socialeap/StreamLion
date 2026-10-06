@@ -9,6 +9,7 @@ import {
 
 import useManagedAnswers from "./useManagedAnswers.js";
 import { creditDollars, aiAvailabilityMessage } from "./managed-ai.js";
+import FocusedAsk from "./FocusedAsk.jsx";
 
 const preferenceKey = "streamlion-read-answers-v1";
 const speechErrors = {
@@ -30,7 +31,17 @@ export default function ProjectVoiceAnswers(props) {
   return <VoiceAnswers key={key} {...props} />;
 }
 
-function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
+function VoiceAnswers({
+  project,
+  source = "device",
+  asOf,
+  onBusy,
+  onAISetup,
+  layout,
+  projectPanel,
+  contextPanel,
+  toolsPanel,
+}) {
   const inputId = useId();
   const inputRef = useRef(null);
   const answerRef = useRef(null);
@@ -46,6 +57,8 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
       return false;
     }
   });
+  const [stage, setStage] = useState("ask");
+  const [hearing, setHearing] = useState(false);
   const readAloudRef = useRef(readAloud);
   const session = useRef(null);
   const utterance = useRef(null);
@@ -59,8 +72,9 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
   const canListen = !!Recognition && window.isSecureContext !== false;
 
   useEffect(() => {
-    if (result) answerRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [result]);
+    if (result && layout !== "workspace")
+      answerRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [result, layout]);
 
   const ai = useManagedAnswers({
     project,
@@ -77,9 +91,15 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
     clearTimeout(timer.current);
     const previous = session.current;
     session.current = null;
+    setHearing(false);
     // Invalidate before abort: some implementations synchronously fire end.
     if (previous) {
-      previous.onresult = previous.onerror = previous.onend = null;
+      previous.onresult =
+        previous.onerror =
+        previous.onend =
+        previous.onspeechstart =
+        previous.onspeechend =
+          null;
       try {
         previous.abort();
       } catch {
@@ -177,6 +197,7 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
     setListening(false);
     setSpeaking(false);
     setMessage("");
+    setStage("answer");
     if (aiRef.current.active) {
       aiRef.current.ask(text, automaticSpeech);
       return;
@@ -197,6 +218,7 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
     setQuestion("");
     setMessage("Listening… ask one question about this project.");
     setListening(true);
+    setStage("ask");
     busyCallback.current?.(true);
     try {
       const recognition = new Recognition();
@@ -205,6 +227,12 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+      recognition.onspeechstart = () => {
+        if (session.current === recognition) setHearing(true);
+      };
+      recognition.onspeechend = () => {
+        if (session.current === recognition) setHearing(false);
+      };
       recognition.onresult = (event) => {
         if (session.current !== recognition || document.hidden) return;
         const readings = Array.from(event.results);
@@ -226,6 +254,12 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
           cancelMedia();
           setListening(false);
           setMessage("Please check the words I heard, then tap Get answer.");
+          return;
+        }
+        if (layout === "workspace") {
+          cancelMedia();
+          setListening(false);
+          setMessage("Question ready. Tap Get answer when you are ready.");
           return;
         }
         ask(text);
@@ -261,6 +295,67 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy, onAISetup }) {
       );
     }
   }
+
+  function changeQuestion(value) {
+    cancelMedia();
+    setListening(false);
+    setSpeaking(false);
+    setMessage("");
+    setQuestion(value);
+    setResult(null);
+  }
+  function changeReadAloud(value) {
+    readAloudRef.current = value;
+    setReadAloud(value);
+    try {
+      window.localStorage.setItem(preferenceKey, String(value));
+    } catch {
+      /* Optional preference. */
+    }
+    if (!value && (speaking || ai.busy || ai.audioPlaying)) stopVoice();
+  }
+  function changeAI(value) {
+    cancelMedia();
+    setListening(false);
+    setSpeaking(false);
+    setResult(null);
+    setMessage("");
+    setStage("ask");
+    ai.setActive(value);
+  }
+  if (layout === "workspace")
+    return (
+      <FocusedAsk
+        project={project}
+        projectPanel={projectPanel}
+        contextPanel={contextPanel}
+        toolsPanel={toolsPanel}
+        stage={stage}
+        onStageChange={setStage}
+        inputId={inputId}
+        inputRef={inputRef}
+        question={question}
+        onQuestionChange={changeQuestion}
+        onAsk={() => ask(question)}
+        onVoice={startVoice}
+        onStop={stopVoice}
+        onReadResult={() => speak(result)}
+        canListen={canListen}
+        canSpeak={canSpeak}
+        listening={listening}
+        speaking={speaking}
+        hearing={hearing}
+        readAloud={readAloud}
+        onReadAloud={changeReadAloud}
+        ai={ai}
+        source={source}
+        onAIChange={changeAI}
+        onAISetup={onAISetup}
+        message={message}
+        result={result}
+        answerRef={answerRef}
+      />
+    );
 
   return (
     <section
