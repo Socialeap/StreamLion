@@ -350,7 +350,19 @@ export default function FocusedAsk({
             )
           ) : null}
           {decision && !ai.available && source === "google" && (
-            <button onClick={ai.refresh}>Check AI availability</button>
+            <button disabled={ai.checking} onClick={() => ai.refresh(true)}>
+              {ai.checking
+                ? "Checking AI availability…"
+                : "Check AI availability"}
+            </button>
+          )}
+          {(decision || panel === "settings") && ai.configCheck?.message && (
+            <p
+              className="hint"
+              role={ai.configCheck.error ? "alert" : "status"}
+            >
+              {ai.configCheck.message}
+            </p>
           )}
           {decision &&
             !ai.available &&
@@ -390,7 +402,7 @@ export default function FocusedAsk({
                   <input
                     type="checkbox"
                     checked={ai.active}
-                    disabled={running}
+                    disabled={running || ai.checking}
                     onChange={(event) => onAIChange(event.target.checked)}
                   />
                   {ai.demo ? "Simulated AI" : "Use AI credits"}
@@ -404,8 +416,13 @@ export default function FocusedAsk({
                 </p>
               )}
               {source === "google" && !ai.demo && (
-                <button disabled={running} onClick={ai.refresh}>
-                  Check AI availability
+                <button
+                  disabled={running || ai.checking}
+                  onClick={() => ai.refresh(true)}
+                >
+                  {ai.checking
+                    ? "Checking AI availability…"
+                    : "Check AI availability"}
                 </button>
               )}
               {(source !== "google" ||
@@ -454,7 +471,7 @@ export default function FocusedAsk({
               {ai.available && (
                 <button
                   className="primary"
-                  disabled={running}
+                  disabled={running || ai.checking}
                   onClick={onConfirmAI}
                 >
                   Use AI and get answer

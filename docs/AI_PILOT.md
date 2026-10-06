@@ -91,8 +91,13 @@ Safe reasons include `pilot_unavailable`, `pilot_paused`, `pilot_exhausted`,
 and a client-side `status_unavailable`. Operator configuration and exhausted
 allowances direct the user to the administrator, rather than an endless retry.
 Initial availability checks block submission; no configuration read charges
-credits or submits a question. Overlapping reads retain their request-order and
-lifetime guards. Rapid double taps cannot reserve a second answer.
+credits or submits a question. Availability controls show a disabled checking
+state, then announce completion even when the same administrator pause remains.
+Concurrent taps share one read. An eight-second deadline covers the response
+body as well as the network request; failures disable paid requests and allow
+retry without erasing consent. Lifetime/request-order guards reject late results.
+Returning to the foreground refreshes availability without submitting a question.
+Rapid double taps cannot reserve a second answer.
 
 ## Continuous closed pilot: cumulative ceiling
 

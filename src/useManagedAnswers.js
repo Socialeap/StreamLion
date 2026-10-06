@@ -41,6 +41,10 @@ export default function useManagedAnswers({
   const [choice, setChoice] = useState(
     demo ? { mode: "ai", priceMicros: 0 } : null,
   );
+  const [configCheck, setConfigCheck] = useState({
+    pending: false,
+    message: "",
+  });
   const choiceRef = useRef(choice);
   const [busy, setBusy] = useState(false),
     [audioPlaying, setAudioPlaying] = useState(false);
@@ -77,6 +81,7 @@ export default function useManagedAnswers({
   }
   const lifetime = useRef(null);
   const configRequest = useRef(0);
+  const configFlight = useRef(null);
   const turn = useRef(null),
     callbacks = useRef({ onBusy, onResult, onMessage });
   callbacks.current = { onBusy, onResult, onMessage };
@@ -94,19 +99,49 @@ export default function useManagedAnswers({
     callbacks.current.onBusy?.(false);
     if (current && !demo) refresh();
   }
-  async function loadConfig(owner) {
+  async function loadConfig(owner, manual = false) {
+    // Repeated taps share the current read; checking availability never buys an answer.
+    if (configFlight.current?.owner === owner) return;
     const requestId = ++configRequest.current;
+    const controller = new AbortController();
+    const flight = { owner, controller };
+    configFlight.current = flight;
+    setConfigCheck({
+      pending: true,
+      message: manual ? "Checking AI availability…" : "",
+    });
     const current = () =>
       lifetime.current === owner &&
       !owner.signal.aborted &&
       requestId === configRequest.current;
+    let rejectStopped,
+      timedOut = false;
+    const stopped = new Promise((_, reject) => {
+      rejectStopped = reject;
+    });
+    const abort = () => {
+      controller.abort();
+      rejectStopped(
+        new DOMException("Availability check stopped", "AbortError"),
+      );
+    };
+    owner.signal.addEventListener("abort", abort, { once: true });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      abort();
+    }, 8000);
     try {
-      const response = await fetch("/api/ai/config", {
-        credentials: "same-origin",
-        cache: "no-store",
-        signal: owner.signal,
-      });
-      const data = await response.json();
+      const { response, data } = await Promise.race([
+        (async () => {
+          const response = await fetch("/api/ai/config", {
+            credentials: "same-origin",
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          return { response, data: await response.json() };
+        })(),
+        stopped,
+      ]);
       if (
         !response.ok ||
         typeof data.enabled !== "boolean" ||
@@ -120,6 +155,16 @@ export default function useManagedAnswers({
         throw new Error("config_unavailable");
       if (current()) {
         setConfig(data);
+        setConfigCheck({
+          pending: false,
+          message: manual
+            ? data.enabled
+              ? "AI is available. This check used no credits."
+              : data.reason === "pilot_paused"
+                ? "Check complete — the administrator pause is still active."
+                : "Check complete — AI is still unavailable."
+            : "",
+        });
         // Availability must not erase a user's choice when the operator pauses AI.
         if (
           data.preferenceScope &&
@@ -133,13 +178,24 @@ export default function useManagedAnswers({
     } catch {
       if (current()) {
         setConfig({ enabled: false, reason: "status_unavailable" });
+        setConfigCheck({
+          pending: false,
+          error: true,
+          message: timedOut
+            ? "The availability check timed out. Try again."
+            : "Could not check AI availability. Check your connection and try again.",
+        });
       }
+    } finally {
+      clearTimeout(timer);
+      owner.signal.removeEventListener("abort", abort);
+      if (configFlight.current === flight) configFlight.current = null;
     }
   }
-  function refresh() {
+  function refresh(manual = false) {
     const owner = lifetime.current;
     if (!owner || source !== "google" || demo) return;
-    loadConfig(owner);
+    return loadConfig(owner, manual);
   }
   useEffect(() => {
     const controller = new AbortController();
@@ -152,6 +208,8 @@ export default function useManagedAnswers({
           "AI stopped when the app left the screen. Check credits before asking again.",
         );
       }
+      if (!document.hidden && !turn.current && !demo && source === "google")
+        loadConfig(controller);
     };
     const leave = () => cancel();
     document.addEventListener("visibilitychange", hide);
@@ -357,7 +415,9 @@ export default function useManagedAnswers({
     active,
     mode,
     needsConsent: Boolean(config?.enabled && mode !== "free" && !active),
-    checking: source === "google" && !demo && config === null,
+    checking:
+      source === "google" && !demo && (config === null || configCheck.pending),
+    configCheck,
     setActive,
     busy,
     isPending: () => Boolean(turn.current && !turn.current.finished),
