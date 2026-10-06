@@ -27,6 +27,112 @@ const project = {
   address: "123 Example Street",
 };
 
+test("a stalled config body times out, fails closed and cannot overwrite a successful retry", async (t) => {
+  const original = globalThis.fetch;
+  const enabled = {
+    enabled: true,
+    preferenceScope: "a".repeat(43),
+    priceMicros: 12500,
+    balanceMicros: 100000,
+  };
+  let calls = 0,
+    resolveOld,
+    slowSignal;
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    if (calls === 2) {
+      slowSignal = options.signal;
+      return {
+        ok: true,
+        json: () =>
+          new Promise((resolve) => {
+            resolveOld = resolve;
+          }),
+      };
+    }
+    return Response.json(enabled);
+  };
+  try {
+    let hook;
+    await act(async () => {
+      hook = renderHook(() => useManagedAnswers({ project, source: "google" }));
+    });
+    act(() => hook.result.current.setActive(true));
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    await act(async () => {
+      hook.result.current.refresh(true);
+      hook.result.current.refresh(true);
+    });
+    assert.equal(calls, 2);
+    assert.equal(hook.result.current.checking, true);
+    await act(async () => {
+      t.mock.timers.tick(8000);
+    });
+    assert.equal(slowSignal.aborted, true);
+    assert.equal(hook.result.current.checking, false);
+    assert.equal(hook.result.current.active, false);
+    assert.equal(hook.result.current.config.reason, "status_unavailable");
+    assert.match(hook.result.current.configCheck.message, /timed out/);
+    await act(async () => {
+      await hook.result.current.refresh(true);
+    });
+    assert.equal(hook.result.current.active, true);
+    await act(async () => {
+      resolveOld({ enabled: false, reason: "pilot_paused" });
+    });
+    assert.equal(hook.result.current.config.enabled, true);
+    assert.equal(calls, 3);
+  } finally {
+    cleanup();
+    t.mock.timers.reset();
+    globalThis.fetch = original;
+  }
+});
+
+test("returning to the foreground refreshes availability without starting an answer", async () => {
+  const original = globalThis.fetch,
+    requests = [];
+  const oldHidden = Object.getOwnPropertyDescriptor(document, "hidden");
+  let hidden = true,
+    enabled = false;
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => hidden,
+  });
+  globalThis.fetch = async (url) => {
+    requests.push(url);
+    return Response.json(
+      enabled
+        ? {
+            enabled: true,
+            preferenceScope: "a".repeat(43),
+            priceMicros: 12500,
+            balanceMicros: 100000,
+          }
+        : { enabled: false, reason: "pilot_paused" },
+    );
+  };
+  try {
+    let hook;
+    await act(async () => {
+      hook = renderHook(() => useManagedAnswers({ project, source: "google" }));
+    });
+    enabled = true;
+    hidden = false;
+    await act(async () => {
+      fireEvent(document, new window.Event("visibilitychange"));
+    });
+    assert.equal(hook.result.current.available, true);
+    assert.equal(hook.result.current.active, false);
+    assert.deepEqual(requests, ["/api/ai/config", "/api/ai/config"]);
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+    if (oldHidden) Object.defineProperty(document, "hidden", oldHidden);
+    else delete document.hidden;
+  }
+});
+
 test("hosted voice animation starts on queued PCM audio and clears on Stop while retaining text", async () => {
   const original = globalThis.fetch;
   let streamController, asking, hook;
@@ -223,7 +329,7 @@ for (const [reason, message, setup] of [
     }
   });
 
-test("config errors disable AI until recovery without erasing consent or accepting older responses", async () => {
+test("config errors disable AI until recovery without erasing consent; repeated retries share the pending read", async () => {
   const original = globalThis.fetch;
   let fail = false,
     pending,
@@ -261,10 +367,19 @@ test("config errors disable AI until recovery without erasing consent or accepti
         ui.getByRole("button", { name: "Check AI availability" }),
       );
     });
-    fail = false;
+    assert.equal(
+      ui.getByRole("button", { name: "Checking AI availability…" }).disabled,
+      true,
+    );
+    assert.equal(calls, 3);
     await act(async () => {
-      fireEvent.click(
-        ui.getByRole("button", { name: "Check AI availability" }),
+      pending(
+        Response.json({
+          enabled: true,
+          preferenceScope: "a".repeat(43),
+          priceMicros: 12500,
+          balanceMicros: 100000,
+        }),
       );
     });
     assert.equal(
@@ -272,13 +387,10 @@ test("config errors disable AI until recovery without erasing consent or accepti
         .checked,
       true,
     );
-    await act(async () => {
-      pending(Response.json({ enabled: false, reason: "pilot_paused" }));
-    });
     assert.ok(
       ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
     );
-    assert.equal(calls, 4);
+    assert.equal(calls, 3);
   } finally {
     cleanup();
     globalThis.fetch = original;

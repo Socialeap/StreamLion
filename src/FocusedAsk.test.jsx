@@ -255,6 +255,97 @@ test("initial configuration blocks submission; unsupported free lookup retains t
   }
 });
 
+test("availability recheck shows progress and completion for an unchanged pause, then recovers without submitting", async () => {
+  const original = globalThis.fetch,
+    calls = [];
+  let pending;
+  const paused = { enabled: false, reason: "pilot_paused" };
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    return calls.length === 1
+      ? Response.json(paused)
+      : new Promise((resolve) => {
+          pending = resolve;
+        });
+  };
+  window.localStorage.clear();
+  let ui;
+  try {
+    await act(async () => {
+      ui = render(<Answers {...props} source="google" />);
+    });
+    fireEvent.change(ui.getByRole("textbox"), {
+      target: { value: "Are room dimensions required?" },
+    });
+    fireEvent.click(ui.getByRole("button", { name: "Get answer" }));
+    const button = ui.getByRole("button", { name: "Check AI availability" });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(
+      ui.getByRole("button", { name: "Checking AI availability…" }).disabled,
+      true,
+    );
+    assert.ok(ui.getByText("Checking AI availability…", { selector: "p" }));
+    await act(async () => {
+      pending(Response.json(paused));
+    });
+    assert.ok(
+      ui.getByText("Check complete — the administrator pause is still active."),
+    );
+    assert.equal(
+      ui.getByRole("button", { name: "Check AI availability" }).disabled,
+      false,
+    );
+    assert.ok(ui.getByRole("dialog", { name: "AI unavailable" }));
+    await act(async () => {
+      fireEvent.click(
+        ui.getByRole("button", { name: "Check AI availability" }),
+      );
+    });
+    await act(async () => {
+      pending(
+        Response.json({
+          enabled: true,
+          priceMicros: 12500,
+          balanceMicros: 262500,
+          preferenceScope: "r".repeat(43),
+        }),
+      );
+    });
+    assert.ok(ui.getByRole("dialog", { name: "Use AI for this workbook?" }));
+    assert.ok(ui.getByText("AI is available. This check used no credits."));
+    assert.equal(calls.filter((url) => url.endsWith("answer")).length, 0);
+    fireEvent.click(ui.getByRole("button", { name: "Cancel", exact: true }));
+    assert.equal(
+      ui.getByRole("textbox").value,
+      "Are room dimensions required?",
+    );
+    fireEvent.click(ui.getByRole("button", { name: "Voice and AI settings" }));
+    act(() => {
+      fireEvent.click(
+        ui.getByRole("button", { name: "Check AI availability" }),
+      );
+    });
+    assert.equal(
+      ui.getByRole("checkbox", { name: "Use AI credits" }).disabled,
+      true,
+    );
+    await act(async () => {
+      pending(Response.json(paused));
+    });
+    assert.ok(
+      ui.getByText("Check complete — the administrator pause is still active."),
+    );
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+    window.localStorage.clear();
+  }
+});
+
 test("dictation shows real listening state but final words wait for explicit Get answer", () => {
   let recognition;
   window.SpeechRecognition = class {

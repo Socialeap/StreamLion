@@ -455,8 +455,13 @@ function VoiceAnswers({
                   </button>
                 )}
               {source === "google" && !ai.available && (
-                <button onClick={ai.refresh} disabled={ai.busy}>
-                  Check AI availability
+                <button
+                  onClick={() => ai.refresh(true)}
+                  disabled={ai.busy || ai.checking}
+                >
+                  {ai.checking
+                    ? "Checking AI availability…"
+                    : "Check AI availability"}
                 </button>
               )}
             </>
@@ -469,6 +474,7 @@ function VoiceAnswers({
             <input
               type="checkbox"
               checked={ai.active}
+              disabled={ai.busy || ai.checking}
               onChange={(event) => {
                 cancelMedia();
                 setListening(false);
@@ -488,8 +494,11 @@ function VoiceAnswers({
               : `${creditLabel(ai.config.priceMicros)} per completed answer · ${creditLabel(ai.config.balanceMicros)} remaining. Your question and Google project records go to OpenAI; answer text goes to DeepInfra for voice. No question audio is stored by StreamLion.`}
           </p>
           {!ai.demo && (
-            <button onClick={ai.refresh} disabled={ai.busy}>
-              Refresh credits
+            <button
+              onClick={() => ai.refresh(true)}
+              disabled={ai.busy || ai.checking}
+            >
+              {ai.checking ? "Checking AI availability…" : "Refresh credits"}
             </button>
           )}
           {ai.busy && (
@@ -499,6 +508,11 @@ function VoiceAnswers({
             </button>
           )}
         </div>
+      )}
+      {ai.configCheck?.message && (
+        <p className="hint" role={ai.configCheck.error ? "alert" : "status"}>
+          {ai.configCheck.message}
+        </p>
       )}
       <div className="voice-heading">
         <div>
