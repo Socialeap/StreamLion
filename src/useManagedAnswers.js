@@ -167,7 +167,10 @@ export default function useManagedAnswers({
           `${event.message} Use Read answer aloud for device speech.`,
         );
       }
-      if (event.type === "text_done" || event.type === "done") {
+      if (
+        (event.type === "text_done" || event.type === "done") &&
+        !textComplete
+      ) {
         textComplete = true;
         flush();
         updateBalance(event);
@@ -236,7 +239,7 @@ export default function useManagedAnswers({
         );
     } catch (error) {
       if (turn.current === current) {
-        flush();
+        if (!textComplete && (text || current.flushTimer)) flush();
         callbacks.current.onMessage(
           error.name === "AbortError"
             ? "AI stopped. Check credits before asking again."
