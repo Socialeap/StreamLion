@@ -1,5 +1,7 @@
 # Managed AI voice pilot (draft, inactive)
 
+StreamLion uses repository/GitHub, Cloudflare Pages/Functions/D1, Google Cloud/Sheets/Drive and Stripe. **Lovable has no role in this stack. No Lovable action or handoff is required.** Apply backend and frontend release steps directly through the existing Cloudflare and Google Cloud systems.
+
 StreamLion pays OpenAI for `gpt-6-luna` text and DeepInfra for `hexgrad/Kokoro-82M` speech. Customers never provide keys. Google Sheets/Drive remain authoritative. The server uses the authenticated session's selected workbook and project, not a browser-supplied record or workbook ID. AI cannot change records, call tools, or search externally.
 
 ## Review without credentials
@@ -34,7 +36,7 @@ Server-only required secrets: `OPENAI_API_KEY`, `DEEPINFRA_API_KEY`. Existing pe
 3. If **all eight markers and the migration stamp are absent**, confirm migrations 0001–0006 are stamped and the only pending committed migration is 0007. Then apply the committed migration byte-for-byte using `npx wrangler d1 migrations apply streamlion-google-sessions --env production --remote`. If other migrations are pending, stop and report them; do not apply them under this authorization.
 4. If all eight markers and the 0007 stamp exist, skip application and verify the tables/index/trigger definitions against the committed SQL and expected columns/constraints. Any missing marker, mismatched definition, duplicate stamp, or inconsistent stamp/schema is partial state: **STOP and report; do not repair, regenerate, substitute or apply again**.
 5. Re-read all markers and the platform migration stamp. Confirm policy `active=0`, `daily_budget_micros=0`, and no wallets are enabled on first activation. No client routes can grant credits or mutate the policy. D1 is accessed only by existing server binding, not from the browser. No RLS/grants change is involved.
-6. Deploy the current merged Pages build and its Functions through the existing GitHub/Cloudflare deployment path with AI OFF. This deployment changes both server code and the bundled frontend; there is no Lovable Publish dependency. If this project is not accessible from Lovable, Lovable must stop and return these owner/Cloudflare actions without creating a new backend.
+6. Deploy the current merged Pages build and its Functions through the existing GitHub/Cloudflare deployment path with AI OFF. This deployment changes both server code and the bundled frontend. The owner operates Cloudflare directly; do not generate a Lovable prompt, handoff or activation step.
 7. Non-credit-consuming check: GET `/api/ai/config` returns `{ "enabled": false }` with `Cache-Control: no-store` while the gate is off. POST `/api/ai/answer` returns 503 with no provider call. Spend ceiling for this activation is **$0**. No real questions/searches or paid health checks.
 8. Return receipt: merged main SHA, Cloudflare deployment identifier and status, migration applied/skipped plus platform stamp, eight marker/definition results, server-only storage/no browser credit-write result, exact AI route deployment result, safe health-check results and confirmed disabled gate. Owner must share the receipt before activation is considered complete.
 

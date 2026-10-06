@@ -43,6 +43,7 @@
   },
   "overrides": {
     "rollup": "npm:@rollup/wasm-node@4.63.4",
-    "esbuild": "npm:esbuild-wasm@0.28.2"
+    "esbuild": "npm:esbuild-wasm@0.28.2",
+    "sharp": "0.35.5"
   }
 }
