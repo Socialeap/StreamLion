@@ -1,4 +1,5 @@
 import React from "react";
+import "fake-indexeddb/auto";
 import { JSDOM } from "jsdom";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -21,6 +22,56 @@ const { render, fireEvent, act, cleanup } =
   await import("@testing-library/react");
 const { default: Notes } = await import("./Notes.jsx");
 const { writeDraft } = await import("./drafts.js");
+const { createBackup, inspectBackup, restoreBackup } =
+  await import("./backup.js");
+const { openLocalDatabase } = await import("./storage.js");
+test("a note entered before selecting a project survives device backup and restore", async () => {
+  localStorage.clear();
+  const db = await openLocalDatabase();
+  await db.clear("workspace");
+  await db.clear("audio");
+  const props = {
+    workspace: { jobs: [{ id: "A", title: "A" }], notes: [] },
+    selected: "",
+    draftScope: "book-a",
+    onSelect: () => {},
+    onAdd: async () => {},
+    onAudio: () => {},
+    onRevise: () => {},
+    onReview: () => {},
+    onCaptureBusy: () => {},
+    captureBusy: false,
+  };
+  let ui = render(<Notes {...props} />);
+  try {
+    fireEvent.change(ui.getByLabelText("Area"), {
+      target: { value: "Android QA" },
+    });
+    fireEvent.change(ui.getByLabelText("Note"), {
+      target: { value: "Unassigned draft — clearance 6 7/16 inches." },
+    });
+    assert.equal(ui.getByRole("button", { name: "Save note" }).disabled, true);
+    const key = "streamlion-draft-v1:book-a:note:";
+    const original = localStorage.getItem(key);
+    const backup = await createBackup();
+    assert.equal((await inspectBackup(backup)).summary.drafts, 1);
+    cleanup();
+    localStorage.clear();
+    await restoreBackup(backup);
+    assert.equal(localStorage.getItem(key), original);
+    ui = render(<Notes {...props} />);
+    assert.equal(ui.getByLabelText("Area").value, "Android QA");
+    assert.equal(
+      ui.getByLabelText("Note").value,
+      "Unassigned draft — clearance 6 7/16 inches.",
+    );
+    ui.rerender(<Notes {...props} selected="A" />);
+    assert.equal(ui.getByLabelText("Note").value, "");
+    assert.equal(localStorage.getItem(key), original);
+  } finally {
+    cleanup();
+  }
+});
 test("a prose note in a Measurements area keeps correction and review controls", async () => {
   localStorage.clear();
   let revised, reviewed;

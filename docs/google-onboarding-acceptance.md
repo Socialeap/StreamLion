@@ -25,6 +25,14 @@ Google Drive's viewer could not preview the tiny synthetic PNG, although the dow
 - Scheduled cleanup invocation receipt and separate owner acceptance.
 - Payment activation/test acceptance and representative staging scale/SLO/cost evidence remain separate.
 
+## Android partial acceptance and backup repair
+
+After PR #42 deployed at main `08a46630323d1fc017f02099ba3bb172e98471bd`, independent Google exports found exactly one Android QA note in Account B and none in Account A. The owner's entered text, `Android QA -001 - clearance 6 7/16 inches.`, matched its stored source text. The owner reported that reopening the installed Android app showed Connect Google; persistent restoration remains unresolved pending device diagnostics and a repeat test.
+
+The owner also reported `Unrecognized backup draft` from Download device backup. A component regression reproduced that exact error by entering a Fieldnotes draft with no project selected: the app retains a valid note under a key ending in `note:`, while backup validation previously required a nonempty project ID. Backup validation now accepts this specific known note key, preserves its exact content, and restores it without assigning it to a project. Invalid note content and other unknown or malformed draft keys still fail validation. This source reproduction does not establish which draft caused the owner's phone failure.
+
+Classification: frontend backup validation and tests only, with acceptance documentation. No Lovable action is required. Owner-approved merge, the existing Cloudflare Pages frontend deployment, and a repeated phone backup download/restore check remain separate gates. No backend function, migration, secret, OAuth configuration or storage reset is required. Download support details under Help & privacy is independent of device-backup validation and remains the next diagnostic action for the reopen failure.
+
 ## Refresh-status repair and release
 
 During a failed refresh, the previous success label remained visible beside the error. The frontend now shows refresh progress, replaces that label with `Google refresh failed · records were not updated` on failure, and restores success only after verified readback. Previously loaded records and recoverable drafts are retained. A regression exercises failure, record preservation and successful retry.
