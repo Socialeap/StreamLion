@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
-import { Check, NotebookPen } from "lucide-react";
+import { Check, NotebookPen, Archive } from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
 import Recorder from "./Recorder";
 import { measurementText, isMeasurementRecord } from "./measurements.js";
 import FieldMedia from "./FieldMedia";
@@ -259,6 +260,9 @@ export default function Notes({
           )}
           <div className="field-layout">
             <section className="editor">
+              <SectionHeading icon={NotebookPen} tone="blue">
+                New field note
+              </SectionHeading>
               <form onSubmit={submit}>
                 <label>
                   Area
@@ -354,9 +358,9 @@ export default function Notes({
               ) : null}
             </section>
             <section aria-label="Saved notes" className="note-list">
-              <h2>
+              <SectionHeading icon={Archive}>
                 Saved notes <span className="count">{notes.length}</span>
-              </h2>
+              </SectionHeading>
               {!notes.length ? (
                 <p className="muted">Notes for this job will appear here.</p>
               ) : (

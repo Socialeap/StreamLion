@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import BackupPanel from "./BackupPanel.jsx";
 import SupportPanel from "./SupportPanel.jsx";
+import SectionHeading from "./SectionHeading.jsx";
+import { FolderSync, HardDrive, FolderOpen } from "lucide-react";
 import { fetchRead } from "./network.js";
 import {
   connectGoogle,
@@ -126,8 +128,11 @@ export default function Connections({
           <p>Your records in Google. Your workspace in StreamLion.</p>
         </div>
       </header>
-      <section className="editor">
-        <h2>Google Sheets & Drive</h2>
+      <section
+        className="editor section-card"
+        aria-label="Google Sheets & Drive"
+      >
+        <SectionHeading icon={FolderSync}>Google Sheets & Drive</SectionHeading>
         <p>
           {googleConfig?.persistentEnabled
             ? "Connect Google once, then choose where your projects will be saved. We'll reopen your saved workbook when you return."
@@ -255,7 +260,11 @@ export default function Connections({
         </div>
         {connected && (
           <section className="google-folder" aria-label="StreamLion folder">
-            <h3 title="Your home for StreamLion workbooks and project files in Google Drive.">
+            <h3
+              className="icon-label"
+              title="Your home for StreamLion workbooks and project files in Google Drive."
+            >
+              <FolderOpen size={20} aria-hidden="true" />
               StreamLion folder
             </h3>
             <p>
@@ -383,8 +392,10 @@ export default function Connections({
         </p>
       </section>
       {bookId && onSiteCopy && (
-        <section className="editor site-copy-control">
-          <h2>Site copy on this device</h2>
+        <section className="editor section-card site-copy-control">
+          <SectionHeading icon={HardDrive} tone="blue">
+            Site copy on this device
+          </SectionHeading>
           <p>
             {siteCopy
               ? `Workbook copy checked ${new Date(siteCopy.verifiedAt).toLocaleString()}. It can be read without signing in. New notes and files wait here until you reconnect.`

@@ -3,7 +3,19 @@ import ProjectVoiceAnswers from "./ProjectVoiceAnswers.jsx";
 import BriefTaskBuilder from "./BriefTaskBuilder.jsx";
 import SiteException from "./SiteException.jsx";
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Phone, Check, ArrowRight } from "lucide-react";
+import {
+  MapPin,
+  Phone,
+  Check,
+  ArrowRight,
+  CalendarDays,
+  KeyRound,
+  ClipboardCheck,
+  LogOut,
+  Send,
+  WifiOff,
+} from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
 import { download } from "./storage";
 import {
@@ -467,7 +479,9 @@ function ProjectHomeContent({
           <>
             <div className="site-overview">
               <section>
-                <h2>Your next visit</h2>
+                <SectionHeading icon={CalendarDays} tone="blue">
+                  Your next visit
+                </SectionHeading>
                 <p className="visit-time">{visitLabel(project.startLocal)}</p>
                 <p>
                   {project.timeZone || ""}{" "}
@@ -503,7 +517,9 @@ function ProjectHomeContent({
                 </div>
               </section>
               <section className="access-card">
-                <h2>Getting inside</h2>
+                <SectionHeading icon={KeyRound} tone="amber">
+                  Getting inside
+                </SectionHeading>
                 <p className="note-text">
                   {project.accessInstructions ||
                     "Confirm access with the site contact before travelling."}
@@ -537,7 +553,9 @@ function ProjectHomeContent({
             />
             {!project.deviceOnly && (
               <section className="site-copy-control">
-                <h3>Prepare for a weak connection</h3>
+                <SectionHeading icon={WifiOff} tone="blue" level={3}>
+                  Prepare for a weak connection
+                </SectionHeading>
                 <p>
                   {siteCopy
                     ? `A read-only copy is kept on this device, checked ${new Date(siteCopy.verifiedAt).toLocaleString()}.`
@@ -606,7 +624,9 @@ function ProjectHomeContent({
         )}
         {panel === 1 && (
           <>
-            <h2>Account for the requested work</h2>
+            <SectionHeading icon={ClipboardCheck}>
+              Account for the requested work
+            </SectionHeading>
             <p>
               Add measurements, photos, voice memos, and access problems to the
               right site area.
@@ -642,7 +662,9 @@ function ProjectHomeContent({
         )}
         {panel === 2 && (
           <>
-            <h2>Before leaving job-site</h2>
+            <SectionHeading icon={LogOut} tone="amber">
+              Before leaving job-site
+            </SectionHeading>
             <p>
               Check the areas and evidence now, while you can still resolve gaps
               on site.
@@ -729,7 +751,9 @@ function ProjectHomeContent({
         )}
         {panel === 3 && (
           <>
-            <h2>Hand over with a clear record</h2>
+            <SectionHeading icon={Send} tone="violet">
+              Hand over with a clear record
+            </SectionHeading>
             <p>
               Delivery, customer acceptance, and money received are separate.
             </p>

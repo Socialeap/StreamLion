@@ -33,6 +33,18 @@ The owner also reported `Unrecognized backup draft` from Download device backup.
 
 Classification: frontend backup validation and tests only, with acceptance documentation. No Lovable action is required. Owner-approved merge, the existing Cloudflare Pages frontend deployment, and a repeated phone backup download/restore check remain separate gates. No backend function, migration, secret, OAuth configuration or storage reset is required. Download support details under Help & privacy is independent of device-backup validation and remains the next diagnostic action for the reopen failure.
 
+The owner subsequently confirmed both downloads worked after PR #43 merged and production revision `242f2e715ae64a7fd2050bb2b9430d6bb003ff98` passed release/health/session/config checks. This establishes phone download success, not a phone restore or successful persistent sign-in. The owner reported inadequate visual download feedback.
+
+## Download feedback and visual refresh
+
+Both Connections downloads now show preparation, a disabled button while working, and an adjacent, announced success panel with the filename and Downloads/file-manager guidance. The panel scrolls into view above mobile navigation. It reports that the browser download started; the app cannot verify the operating system's final save. Failures show an alert and no success panel, retaining existing drafts. Support details also report theme and standalone/browser display mode without project text, Google file IDs or credentials.
+
+Light/Dark controls follow the device preference initially and persist an explicit choice on that device. A storage failure still changes the current view and explains that it could not be remembered. Shared semantic colours cover cards, inputs, status, errors and controls; printing retains a light palette. Icon-led cards identify Connections, field-note capture/saved notes, measurements, project records, project-editor sections, visit preparation/checklists and Ask.
+
+Source validation: 253 tests passed, followed by 26 focused checks after the final heading adjustments; production/extension builds passed. Local browser QA used synthetic connection/payment fixtures, not provider requests: desktop 1400×1100, phones 390×844 and 320×844; both themes, reload persistence, both download notices, and exact unsaved-note preservation through theme changes passed. There was no horizontal overflow or relevant console error. These checks do not establish physical-phone acceptance of this new visual release.
+
+Classification: frontend presentation, device theme preference, download feedback and diagnostic metadata only. No Lovable action is required. After owner-approved merge, deploy through the existing Cloudflare Pages main pipeline, verify the release SHA, update the installed app, and confirm both download notices and theme/card usability on Android. The prior reopen/sign-in diagnosis remains open pending the device's support details. No backend deployment, migration, secret, OAuth setting, purchase activation or paid provider change is required.
+
 ## Refresh-status repair and release
 
 During a failed refresh, the previous success label remained visible beside the error. The frontend now shows refresh progress, replaces that label with `Google refresh failed · records were not updated` on failure, and restores success only after verified readback. Previously loaded records and recoverable drafts are retained. A regression exercises failure, record preservation and successful retry.

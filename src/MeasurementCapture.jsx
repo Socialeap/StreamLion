@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Ruler, Mic, Layers } from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
 import { download } from "./storage";
 import {
@@ -248,7 +250,9 @@ export default function Measurements({
         className="intake-panel measurement-guide"
         aria-label="How to dictate measurements"
       >
-        <h2>Speak your readings. StreamLion organizes them.</h2>
+        <SectionHeading icon={Mic} tone="violet">
+          Speak your readings. StreamLion organizes them.
+        </SectionHeading>
         <ol>
           <li>Choose the room or exterior area below.</li>
           <li>
@@ -292,6 +296,9 @@ export default function Measurements({
         </p>
       )}
       <section className="editor" aria-label="Measurement batch">
+        <SectionHeading icon={Ruler} tone="blue">
+          Capture a measurement batch
+        </SectionHeading>
         <div className="measurement-room">
           <label>
             Room or exterior area
@@ -531,7 +538,9 @@ export default function Measurements({
       </section>
       <section className="note-list" aria-label="Saved measurement batches">
         <div className="actions">
-          <h2>Saved rooms and measurements</h2>
+          <SectionHeading icon={Layers}>
+            Saved rooms and measurements
+          </SectionHeading>
           <button disabled={!records.length} onClick={exportReport}>
             Download measurement report
           </button>

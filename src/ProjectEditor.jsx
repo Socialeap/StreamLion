@@ -5,7 +5,15 @@ import {
   FileText,
   MessageCircle,
   Upload,
+  MapPin,
+  Users,
+  CalendarDays,
+  ClipboardList,
+  Wallet,
+  FolderOpen,
+  ClipboardCheck,
 } from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
 import {
   PROJECT_FIELDS,
   validateFields,
@@ -29,6 +37,17 @@ const STEPS = [
   { label: "Payment", group: "Money", title: "What are the payment details?" },
   { label: "Files", group: "Documents", title: "Which files are needed?" },
   { label: "Finish", group: "Review", title: "Review and save" },
+];
+const STEP_ICONS = [
+  FileText,
+  FileText,
+  MapPin,
+  Users,
+  CalendarDays,
+  ClipboardList,
+  Wallet,
+  FolderOpen,
+  ClipboardCheck,
 ];
 
 export default function ProjectEditor({
@@ -285,13 +304,17 @@ export default function ProjectEditor({
         </label>
       )}
       <form onSubmit={(event) => event.preventDefault()}>
-        <div className="wizard-body">
+        <div
+          className={step === 0 ? "wizard-body" : "wizard-body section-card"}
+        >
           <div className="wizard-heading">
             <span className="wizard-eyebrow">
               Step {step + 1} of {STEPS.length}
             </span>
             <div className="heading-with-help">
-              <h2>{current.title}</h2>
+              <SectionHeading icon={STEP_ICONS[step]} tone="blue">
+                {current.title}
+              </SectionHeading>
               <HelpTip
                 label={current.title}
                 text={

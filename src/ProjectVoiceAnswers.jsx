@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { Mic, Square, Volume2 } from "lucide-react";
+import SectionHeading from "./SectionHeading.jsx";
 import {
   ANSWER_TOPICS,
   answerProjectQuestion,
@@ -232,7 +233,9 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
     >
       <div className="voice-heading">
         <div>
-          <h2>Ask this project</h2>
+          <SectionHeading icon={Mic} tone="violet">
+            Ask this project
+          </SectionHeading>
           <p>Tap the microphone and ask, or type a short question.</p>
         </div>
         <button
