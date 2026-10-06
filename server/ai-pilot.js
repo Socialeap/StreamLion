@@ -1,0 +1,338 @@
+import { getSession } from "./google-auth.js";
+import { getExtensionProject } from "./extension-workbook.js";
+import { hasPurchase, licenseRequired } from "./purchase-access.js";
+import { boundedText } from "./request-body.js";
+import {
+  AI_LIMITS,
+  projectContext,
+  streamAnswer,
+  synthesize,
+  takePhrase,
+} from "./ai-providers.js";
+
+const headers = {
+  "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+  "Content-Type": "application/json",
+};
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), { status, headers });
+const settingsReady = (env) =>
+  env.ENABLE_AI_PILOT === "true" &&
+  env.OPENAI_API_KEY &&
+  env.DEEPINFRA_API_KEY &&
+  env.GOOGLE_SESSIONS;
+export async function expireTurns(db, now = Date.now()) {
+  await db
+    .prepare(
+      "UPDATE streamlion_ai_turns_v1 SET state='failed' WHERE state='reserved' AND created_at < ?",
+    )
+    .bind(now - 300000)
+    .run();
+}
+export async function reserveTurn(db, subject, id, price, now = Date.now()) {
+  // SQLite triggers atomically check both account capacity and shared capacity,
+  // then debit credits. No rejected account consumes the global budget.
+  return db
+    .prepare(
+      "INSERT INTO streamlion_ai_turns_v1(google_subject,request_id,created_at,price_micros,reserve_micros) VALUES(?,?,?,?,?)",
+    )
+    .bind(subject, id, now, price, AI_LIMITS.reserveMicros)
+    .run();
+}
+export async function finishTurn(db, subject, id, state) {
+  return db
+    .prepare(
+      "UPDATE streamlion_ai_turns_v1 SET state=? WHERE google_subject=? AND request_id=? AND state='reserved'",
+    )
+    .bind(state, subject, id)
+    .run();
+}
+async function account(db, subject) {
+  return db
+    .prepare(
+      "SELECT w.balance_micros,p.price_micros,p.daily_budget_micros FROM streamlion_ai_wallets_v1 w JOIN streamlion_ai_policy_v1 p ON p.id=1 WHERE w.google_subject=? AND w.enabled=1 AND p.active=1 AND p.daily_budget_micros>=6000",
+    )
+    .bind(subject)
+    .first();
+}
+export async function handleAI(context) {
+  const { request, env } = context,
+    path = new URL(request.url).pathname;
+  if (!["/api/ai/config", "/api/ai/answer"].includes(path))
+    return json({ error: "Not found." }, 404);
+  if (
+    (path.endsWith("/config") && request.method !== "GET") ||
+    (path.endsWith("/answer") && request.method !== "POST")
+  )
+    return json({ error: "Method not allowed." }, 405);
+  if (!settingsReady(env))
+    return path.endsWith("/config")
+      ? json({ enabled: false })
+      : json({ error: "AI pilot is not configured." }, 503);
+  // No cross-origin credentialed reads or writes, and no client-chosen origins.
+  if (
+    new URL(request.url).origin !== env.GOOGLE_AUTH_ORIGIN ||
+    (request.method === "POST" &&
+      request.headers.get("Origin") !== env.GOOGLE_AUTH_ORIGIN) ||
+    ["cross-site"].includes(request.headers.get("Sec-Fetch-Site"))
+  )
+    return json({ error: "Open StreamLion to continue." }, 403);
+  try {
+    const session = await getSession(request, env);
+    if (!session)
+      return path.endsWith("/config")
+        ? json({ enabled: false })
+        : json({ error: "Connect Google before using AI." }, 401);
+    if (
+      licenseRequired(env) &&
+      !(await hasPurchase(env, session.google_subject))
+    )
+      return json({ error: "A StreamLion license is required." }, 402);
+    await expireTurns(env.GOOGLE_SESSIONS);
+    const wallet = await account(env.GOOGLE_SESSIONS, session.google_subject);
+    if (path.endsWith("/config"))
+      return json(
+        wallet
+          ? {
+              enabled: true,
+              priceMicros: wallet.price_micros,
+              balanceMicros: wallet.balance_micros,
+            }
+          : { enabled: false },
+      );
+    if (!wallet || !session.workbook_id)
+      return json(
+        {
+          error:
+            "This account is not enabled for the AI pilot. Select a Google workbook.",
+        },
+        403,
+      );
+    if (
+      !(request.headers.get("Content-Type") || "").startsWith(
+        "application/json",
+      )
+    )
+      return json({ error: "Use JSON." }, 415);
+    const input = JSON.parse(await boundedText(request, 4096));
+    if (
+      typeof input.question !== "string" ||
+      !input.question.trim() ||
+      input.question.length > 500 ||
+      typeof input.projectId !== "string" ||
+      !/^[\w-]{1,100}$/.test(input.projectId) ||
+      typeof input.requestId !== "string" ||
+      !/^[0-9a-f-]{36}$/.test(input.requestId) ||
+      !["boolean"].includes(typeof input.speech)
+    )
+      return json({ error: "Check the question and selected project." }, 400);
+    if (input.priceMicros !== wallet.price_micros)
+      return json(
+        {
+          error:
+            "The pilot price changed. Review the updated price before asking.",
+        },
+        409,
+      );
+    const prior = await env.GOOGLE_SESSIONS.prepare(
+      "SELECT state FROM streamlion_ai_turns_v1 WHERE google_subject=? AND request_id=?",
+    )
+      .bind(session.google_subject, input.requestId)
+      .first();
+    if (prior)
+      return json(
+        {
+          error:
+            "This request was already submitted. Check the existing answer before asking again.",
+        },
+        409,
+      );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    const abort = () => controller.abort();
+    request.signal.addEventListener("abort", abort, { once: true });
+    let streaming = false;
+    try {
+      const snapshot = await getExtensionProject(
+        env,
+        { session, bookId: session.workbook_id },
+        input.projectId,
+      );
+      const records = projectContext(snapshot.project, snapshot.notes);
+      if (controller.signal.aborted) throw new Error("cancelled");
+      try {
+        await reserveTurn(
+          env.GOOGLE_SESSIONS,
+          session.google_subject,
+          input.requestId,
+          wallet.price_micros,
+        );
+      } catch {
+        return json(
+          {
+            error:
+              "AI credits or pilot capacity are unavailable. No credits were charged.",
+          },
+          429,
+        );
+      }
+      streaming = true;
+      let streamController;
+      const stream = new TransformStream({
+          start(value) {
+            streamController = value;
+          },
+        }),
+        writer = stream.writable.getWriter();
+      const stopStream = () =>
+        streamController.error(new Error("AI stream stopped."));
+      controller.signal.addEventListener("abort", stopStream, { once: true });
+      const send = async (data) => {
+        if (controller.signal.aborted) throw new Error("cancelled");
+        return writer.write(
+          new TextEncoder().encode(JSON.stringify(data) + "\n"),
+        );
+      };
+      let textComplete = false,
+        speechFailed = false,
+        speechCount = 0,
+        phrase = "",
+        speechQueue = Promise.resolve();
+      const enqueueSpeech = (text) => {
+        if (!input.speech || !text.trim() || speechFailed) return;
+        speechCount++;
+        speechQueue = speechQueue.then(async () => {
+          if (controller.signal.aborted || speechFailed) return;
+          try {
+            const audio = await synthesize(env, text, controller.signal);
+            firstAudioMs ??= Date.now() - started;
+            await send({ type: "audio", audio });
+          } catch {
+            if (controller.signal.aborted) return;
+            speechFailed = true;
+            await send({
+              type: "speech_error",
+              message:
+                "Hosted voice is unavailable. Your text answer remains available.",
+            });
+          }
+        });
+        // Attach immediately: a disconnected browser must not create an unhandled rejection.
+        speechQueue.catch(() => controller.abort());
+      };
+      const started = Date.now();
+      let firstTextMs = null,
+        firstAudioMs = null;
+      const work = (async () => {
+        try {
+          await send({
+            type: "start",
+            priceMicros: wallet.price_micros,
+            source: `Google workbook · read ${snapshot.destination.asOf}`,
+          });
+          for await (const delta of streamAnswer(
+            env,
+            input.question.trim(),
+            records,
+            controller.signal,
+          )) {
+            firstTextMs ??= Date.now() - started;
+            await send({ type: "text", delta });
+            phrase += delta;
+            if (speechCount < 5) {
+              const [ready, rest] = takePhrase(phrase);
+              if (ready) {
+                phrase = rest;
+                enqueueSpeech(ready);
+              }
+            }
+          }
+          await finishTurn(
+            env.GOOGLE_SESSIONS,
+            session.google_subject,
+            input.requestId,
+            "complete",
+          );
+          textComplete = true;
+          enqueueSpeech(phrase);
+          await speechQueue;
+          await send({
+            type: "done",
+            timings: {
+              firstTextMs,
+              firstAudioMs,
+              totalMs: Date.now() - started,
+            },
+            balanceMicros: (
+              await env.GOOGLE_SESSIONS.prepare(
+                "SELECT balance_micros FROM streamlion_ai_wallets_v1 WHERE google_subject=?",
+              )
+                .bind(session.google_subject)
+                .first()
+            )?.balance_micros,
+          });
+        } catch {
+          controller.signal.removeEventListener("abort", stopStream);
+          controller.abort();
+          await speechQueue.catch(() => {});
+          if (!textComplete)
+            await finishTurn(
+              env.GOOGLE_SESSIONS,
+              session.google_subject,
+              input.requestId,
+              "failed",
+            );
+          const errorFrame = {
+            type: "error",
+            message: textComplete
+              ? "The answer completed, but playback was interrupted."
+              : "AI did not finish. Any partial text is incomplete; your credits were returned.",
+          };
+          if (!request.signal.aborted) {
+            const errorTimeout = setTimeout(stopStream, 1000);
+            try {
+              await writer.write(
+                new TextEncoder().encode(JSON.stringify(errorFrame) + "\n"),
+              );
+            } catch {
+              /* Disconnected or timed-out stream. */
+            } finally {
+              clearTimeout(errorTimeout);
+            }
+          }
+        } finally {
+          clearTimeout(timeout);
+          controller.signal.removeEventListener("abort", stopStream);
+          request.signal.removeEventListener("abort", abort);
+          await writer.close().catch(() => {});
+        }
+      })();
+      context.waitUntil?.(work);
+      // writer backpressure ties delivery to the browser; a canceled reader aborts providers.
+      return new Response(stream.readable, {
+        headers: { ...headers, "Content-Type": "application/x-ndjson" },
+      });
+    } finally {
+      if (!streaming) {
+        clearTimeout(timeout);
+        request.signal.removeEventListener("abort", abort);
+      }
+    }
+  } catch (error) {
+    // Never return upstream bodies, exception strings, keys or project content.
+    return json(
+      {
+        error:
+          error.status === 404
+            ? "That project is unavailable in the selected workbook."
+            : "AI is unavailable. Check your Google connection; no new provider request was started.",
+      },
+      [400, 413, 404].includes(error.status)
+        ? error.status
+        : error instanceof SyntaxError
+          ? 400
+          : 503,
+    );
+  }
+}

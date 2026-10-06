@@ -7,6 +7,9 @@ import {
   answerSourceLabel,
 } from "./project-answers.js";
 
+import useManagedAnswers from "./useManagedAnswers.js";
+import { creditDollars } from "./managed-ai.js";
+
 const preferenceKey = "streamlion-read-answers-v1";
 const speechErrors = {
   "not-allowed":
@@ -59,7 +62,18 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
     if (result) answerRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [result]);
 
+  const ai = useManagedAnswers({
+    project,
+    source,
+    onBusy,
+    onResult: setResult,
+    onMessage: setMessage,
+  });
+  const aiRef = useRef(ai);
+  aiRef.current = ai;
+
   function cancelMedia() {
+    aiRef.current?.cancel();
     clearTimeout(timer.current);
     const previous = session.current;
     session.current = null;
@@ -155,6 +169,10 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
     setListening(false);
     setSpeaking(false);
     setMessage("");
+    if (aiRef.current.active) {
+      aiRef.current.ask(text, automaticSpeech);
+      return;
+    }
     const answer = {
       ...answerProjectQuestion(project, text, topicId),
       sourceLabel: answerSourceLabel(source, asOf),
@@ -241,6 +259,43 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
       className="project-voice"
       aria-label={`Quick answers for ${project.title}`}
     >
+      {ai.available && (
+        <div className="fact-answer">
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={ai.active}
+              onChange={(event) => {
+                cancelMedia();
+                setListening(false);
+                setSpeaking(false);
+                setResult(null);
+                setMessage("");
+                ai.setActive(event.target.checked);
+              }}
+            />
+            {ai.demo
+              ? "AI demo · simulated, no charge"
+              : "Use AI pilot · Luna + Kokoro"}
+          </label>
+          <p className="hint">
+            {ai.demo
+              ? "Local fixture and device speech. Live model quality and hosted voice latency still need testing."
+              : `${creditDollars(ai.config.priceMicros)} per completed answer · ${creditDollars(ai.config.balanceMicros)} pilot credits remaining. Your question and Google project records go to OpenAI; answer text goes to DeepInfra for voice. No question audio is stored by StreamLion.`}
+          </p>
+          {!ai.demo && (
+            <button onClick={ai.refresh} disabled={ai.busy}>
+              Refresh credits
+            </button>
+          )}
+          {ai.busy && (
+            <button onClick={stopVoice}>
+              <Square size={18} aria-hidden="true" />
+              Stop AI answer
+            </button>
+          )}
+        </div>
+      )}
       <div className="voice-heading">
         <div>
           <SectionHeading icon={Mic} tone="violet">
@@ -296,12 +351,12 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
               setResult(null);
             }}
           />
-          <button type="submit" disabled={!question.trim()}>
-            Get answer
+          <button type="submit" disabled={!question.trim() || ai.busy}>
+            {ai.busy ? "Getting AI answer…" : "Get answer"}
           </button>
         </div>
       </form>
-      {canSpeak && (
+      {(canSpeak || ai.available) && (
         <label className="check-label voice-preference">
           <input
             type="checkbox"
@@ -317,7 +372,7 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
               } catch {
                 /* Preference is optional. */
               }
-              if (!event.target.checked && speaking) stopVoice();
+              if (!event.target.checked && (speaking || ai.busy)) stopVoice();
             }}
           />
           Read answers aloud
@@ -346,7 +401,7 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
             </div>
           ))}
           <p className="hint">{result.sourceLabel}</p>
-          {canSpeak && result.kind === "answer" && !speaking && (
+          {canSpeak && result.kind === "answer" && !speaking && !ai.busy && (
             <button onClick={() => speak(result)}>
               <Volume2 size={18} aria-hidden="true" />
               Read answer aloud
@@ -354,26 +409,29 @@ function VoiceAnswers({ project, source = "device", asOf, onBusy }) {
           )}
         </div>
       )}
-      <details className="quiet-details">
-        <summary>Try a project detail</summary>
-        <div className="actions">
-          {ANSWER_TOPICS.map((topic) => (
-            <button
-              key={topic.id}
-              onClick={() => {
-                setQuestion(topic.label);
-                ask(topic.label, topic.id);
-              }}
-            >
-              {topic.label}
-            </button>
-          ))}
-        </div>
-      </details>
+      {!ai.active && (
+        <details className="quiet-details">
+          <summary>Try a project detail</summary>
+          <div className="actions">
+            {ANSWER_TOPICS.map((topic) => (
+              <button
+                key={topic.id}
+                onClick={() => {
+                  setQuestion(topic.label);
+                  ask(topic.label, topic.id);
+                }}
+              >
+                {topic.label}
+              </button>
+            ))}
+          </div>
+        </details>
+      )}
       <p className="hint voice-privacy">
         Answers use saved project fields. Browser dictation may send audio to
         its speech service and need internet. StreamLion does not store question
-        audio or use a paid AI service.
+        audio. Saved answers are free; the optional AI pilot uses credits when
+        enabled.
       </p>
     </section>
   );
