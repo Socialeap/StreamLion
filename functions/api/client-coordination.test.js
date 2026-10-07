@@ -14,6 +14,12 @@ import {
 } from "../../server/ai-credit-ledger.js";
 import { handleCoordination } from "../../server/client-coordination.js";
 import { CoordinationEngine } from "../../server/coordination-engine.js";
+import { CoordinationGoogle } from "../../server/coordination-google.js";
+import {
+  beginRead,
+  finishRead,
+  coordinationRuntime,
+} from "../../server/coordination-runtime.js";
 import {
   grantStarter,
   reserveProject,
@@ -137,6 +143,476 @@ function googleFixture() {
     },
   };
 }
+async function authorizedClient(f, jobId = "job-a") {
+  const token = "x".repeat(43),
+    now = Date.now();
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) VALUES(?,?,?,?,?)",
+    )
+    .run(
+      jobId,
+      f.connection.id,
+      jobId,
+      await seal(f.env, "client@example.com", "job-email:" + jobId),
+      now,
+    );
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_sessions_v1(hash,job_id,expires_at) VALUES(?,?,?)",
+    )
+    .run(await hash(token), jobId, now + 86400000);
+  return (route = "client/job", body, query = "") =>
+    handleCoordination({
+      env: f.env,
+      params: { path: route.split("/") },
+      request: new Request(
+        "https://app.example/api/coordination/" + route + query,
+        {
+          headers: {
+            Cookie: "__Host-streamlion-client=" + token,
+            ...(body
+              ? {
+                  Origin: "https://app.example",
+                  "Content-Type": "application/json",
+                }
+              : {}),
+          },
+          ...(body ? { method: "POST", body: JSON.stringify(body) } : {}),
+        },
+      ),
+    });
+}
+test("conditional reads skip Google, reconcile external edits and recheck revoked grants", async (t) => {
+  const f = fixture(t),
+    call = await authorizedClient(f);
+  delete f.env.COORDINATION_MAILER;
+  const google = googleFixture();
+  let job = newClientJob({
+    id: "job-a",
+    provider: "a",
+    clientEmail: "client@example.com",
+    title: "Office",
+    now: 1,
+  });
+  google.heads.set(job.id, job);
+  let reads = 0;
+  t.mock.method(CoordinationGoogle.prototype, "snapshot", async () => {
+    reads++;
+    return { ...(await google.snapshot()), rows: [[], [], [], []] };
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("no external transport");
+  });
+  const initial = await call();
+  assert.equal(initial.status, 200);
+  const data = await initial.json(),
+    query = "?refresh=" + data.refresh.token;
+  assert.equal(
+    (await (await call("client/job", null, query)).json()).unchanged,
+    true,
+  );
+  assert.equal(reads, 1);
+  job = { ...job, fields: { ...job.fields, title: "Externally refreshed" } };
+  google.heads.set(job.id, job);
+  f.sql.exec(
+    "UPDATE streamlion_coordination_reads_v1 SET verified_at=verified_at-60001",
+  );
+  const refreshed = await (await call("client/job", null, query)).json();
+  assert.equal(refreshed.job.fields.title, "Externally refreshed");
+  assert.notEqual(refreshed.refresh.token, data.refresh.token);
+  assert.equal(reads, 2);
+  // Another viewer's full reconciliation must also invalidate our old token.
+  assert.equal(
+    (await (await call("client/job", null, query)).json()).job.fields.title,
+    "Externally refreshed",
+  );
+  assert.equal(reads, 3);
+  f.sql.exec("UPDATE streamlion_coordination_sessions_v1 SET revoked=1");
+  assert.equal((await call("client/job", null, query)).status, 401);
+  assert.equal(reads, 3);
+});
+test("email outage preserves verified saves but creates no new verification challenge", async (t) => {
+  const f = fixture(t),
+    call = await authorizedClient(f),
+    google = googleFixture();
+  delete f.env.COORDINATION_MAILER;
+  google.heads.set(
+    "job-a",
+    newClientJob({
+      id: "job-a",
+      provider: "a",
+      clientEmail: "client@example.com",
+      title: "Office",
+      now: 1,
+    }),
+  );
+  for (const method of ["snapshot", "event", "projection"])
+    t.mock.method(CoordinationGoogle.prototype, method, (...args) =>
+      google[method](...args),
+    );
+  const before = await sharedWallet(f.db, "test", "a");
+  const saved = await call("client/command", {
+    operation: "outage-edit",
+    command: {
+      action: "edit",
+      expectedRevision: 0,
+      fields: { scope: "Lobby only" },
+    },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(google.heads.get("job-a").fields.scope, "Lobby only");
+  assert.deepEqual(await sharedWallet(f.db, "test", "a"), before);
+  assert.equal(
+    (
+      await call("client/request", {
+        jobId: "job-a",
+        email: "client@example.com",
+      })
+    ).status,
+    503,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_coordination_challenges_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_coordination_outbox_v1")
+      .get().n,
+    1,
+  );
+});
+test("change markers cannot hide a mutation concurrent with a full read", async (t) => {
+  // The client scope is allocated only for actual coordination jobs, never every field note.
+  const f = fixture(t),
+    request = new Request("https://app.example/api/coordination/provider/jobs");
+  await authorizedClient(f);
+  const before = await beginRead(f.env, f.connection, "", request, {}, 1000);
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES('op',?,'job-a','provider','fingerprint','encrypted',1)",
+    )
+    .run(f.connection.id);
+  await finishRead(f.env, f.connection, "", before, {
+    rows: [Array(8001), [], [], []],
+  });
+  const after = await beginRead(
+    f.env,
+    f.connection,
+    "",
+    new Request(request.url + "?refresh=" + before.refresh.token),
+    {},
+    1001,
+  );
+  assert.equal(after.unchanged, false);
+  assert.notEqual(after.refresh.token, before.refresh.token);
+  const job = await beginRead(f.env, f.connection, "job-a", request, {}, 1001);
+  f.sql.exec(
+    "UPDATE streamlion_coordination_operations_v1 SET state='complete',completed_at=2 WHERE id='op'",
+  );
+  assert.notEqual(
+    (await beginRead(f.env, f.connection, "job-a", request, {}, 1002)).refresh
+      .token,
+    job.refresh.token,
+  );
+  assert.equal(
+    (
+      await beginRead(
+        f.env,
+        { ...f.connection, id: "other" },
+        "",
+        request,
+        {},
+        1002,
+      )
+    ).unchanged,
+    false,
+  );
+  const metadata = f.sql
+    .prepare("SELECT * FROM streamlion_coordination_reads_v1")
+    .get();
+  assert.ok(!JSON.stringify(metadata).includes("scope"));
+  assert.equal(
+    coordinationRuntime({ COORDINATION_RECONCILE_SECONDS: "999999" })
+      .reconcileMs,
+    60000,
+  );
+});
+test("idle maintenance avoids Google and cleans hourly; failed recovery backs off without releasing its writer", async (t) => {
+  const f = fixture(t);
+  delete f.env.COORDINATION_MAILER;
+  let batches = 0,
+    runs = 0;
+  const batch = f.db.batch;
+  f.db.batch = async (...args) => {
+    batches++;
+    return batch(...args);
+  };
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("no idle Google calls");
+  });
+  const now = Date.now();
+  await maintainCoordination(f.env, now);
+  await maintainCoordination(f.env, now + 1000);
+  assert.equal(batches, 1);
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES('retry',?,'job-a','provider','x','encrypted',1)",
+    )
+    .run(f.connection.id);
+  t.mock.method(CoordinationEngine.prototype, "run", async () => {
+    runs++;
+    throw new Error("synthetic failure");
+  });
+  await maintainCoordination(f.env, now + 2000);
+  await maintainCoordination(f.env, now + 3000);
+  assert.equal(runs, 1);
+  await maintainCoordination(f.env, now + 62000);
+  await maintainCoordination(f.env, now + 63000);
+  assert.equal(runs, 2);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT state FROM streamlion_coordination_operations_v1 WHERE id='retry'",
+      )
+      .get().state,
+    "pending",
+  );
+  assert.throws(
+    () =>
+      f.sql
+        .prepare(
+          "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES('conflict',?,'job-a','provider','x','encrypted',1)",
+        )
+        .run(f.connection.id),
+    /UNIQUE/,
+  );
+  await maintainCoordination(f.env, now + 3600000);
+  assert.equal(batches, 2);
+});
+test("already reminded projects do not starve subsequent archive reminders", async (t) => {
+  const f = fixture(t);
+  delete f.env.COORDINATION_MAILER;
+  const now = Date.now();
+  for (let i = 0; i < 12; i++) {
+    const id = "reminder-" + i;
+    f.sql
+      .prepare(
+        "INSERT INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at,archive_at,closed_at) VALUES(?,?,?,?,?,?,?)",
+      )
+      .run(
+        id,
+        f.connection.id,
+        id,
+        await seal(f.env, "client@example.com", "job-email:" + id),
+        now,
+        now + 86400000,
+        now,
+      );
+  }
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("no sends while paused");
+  });
+  assert.equal((await maintainCoordination(f.env, now)).reminders, 10);
+  assert.equal((await maintainCoordination(f.env, now + 1000)).reminders, 2);
+  assert.equal((await maintainCoordination(f.env, now + 2000)).reminders, 0);
+});
+test("0011 exact preflight accepts pending/applied and rejects partial, altered or unstamped state", (t) => {
+  const f = fixture(t);
+  const schema = f.sql
+    .prepare(
+      "SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%' AND sql IS NOT NULL",
+    )
+    .all();
+  const stamps = Object.fromEntries(
+    schema
+      .filter((r) => r.name.includes("_schema_"))
+      .map((r) => [
+        r.name,
+        f.sql.prepare("SELECT version FROM " + r.name).get().version,
+      ]),
+  );
+  const target = "0011_coordination_efficiency.sql";
+  const result = coordinationPreflight({ schema, stamps }, target);
+  assert.equal(result.migration, "already_applied");
+  assert.equal(
+    coordinationPreflight(
+      {
+        schema: schema.filter((r) => !result.newMarkers.includes(r.name)),
+        stamps,
+      },
+      target,
+    ).migration,
+    "pending",
+  );
+  assert.throws(
+    () =>
+      coordinationPreflight(
+        {
+          schema: schema.filter(
+            (r) => r.name !== "streamlion_coordination_pending_v1",
+          ),
+          stamps,
+        },
+        target,
+      ),
+    /Partial/,
+  );
+  assert.throws(
+    () =>
+      coordinationPreflight(
+        {
+          schema: schema.map((r) =>
+            r.name === "streamlion_coordination_pending_v1"
+              ? { ...r, sql: r.sql.replace("created_at", "completed_at") }
+              : r,
+          ),
+          stamps,
+        },
+        target,
+      ),
+    /Schema mismatch/,
+  );
+  assert.throws(
+    () =>
+      coordinationPreflight(
+        {
+          schema,
+          stamps: {
+            ...stamps,
+            streamlion_coordination_efficiency_schema_v1: 2,
+          },
+        },
+        target,
+      ),
+    /stamp mismatch/,
+  );
+});
+test("provider conditional reads remain account-scoped and email outage blocks creation before writes", async (t) => {
+  const f = fixture(t),
+    token = "p".repeat(43),
+    now = Date.now();
+  delete f.env.COORDINATION_MAILER;
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_google_sessions_v1(session_hash,google_subject,email,credentials,expires_at,workbook_id,folder_id) VALUES(?,'a','a@example.com','encrypted',?,'book-a','folder-a')",
+    )
+    .run(await hash(token), now + 86400000);
+  let reads = 0;
+  t.mock.method(CoordinationGoogle.prototype, "snapshot", async () => {
+    reads++;
+    return { ...(await googleFixture().snapshot()), rows: [[], [], [], []] };
+  });
+  const call = (route, body, query = "") =>
+    handleCoordination({
+      env: f.env,
+      params: { path: route.split("/") },
+      request: new Request(
+        "https://app.example/api/coordination/" + route + query,
+        {
+          headers: {
+            Cookie: "__Host-streamlion-session=" + token,
+            ...(body
+              ? {
+                  Origin: "https://app.example",
+                  "Content-Type": "application/json",
+                  "X-StreamLion-Account": "a",
+                }
+              : {}),
+          },
+          ...(body ? { method: "POST", body: JSON.stringify(body) } : {}),
+        },
+      ),
+    });
+  const first = await (await call("provider/jobs")).json();
+  assert.ok(first.refresh);
+  const query = "?refresh=" + first.refresh.token;
+  assert.equal(
+    (await (await call("provider/jobs", null, query)).json()).unchanged,
+    true,
+  );
+  assert.equal(reads, 1);
+  const status = await (await call("provider/status")).json();
+  assert.equal(status.delivery.email, false);
+  assert.equal(
+    (
+      await call("provider/create", {
+        operation: "blocked",
+        email: "client@example.com",
+        title: "Office",
+      })
+    ).status,
+    503,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_coordination_jobs_v1")
+      .get().n,
+    0,
+  );
+  f.sql.exec("UPDATE streamlion_google_sessions_v1 SET google_subject='b'");
+  assert.equal((await call("provider/jobs", null, query)).status, 409);
+  assert.equal(reads, 1);
+});
+test("a refunded provider purchase cannot be bypassed by a client refresh token", async (t) => {
+  const f = fixture(t),
+    call = await authorizedClient(f);
+  const read = await beginRead(
+    f.env,
+    f.connection,
+    "job-a",
+    new Request("https://app.example/api/coordination/client/job"),
+  );
+  await finishRead(f.env, f.connection, "job-a", read, { rows: [] });
+  f.sql.exec(
+    "UPDATE streamlion_purchases_v1 SET status='refunded' WHERE google_subject='a'",
+  );
+  t.mock.method(CoordinationGoogle.prototype, "snapshot", () => {
+    throw new Error("no read after refund");
+  });
+  assert.equal(
+    (await call("client/job", null, "?refresh=" + read.refresh.token)).status,
+    403,
+  );
+});
+test("unpaid work cannot occupy a maintenance batch ahead of an eligible provider", async (t) => {
+  const f = fixture(t);
+  delete f.env.COORDINATION_MAILER;
+  for (let i = 0; i < 11; i++) {
+    f.sql
+      .prepare(
+        "INSERT INTO streamlion_coordination_connections_v1(id,google_subject,mode,workbook_id,folder_id,credentials,client_brand,expires_at) VALUES(?,'unpaid','test',?,'folder','encrypted','Provider',9999999999999)",
+      )
+      .run("unpaid-" + i, "unpaid-book-" + i);
+    f.sql
+      .prepare(
+        "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES(?,?,'job','provider','x','encrypted',1)",
+      )
+      .run("unpaid-op-" + i, "unpaid-" + i);
+  }
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES('eligible-op',?,'job','provider','x','encrypted',2)",
+    )
+    .run(f.connection.id);
+  const seen = [];
+  t.mock.method(CoordinationEngine.prototype, "run", async (id) => {
+    seen.push(id);
+  });
+  await maintainCoordination(f.env);
+  assert.deepEqual(seen, ["eligible-op"]);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) n FROM streamlion_coordination_operations_v1 WHERE id LIKE 'unpaid-%' AND state='pending'",
+      )
+      .get().n,
+    11,
+  );
+});
 test("starter granted once; mixed-source reservations refund original sources once", async (t) => {
   const { db, sql } = fixture(t);
   await Promise.all([

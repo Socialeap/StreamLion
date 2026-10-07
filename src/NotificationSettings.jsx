@@ -176,8 +176,8 @@ export default function NotificationSettings({ role, subject, api }) {
       )}
       {availability === "ready" && config && !config.enabled && (
         <p>
-          Push alerts are awaiting activation. Email and the project portal
-          remain available.
+          Push alerts are awaiting activation. You can review updates in the
+          project portal.
         </p>
       )}
       {message && <p role="status">{message}</p>}

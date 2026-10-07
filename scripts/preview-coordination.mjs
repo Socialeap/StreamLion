@@ -50,7 +50,8 @@ const handler = async (req, res, next) => {
   }
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
-  const path = req.url.slice("/api/coordination/".length);
+  const url = new URL(req.url, "http://127.0.0.1");
+  const path = url.pathname.slice("/api/coordination/".length);
   try {
     let result;
     if (path.endsWith("/notifications"))
@@ -64,6 +65,7 @@ const handler = async (req, res, next) => {
         projectMicros: 3000000,
         expiresAt: Date.now() + 365 * 86400000,
         wallet: { available: 7500000 },
+        delivery: { email: false, push: false },
       };
     else if (path === "provider/jobs")
       result = {
@@ -115,6 +117,18 @@ const handler = async (req, res, next) => {
     } else {
       res.statusCode = 400;
       result = { error: "This action is outside the synthetic preview." };
+    }
+    if (["provider/jobs", "client/job"].includes(path)) {
+      const refresh = {
+        token: "synthetic-" + path.replace("/", "-") + "-" + job.revision,
+        verifiedAt: Date.now(),
+        pollAfterMs: 15000,
+        reconcileAfterMs: 60000,
+      };
+      result =
+        url.searchParams.get("refresh") === refresh.token
+          ? { unchanged: true, refresh }
+          : { ...result, refresh };
     }
     res.end(JSON.stringify(result));
   } catch (error) {
