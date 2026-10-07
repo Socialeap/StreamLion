@@ -1,6 +1,7 @@
 import { FOLDER_MIME } from "../src/drive-folders.js";
 import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
+import { managedAppend } from "./coordination-engine.js";
 const SESSION = "__Host-streamlion-session";
 const FLOW = "__Host-streamlion-oauth";
 const SCOPE = "openid email https://www.googleapis.com/auth/drive.file";
@@ -537,6 +538,27 @@ export async function handleGoogle({ request, env, params }) {
         401,
       );
     if (route === "disconnect" && request.method === "POST") {
+      const coordination = await env.GOOGLE_SESSIONS.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='streamlion_coordination_connections_v1'",
+      ).first();
+      if (coordination) {
+        await env.GOOGLE_SESSIONS.prepare(
+          "UPDATE streamlion_coordination_sessions_v1 SET revoked=1 WHERE job_id IN (SELECT j.id FROM streamlion_coordination_jobs_v1 j JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id WHERE c.google_subject=?)",
+        )
+          .bind(row.google_subject)
+          .run();
+        const connections = await env.GOOGLE_SESSIONS.prepare(
+          "SELECT id FROM streamlion_coordination_connections_v1 WHERE google_subject=?",
+        )
+          .bind(row.google_subject)
+          .all();
+        for (const connection of connections.results)
+          await env.GOOGLE_SESSIONS.prepare(
+            "UPDATE streamlion_coordination_connections_v1 SET revoked=1,credentials=? WHERE id=?",
+          )
+            .bind(await seal(env, {}, connection.id), connection.id)
+            .run();
+      }
       await env.GOOGLE_SESSIONS.prepare(
         "DELETE FROM streamlion_google_sessions_v1 WHERE session_hash = ?",
       )
@@ -632,6 +654,10 @@ export async function handleGoogle({ request, env, params }) {
         validateDriveMutation(target, request.method, body);
       if (body?.byteLength > 6 * 1024 * 1024)
         return json({ error: "File too large." }, 413);
+      if (route === "sheets" && request.method === "POST") {
+        const managed = await managedAppend(env, row, target, body);
+        if (managed) return json(managed);
+      }
       const capacity = await reserveGoogleRequest(
         env.GOOGLE_SESSIONS,
         row.google_subject,
@@ -678,6 +704,11 @@ export async function handleGoogle({ request, env, params }) {
       url.origin === origin(env)
     )
       return failed(callbackStage, [setCookie(FLOW, "", 0)]);
+    if (
+      Number.isInteger(e.status) &&
+      [400, 402, 403, 409, 429].includes(e.status)
+    )
+      return json({ error: e.message }, e.status);
     const status =
       e.message === "reconnect"
         ? 401

@@ -1,4 +1,5 @@
 import { AI_LIMITS } from "./ai-providers.js";
+import { sharedWallet } from "./shared-credits.js";
 export const paidCreditMode = (env) =>
   env.STREAMLION_AI_CREDITS_MODE || "disabled";
 export const creditPrice = (cost) => {
@@ -18,8 +19,11 @@ export async function creditAccount(db, mode, subject) {
     .bind(subject, mode)
     .first();
   if (!row) throw new Error("credit_configuration");
+  const funding = await sharedWallet(db, mode, subject);
   return {
     ...row,
+    balance_micros: funding.hold ? funding.purchased : funding.available,
+    promotional_micros: funding.promotional,
     price_micros:
       row.cost_micros >= AI_LIMITS.reserveMicros
         ? creditPrice(row.cost_micros)

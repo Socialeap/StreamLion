@@ -2,6 +2,8 @@
 
 Version 0.1 — October 7, 2026 — development draft.
 
+Implementation follow-through: the subsequently authorized, disabled pilot is documented in [client-coordination-activation.md](client-coordination-activation.md). That document records concrete modules, activation gates and narrower first-release limits, including retained Google history and deferred destructive compaction.
+
 Build a free client-facing web experience connected to the provider's StreamLion job workflow. A provider shares a job-specific link; the client supplies and updates the brief, agrees to the scope, and follows progress. The provider receives organized, queryable instructions and explicit acknowledgment of important changes. After closure, preserve the complete record in the provider's Google Drive and retire active client access on a stated schedule.
 
 This specification authorizes planning, not production activation. It introduces no working client portal, migration, credentials, messages, credit grants, payment, AI request, or archival operation. Baseline inspected: repository main at 62ced07485ffca129874eac9a7be28ed74c31c5f. Recheck the implementation baseline before development.
