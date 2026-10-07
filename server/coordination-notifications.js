@@ -364,9 +364,9 @@ export async function dispatchNotifications(
     if (emailReady(env)) {
       const mail = await db
         .prepare(
-          "SELECT * FROM streamlion_coordination_outbox_v1 WHERE status='queued' AND sent_at IS NULL AND attempts<10 AND next_attempt_at<=? ORDER BY CASE kind WHEN 'invite' THEN 0 WHEN 'action' THEN 1 ELSE 2 END,created_at LIMIT ?",
+          "SELECT o.* FROM streamlion_coordination_outbox_v1 o JOIN streamlion_coordination_jobs_v1 j ON j.id=o.job_id JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id WHERE c.mode=? AND o.status='queued' AND o.sent_at IS NULL AND o.attempts<10 AND o.next_attempt_at<=? ORDER BY CASE o.kind WHEN 'invite' THEN 0 WHEN 'action' THEN 1 ELSE 2 END,o.created_at LIMIT ?",
         )
-        .bind(now, maximum)
+        .bind(env.STREAMLION_PAYMENTS_MODE, now, maximum)
         .all();
       for (const row of mail.results) {
         if (Date.now() - start > 20000) break;
@@ -519,9 +519,9 @@ export async function dispatchNotifications(
     if (pushReady(env)) {
       const rows = await db
         .prepare(
-          "SELECT * FROM streamlion_coordination_push_outbox_v1 WHERE sent_at IS NULL AND attempts<5 AND next_attempt_at<=? ORDER BY created_at LIMIT ?",
+          "SELECT o.* FROM streamlion_coordination_push_outbox_v1 o JOIN streamlion_coordination_jobs_v1 j ON j.id=o.job_id JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id WHERE c.mode=? AND o.sent_at IS NULL AND o.attempts<5 AND o.next_attempt_at<=? ORDER BY o.created_at LIMIT ?",
         )
-        .bind(now, maximum)
+        .bind(env.STREAMLION_PAYMENTS_MODE, now, maximum)
         .all();
       for (const row of rows.results) {
         if (Date.now() - start > 20000) break;

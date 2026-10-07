@@ -8,6 +8,7 @@ import {
   readRecordHistory,
 } from "../src/workbook.js";
 import { stableJSON, CoordinationError } from "../src/client-workflow.js";
+import { coordinationMetric } from "./coordination-runtime.js";
 export const EVENT_HEADERS = [
   "eventId",
   "jobId",
@@ -198,6 +199,26 @@ export class CoordinationGoogle {
     await this.snapshot();
   }
   async snapshot() {
+    const started = Date.now();
+    try {
+      const snapshot = await this.readSnapshot();
+      coordinationMetric(this.env, {
+        metric: "google-snapshot",
+        elapsedMs: Date.now() - started,
+        rowCounts: snapshot.rows.map((r) => Math.max(0, r.length - 1)),
+        failed: false,
+      });
+      return snapshot;
+    } catch (error) {
+      coordinationMetric(this.env, {
+        metric: "google-snapshot",
+        elapsedMs: Date.now() - started,
+        failed: true,
+      });
+      throw error;
+    }
+  }
+  async readSnapshot() {
     const query = new URLSearchParams();
     for (const name of [
       "Projects",
@@ -314,7 +335,7 @@ export class CoordinationGoogle {
       );
     if (snapshot.rows[2].length >= 10000)
       throw new CoordinationError(
-        "Archive workbook history before continuing.",
+        "Workbook history reached its limit. Stop for a reviewed workbook rollover; archiving retains the original rows.",
         409,
       );
     await this.append("CoordinationEvents", [
@@ -433,9 +454,9 @@ export class CoordinationGoogle {
         409,
       );
   }
-  async archivePlan(job) {
+  async archivePlan(job, snapshot) {
     await this.privateFolder();
-    const snapshot = await this.snapshot();
+    snapshot ||= await this.snapshot();
     const history = [...snapshot.events.values()].filter(
       (e) => e.jobId === job.id,
     );

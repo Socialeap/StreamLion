@@ -6,6 +6,7 @@ import React, {
 } from "react";
 import { PROJECT_FIELDS } from "./project-schema.js";
 import NotificationSettings from "./NotificationSettings.jsx";
+import { startCoordinationRefresh } from "./coordination-refresh.js";
 import { subscribeUpdate, updateReady, applyUpdate } from "./updates.js";
 import {
   CLIENT_FIELDS,
@@ -102,14 +103,44 @@ export default function CoordinationPortal({
   const [synthetic, setSynthetic] = useState(false);
   const [mail, setMail] = useState(null);
   const [activity, setActivity] = useState([]);
+  const [refreshStatus, setRefreshStatus] = useState(null),
+    [capacity, setCapacity] = useState(null);
+  const refreshRef = useRef(null),
+    loadRef = useRef(null);
   const updateAvailable = useSyncExternalStore(subscribeUpdate, updateReady);
   const jobId =
     typeof window === "undefined"
       ? ""
       : new URLSearchParams(window.location.search).get("job") || "";
-  async function load() {
+  async function load({ conditional = false } = {}) {
+    while (loadRef.current) {
+      if (conditional) return loadRef.current;
+      await loadRef.current.catch(() => {});
+    }
+    const task = loadView(conditional);
+    loadRef.current = task;
+    try {
+      return await task;
+    } finally {
+      if (loadRef.current === task) loadRef.current = null;
+    }
+  }
+  function rememberRefresh(data) {
+    refreshRef.current = data.refresh || null;
+    setRefreshStatus(data.refresh || null);
+  }
+  async function loadView(conditional) {
+    const suffix =
+      conditional && refreshRef.current?.token
+        ? "?refresh=" + encodeURIComponent(refreshRef.current.token)
+        : "";
     if (client) {
-      const data = await api("client/job");
+      const data = await api("client/job" + suffix);
+      if (data.unchanged) {
+        rememberRefresh(data);
+        return data;
+      }
+      rememberRefresh(data);
       setSynthetic(Boolean(data.synthetic));
       setJobs([data.job]);
       setSelected(data.job.id);
@@ -118,11 +149,21 @@ export default function CoordinationPortal({
       setVerified(true);
       return { jobs: [data.job] };
     } else {
+      let result;
+      if (conditional && status?.connected) {
+        result = await api("provider/jobs" + suffix);
+        if (result.unchanged) {
+          rememberRefresh(result);
+          return result;
+        }
+      }
       const data = await api("provider/status");
       setSynthetic(Boolean(data.synthetic));
       setStatus(data);
       if (data.connected) {
-        const result = await api("provider/jobs");
+        result ||= await api("provider/jobs");
+        rememberRefresh(result);
+        setCapacity(result.capacity || null);
         setJobs(result.jobs);
         setPending(result.pending);
         setArchives(result.archives || []);
@@ -130,6 +171,8 @@ export default function CoordinationPortal({
         setActivity(result.activity || []);
         return result;
       }
+      refreshRef.current = null;
+      setJobs([]);
       return { jobs: [] };
     }
   }
@@ -165,12 +208,21 @@ export default function CoordinationPortal({
     };
   }, []);
   useEffect(() => {
-    if (!(client ? verified : status?.connected)) return;
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible" && !busy)
-        load().catch((e) => setError(e.message));
-    }, 15000);
-    return () => clearInterval(timer);
+    if (busy || !(client ? verified : status?.connected)) return;
+    return startCoordinationRefresh({
+      refresh: load,
+      pollMs: () => refreshRef.current?.pollAfterMs || 15000,
+      onError: (e) => {
+        setError(e.message);
+        if ([401, 403].includes(e.status)) {
+          setJobs([]);
+          setActivity([]);
+          if (client) setVerified(false);
+          else setStatus(null);
+          refreshRef.current = null;
+        }
+      },
+    });
   }, [client, verified, status?.connected, busy]);
   async function perform(path, body) {
     if (busy) return;
@@ -236,6 +288,25 @@ export default function CoordinationPortal({
         {synthetic && (
           <p className="coord-notice" role="status">
             Local synthetic preview — no email, Google writes or charges.
+          </p>
+        )}
+        {refreshStatus && (
+          <p className="coord-notice">
+            Last verified {date(refreshStatus.verifiedAt)}. Updates refresh
+            while this page is open.
+          </p>
+        )}
+        {!client && status?.delivery?.email === false && (
+          <p className="coord-notice" role="status">
+            Email delivery is paused. Existing verified projects remain
+            available; new invitations must wait.
+          </p>
+        )}
+        {!client && capacity?.capacityWarning && (
+          <p className="coord-notice" role="status">
+            This workbook is approaching its history limit. Arrange a reviewed
+            workbook rollover before adding more history. Archiving retains the
+            original records.
           </p>
         )}
         <div className="coord-heading">
@@ -511,7 +582,9 @@ export default function CoordinationPortal({
                         onChange={(e) => setEmail(e.target.value)}
                       />
                     </label>
-                    <button disabled={busy}>Create request & invite</button>
+                    <button disabled={busy || status.delivery?.email === false}>
+                      Create request & invite
+                    </button>
                   </form>
                   <p className="coord-small">
                     Creating a request uses no project credits.

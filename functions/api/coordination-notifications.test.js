@@ -621,6 +621,25 @@ test("worker displays neutral alerts and refuses cross-origin click destinations
   await pending;
   assert.equal(opened.length, 0);
 });
+test("test dispatch does not send or discard another payment mode's queued notice", async (t) => {
+  const f = fixture(t),
+    row = await job(f);
+  await notice(f, row);
+  f.sql.exec(
+    "UPDATE streamlion_coordination_connections_v1 SET mode='live' WHERE id='connection'",
+  );
+  const calls = network(t);
+  assert.equal((await dispatchNotifications(f.env, Date.now() + 1000)).sent, 0);
+  assert.equal(calls.length, 0);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT status FROM streamlion_coordination_outbox_v1 WHERE id='one'",
+      )
+      .get().status,
+    "queued",
+  );
+});
 test("0010 migration preflight verifies full shape and stops on partial state", (t) => {
   const f = fixture(t);
   const schema = f.sql

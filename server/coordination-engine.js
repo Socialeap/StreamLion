@@ -216,7 +216,7 @@ export class CoordinationEngine {
       };
     }
     if (command.action === "archive")
-      plan.archive = await this.google.archivePlan(job);
+      plan.archive = await this.google.archivePlan(job, snapshot);
     if (command.action === "archive" && next.accepted) {
       plan.projection = {
         ...next.accepted,

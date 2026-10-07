@@ -16,6 +16,7 @@ import {
 import { grantStarter, sharedWallet } from "./shared-credits.js";
 import {
   emailReady,
+  pushReady,
   notificationsSchema,
   notificationSettings,
   rememberProviderEmail,
@@ -27,6 +28,11 @@ import {
   DAY,
   readiness,
 } from "../src/client-workflow.js";
+import {
+  efficiencySchema,
+  beginRead,
+  finishRead,
+} from "./coordination-runtime.js";
 const COOKIE = "__Host-streamlion-client";
 const random = () =>
   btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
@@ -55,7 +61,6 @@ export async function coordinationReady(env) {
   if (
     env.ENABLE_CLIENT_COORDINATION !== "true" ||
     !googleConfigurationReady(env) ||
-    !emailReady(env) ||
     !["test", "live"].includes(paymentMode(env)) ||
     env.STREAMLION_AI_CREDITS_MODE !== paymentMode(env)
   )
@@ -70,7 +75,10 @@ export async function coordinationReady(env) {
       .bind(paymentMode(env))
       .first();
     return Boolean(
-      schema && policy?.active === 1 && (await notificationsSchema(env)),
+      schema &&
+      policy?.active === 1 &&
+      (await notificationsSchema(env)) &&
+      (await efficiencySchema(env)),
     );
   } catch {
     return false;
@@ -159,9 +167,19 @@ async function client(request, env) {
       "Your provider must renew project access.",
       409,
     );
+  if (!(await hasPurchase(env, connection.google_subject)))
+    throw new CoordinationError(
+      "Provider access is unavailable. Contact your provider.",
+      403,
+    );
   return { row, connection, grantHash: await hash(token) };
 }
 async function invite(env, row) {
+  if (!emailReady(env))
+    throw new CoordinationError(
+      "Email delivery is paused. Existing verified project access remains available.",
+      503,
+    );
   const token = random(),
     tokenHash = await hash(token),
     now = Date.now();
@@ -253,6 +271,11 @@ export async function handleCoordination({ request, env, params = {} }) {
     if (!["GET", "POST"].includes(request.method))
       return json({ error: "Method not allowed." }, 405);
     if (route === "client/request" && request.method === "POST") {
+      if (!emailReady(env))
+        throw new CoordinationError(
+          "Email verification is temporarily unavailable. Try again later.",
+          503,
+        );
       const body = await bodyJSON(request, 2048);
       await limited(
         env,
@@ -399,6 +422,14 @@ export async function handleCoordination({ request, env, params = {} }) {
           true,
         );
       if (route === "client/job" && request.method === "GET") {
+        const read = await beginRead(
+          env,
+          principal.connection,
+          principal.row.id,
+          request,
+        );
+        if (read.unchanged)
+          return json({ unchanged: true, refresh: read.refresh });
         const snapshot = await engine.google.snapshot(),
           job = snapshot.heads.get(principal.row.id);
         if (!job)
@@ -411,10 +442,22 @@ export async function handleCoordination({ request, env, params = {} }) {
             "Project access expired. Contact your provider.",
             401,
           );
-        return json({
+        const view = {
           job: clientView(job),
           brand: principal.connection.client_brand,
           activity: activityFor(snapshot, principal.row.id, true),
+        };
+        await finishRead(
+          env,
+          principal.connection,
+          principal.row.id,
+          read,
+          snapshot,
+          view,
+        );
+        return json({
+          ...view,
+          refresh: read.refresh,
         });
       }
       const body = await bodyJSON(
@@ -473,6 +516,7 @@ export async function handleCoordination({ request, env, params = {} }) {
           !connection.revoked &&
           connection.expires_at > Date.now(),
         ),
+        delivery: { email: emailReady(env), push: pushReady(env) },
         expiresAt: connection?.expires_at,
         projectMicros: policy.project_micros,
         wallet: await sharedWallet(
@@ -612,7 +656,6 @@ export async function handleCoordination({ request, env, params = {} }) {
       return json({ disconnected: true });
     }
     if (route === "provider/jobs" && request.method === "GET") {
-      const snapshot = await engine.google.snapshot();
       const pending = await env.GOOGLE_SESSIONS.prepare(
         "SELECT id,job_id,created_at FROM streamlion_coordination_operations_v1 WHERE connection_id=? AND state='pending'",
       )
@@ -623,17 +666,43 @@ export async function handleCoordination({ request, env, params = {} }) {
       )
         .bind(connection.id)
         .first();
-      return json({
-        jobs: [...snapshot.heads.values()],
-        activity: activityFor(snapshot),
+      const read = await beginRead(env, connection, "", request, {
         pending: pending.results,
         mail,
+      });
+      if (read.unchanged)
+        return json({ unchanged: true, refresh: read.refresh });
+      const snapshot = await engine.google.snapshot();
+      const view = {
+        jobs: [...snapshot.heads.values()],
+        activity: activityFor(snapshot),
         archives: snapshot.rows[3]
           .slice(1)
           .map((r) => ({ jobId: r[0], fileId: r[2] })),
+      };
+      const capacity = await finishRead(
+        env,
+        connection,
+        "",
+        read,
+        snapshot,
+        view,
+      );
+      return json({
+        ...view,
+        pending: pending.results,
+        mail,
+        refresh: read.refresh,
+        capacity,
       });
     }
     if (route === "provider/create" && request.method === "POST") {
+      // Do not create a project/challenge that its client cannot verify.
+      if (!emailReady(env))
+        throw new CoordinationError(
+          "Email delivery must be ready before inviting a new client.",
+          503,
+        );
       if (!operationID(body.operation))
         throw new CoordinationError("Invalid operation identity.");
       const id = "job-" + body.operation;

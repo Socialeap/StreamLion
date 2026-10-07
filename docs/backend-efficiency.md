@@ -1,0 +1,55 @@
+# Backend efficiency: implementation and rollout
+
+This implements the first optimization stage of the approved backend plan. Google Sheets/Drive remain authoritative. Cloudflare D1 stores operational metadata, encrypted recovery/outboxes and the existing financial ledger. No project-content cache, paid service, new credential, live send, AI invocation or automatic deletion is introduced.
+
+## Implemented contracts
+
+1. **Independent readiness.** Existing authenticated projects, commands, uploads, recovery and archives remain available when email is disabled or unconfigured. New client requests, provider creation/invitations and renewed email links require a configured, enabled email transport and fail before creating challenges when unavailable. Already-issued, unexpired challenges can still be consumed. All coordination schemas, active policy, Google configuration, matching payment/credit mode and live authorization remain required. Push is optional. Client reads also recheck the provider's current Core purchase.
+2. **Conditional authenticated reads.** `GET client/job` and `GET provider/jobs` return `refresh.token`, `verifiedAt`, `pollAfterMs` and `reconcileAfterMs`. A subsequent GET with `?refresh=<token>` can return only `{unchanged:true,refresh}` after fresh authorization. D1 change generations advance at operation preparation/completion and lifecycle changes. Provider pending operations/mail counts also contribute to the marker. The final token fingerprints the authorized Google view, so one viewer's discovery of an external edit invalidates other viewers' old tokens. Neither full job JSON nor a financial permission is cached. All responses remain `no-store`.
+3. **Bounded reconciliation.** Even a matching token requires a new full Google read after 60 seconds by default. Manual refresh, a completed action, focus, returning to visibility and coming online request full reads. New operations continue to validate fresh Google state and verify writes. External changes may remain unseen until reconciliation succeeds; the portal displays its last verification time. Pending-operation markers ensure an in-flight write cannot be concealed by a concurrent read.
+4. **Selective refresh.** Visible, online portals check every 15 seconds while active and every 60 seconds after one minute of inactivity. Hidden/offline tabs perform no fetches. Refresh calls are serialized; an action refresh waits for an earlier read. Authorization failures remove the displayed project view. Core's separate 20-second project-status check is unchanged.
+5. **Selective maintenance.** The one-minute cron selects only eligible due operations/deadlines in its payment mode. Failed recovery/archive work backs off from one minute to at most one hour. The original pending operation and one-writer constraint remain intact indefinitely until recovery/review. Already-reminded future jobs no longer occupy the first batch and starve later reminders. A 20-second launch budget bounds recovery/archive batches; it does not cancel a Google operation already in flight. Delivery retains its independent bounded dispatcher.
+6. **Hourly cleanup.** A durable conditional claim permits routine metadata cleanup once per hour per payment mode, with a retryable claim on failure. Existing retention periods are preserved. Read fingerprints expire after a day of inactivity; orphaned work schedules are removed. Google originals, pending operations and financial records are preserved.
+7. **Capacity and observability.** Provider full reads report worksheet row counts and warn at 8,000 data rows, below the existing 10,000-total-row adapter ceiling. An archive plan reuses its command's already validated snapshot; later Drive/index/write verification remains. Optional structured logs count full/unchanged reads and Google snapshot duration/row counts without account IDs, project content, emails, tokens or error text. Existing scheduled receipts and Google quota counters remain available. Email and push dispatch select only jobs in the running mode before attempting delivery.
+
+## Source configuration
+
+These defaults are committed in both Pages production vars and the dedicated coordination Worker configuration. They do not activate anything. Preserve existing unrelated runtime settings when deploying.
+
+| Variable                         | Default | Accepted values                                                           |
+| -------------------------------- | ------- | ------------------------------------------------------------------------- |
+| `COORDINATION_RECONCILE_SECONDS` | `60`    | Integer 30–120; otherwise 60                                              |
+| `COORDINATION_POLL_SECONDS`      | `15`    | Integer 15–60; otherwise 15                                               |
+| `COORDINATION_CLEANUP_SECONDS`   | `3600`  | Integer 3,600–86,400; otherwise 3,600                                     |
+| `ENABLE_COORDINATION_METRICS`    | `false` | Only exact `true` enables minimal operational logs                        |
+| `RESEND_DAILY_LIMIT`             | `20`    | Existing sender validation; attempts, not guaranteed arrivals             |
+| `RESEND_MONTHLY_LIMIT`           | `500`   | Existing sender validation; shared account usage requires separate review |
+| `ENABLE_CLIENT_COORDINATION`     | `false` | Explicit owner-authorized activation                                      |
+| `ENABLE_RESEND_EMAIL`            | `false` | Explicit owner-authorized delivery activation                             |
+| `ENABLE_WEB_PUSH`                | `false` | Explicit owner-authorized device-alert activation                         |
+
+The sender/API key/webhook, Google configuration, VAPID keys, approved test recipients and policies remain as documented in [notifications-activation.md](notifications-activation.md). No new secret is required by this optimization. The 20/500 defaults are a disabled pilot ceiling, not approval to send to real recipients. No subscription, automatic recharge, new checkout or pricing change is implemented.
+
+## Exact migration and activation procedure
+
+Review/merge, D1 activation, backend deployment, frontend release and owner/device acceptance are separate gates. Use the current merged `main` SHA containing this implementation; record that SHA before any activation. This document is a procedure, not live authorization.
+
+1. Complete the existing exact preflight for `0009_client_coordination.sql` and then `0010_coordination_notifications.sql`. They must be fully applied before `0011` can be classified. Do not replay an applied migration or substitute SQL.
+2. Inspect live D1 read-only: collect `name,type,sql` from `sqlite_master` for `streamlion_%` objects and each existing schema table's verified version row. Collect no credentials, project data or financial row contents. Save `{ "schema": [...], "stamps": {...} }` locally.
+3. Run `node scripts/preflight-coordination-efficiency.mjs <inspection.json>`. It compares all prerequisite shapes and exact `0011` definitions. `pending` requires every new marker absent. Only then apply committed `migrations/0011_coordination_efficiency.sql` byte-for-byte through the platform migration facility. `already_applied` means skip. Partial markers, altered definitions or wrong stamps mean stop for review. Never synthesize a migration.
+4. Reinspect, repeat the preflight, verify efficiency stamp `1` and the two maintenance seed modes. Record the migration SHA-256 and platform receipt. Verify existing credit balances, reservations, financial triggers, policy activity and delivery flags are unchanged. The new migration adds only operational tables, indexes and change-marker triggers.
+5. With owner authorization, configure matching defaults in Pages and `streamlion-client-coordination`; retain the approved encryption key and existing credential bindings. Deploy only the merged Pages Functions and that Worker. Do not broaden deployment or enable AI/payment providers. Disabled coordination GETs returning 503 and the Worker HTTP handler returning 404 are safe no-send health checks.
+6. Release frontend assets from the same SHA separately. Enable only the explicitly approved synthetic/test policy first, using the existing approved purchase/credit modes. Delivery activation still needs the verified sending domain, sender, server-only API key, webhook, allowlist and ceiling in the appropriate runtimes.
+7. Prove authorized two-account/client isolation, full versus unchanged read counts, external-edit reconciliation across two viewers, rejected conflicting revisions, duplicate/interrupted confirmation without another debit, email pause with existing project access, invitation refusal during pause, backoff/recovery and archive integrity. Real inbox and iPhone/Android push proof require explicit send/device testing and are independent of unit tests.
+
+Receipt: merged SHA; exact migration hash and preflight/platform result; preserved financial/policy checks; Pages/Worker revisions; variable values and secret names only; no-send health result; separate frontend revision; authorized Google/inbox/device evidence. No activation is complete without that receipt.
+
+## Measured scaling decisions and remaining stages
+
+Start by measuring full/unchanged read ratio, Google calls per action, read/save latency, oldest pending operation, delivery backlog, D1 rows scanned and row growth. D1 read fingerprints are coordination metadata, not a proof of Google availability. Log retention/sampling and invoice review are owner settings; optional logging adds its own processing cost. No dollar cost per completed job is claimed until pilot measurements and actual vendor usage can be reconciled.
+
+The new partial indexes and connection/mail indexes reduce candidate scans. The pilot keeps a single delivery lock and one writer per workbook. Adopt Cloudflare Queues or broader concurrency only when observed backlog justifies them; at-least-once work must keep stable operation/debit identities. Short-lived encrypted content caching is deferred until measured need and a reviewed authorization/invalidation contract.
+
+Archiving currently retains source rows and private attachments. It does not reduce worksheet history or provide cold restoration into a deleted workbook. Capacity warnings therefore require a reviewed, provider-owned workbook rollover. Automatic rollover/compaction must first implement a manifest, verified cold restore, cross-workbook lookup and interrupted-migration recovery; automatic deletion remains disabled. Agency dispatch, consolidated multi-project client identity and a full operator/cost dashboard remain subsequent features. These are explicit later stages, not claims of readiness from this PR.
+
+References: [Google Sheets quotas and batching](https://developers.google.com/workspace/sheets/api/limits), [D1 indexing](https://developers.cloudflare.com/d1/best-practices/use-indexes/), [Queues delivery guarantees](https://developers.cloudflare.com/queues/reference/delivery-guarantees/).
