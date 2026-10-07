@@ -706,6 +706,7 @@ export async function handleGoogle({ request, env, params }) {
 // destinations retain the existing PWA/purchase behavior; no open redirects.
 export function googleReturnPath(value, env) {
   if (value === "purchase" || value === "/api/purchase") return "/api/purchase";
+  if (value === "credits" || value === "/api/credits") return "/api/credits";
   if (
     env.ENABLE_CHATGPT_EXTENSION === "true" &&
     typeof value === "string" &&

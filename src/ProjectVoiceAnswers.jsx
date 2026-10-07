@@ -486,13 +486,20 @@ function VoiceAnswers({
             />
             {ai.demo
               ? "AI demo · simulated, no charge"
-              : "Use AI pilot · Luna + Kokoro"}
+              : ai.config?.billing === "credits"
+                ? "Use AI credits"
+                : "Use AI pilot · Luna + Kokoro"}
           </label>
           <p className="hint">
             {ai.demo
               ? "Local fixture and device speech. Live model quality and hosted voice latency still need testing."
               : `${creditLabel(ai.config.priceMicros)} per completed answer · ${creditLabel(ai.config.balanceMicros)} remaining. Your question and Google project records go to OpenAI; answer text goes to DeepInfra for voice. No question audio is stored by StreamLion.`}
           </p>
+          {!ai.demo && (
+            <p>
+              <a href="/api/credits">Manage AI credits</a>
+            </p>
+          )}
           {!ai.demo && (
             <button
               onClick={() => ai.refresh(true)}

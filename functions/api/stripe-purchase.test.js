@@ -245,6 +245,11 @@ function fixture(t, { launch = true } = {}) {
     },
   };
 }
+test('the app purchase endpoint ignores AI top-up completions rather than retrying a foreign order',async t=>{
+  const f=fixture(t);
+  assert.equal((await f.event('checkout.session.completed',{id:'cs_test_credit',metadata:{app:'streamlion',kind:'ai_credits',order_id:'credit-only'}})).status,200);
+  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM streamlion_purchases_v1').get().n,0);
+});
 test("the 200-place migration preserves financial state and uniqueness safeguards", () => {
   const sql = new DatabaseSync(":memory:");
   try {

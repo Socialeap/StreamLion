@@ -3,6 +3,14 @@ import { getExtensionProject } from "./extension-workbook.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
 import { boundedText } from "./request-body.js";
 import {
+  paidCreditMode,
+  creditAccount,
+  creditCapacity,
+  expireCreditTurns,
+  reserveCreditTurn,
+  finishCreditTurn,
+} from "./ai-credit-ledger.js";
+import {
   AI_LIMITS,
   projectContext,
   streamAnswer,
@@ -87,6 +95,23 @@ export async function handleAI(context) {
     (path.endsWith("/answer") && request.method !== "POST")
   )
     return json({ error: "Method not allowed." }, 405);
+  const creditMode = paidCreditMode(env),
+    paid = creditMode !== "disabled";
+  // Test payments can exercise fulfillment but can never buy real provider calls.
+  if (
+    paid &&
+    (creditMode !== "live" ||
+      env.STREAMLION_AI_COST_APPROVED !== "true" ||
+      env.STREAMLION_PAYMENTS_MODE !== "live" ||
+      env.STREAMLION_LIVE_PAYMENTS_APPROVED !== "true")
+  )
+    return path.endsWith("/config")
+      ? json({
+          enabled: false,
+          reason: "credits_not_active",
+          billing: "credits",
+        })
+      : json({ error: "Paid AI credits are not active." }, 503);
   if (!settingsReady(env))
     return path.endsWith("/config")
       ? json({ enabled: false, reason: "pilot_unavailable" })
@@ -106,15 +131,32 @@ export async function handleAI(context) {
         ? json({ enabled: false, reason: "connect_google" })
         : json({ error: "Connect Google before using AI." }, 401);
     if (
-      licenseRequired(env) &&
+      (paid || licenseRequired(env)) &&
       !(await hasPurchase(env, session.google_subject))
     )
       return json({ error: "A StreamLion license is required." }, 402);
-    await expireTurns(env.GOOGLE_SESSIONS);
-    const wallet = await account(env.GOOGLE_SESSIONS, session.google_subject);
+    const database = env.GOOGLE_SESSIONS;
+    const readAccount = () =>
+      paid
+        ? creditAccount(database, creditMode, session.google_subject)
+        : account(database, session.google_subject);
+    const finish = (state) =>
+      paid
+        ? finishCreditTurn(
+            database,
+            creditMode,
+            session.google_subject,
+            input.requestId,
+            state,
+          )
+        : finishTurn(database, session.google_subject, input.requestId, state);
+    if (paid) await expireCreditTurns(database, creditMode);
+    else await expireTurns(database);
+    const wallet = await readAccount();
     const eligible =
       wallet?.active === 1 &&
-      wallet.daily_budget_micros >= AI_LIMITS.reserveMicros;
+      wallet.daily_budget_micros >= AI_LIMITS.reserveMicros &&
+      (!paid || wallet.price_micros > 0);
     // An opaque preference key, never a session token or raw Google identity.
     const preferenceScope = session.workbook_id
       ? await hash(
@@ -122,29 +164,42 @@ export async function handleAI(context) {
             "ai-preference-v1",
             session.google_subject,
             session.workbook_id,
+            ...(paid ? ["paid-credits", creditMode] : []),
           ]),
         )
       : null;
-    const totals = await env.GOOGLE_SESSIONS.prepare(
-      "SELECT COUNT(*) AS attempts,COALESCE(SUM(reserve_micros),0) AS reserved FROM streamlion_ai_turns_v1",
-    ).first();
-    const exhausted =
-      totals.attempts >= PILOT_CEILING.attempts ||
-      totals.reserved + AI_LIMITS.reserveMicros > PILOT_CEILING.reserveMicros;
+    const totals = paid
+      ? await creditCapacity(database, creditMode)
+      : await env.GOOGLE_SESSIONS.prepare(
+          "SELECT COUNT(*) AS attempts,COALESCE(SUM(reserve_micros),0) AS reserved FROM streamlion_ai_turns_v1",
+        ).first();
+    const exhausted = paid
+      ? totals.reserved + AI_LIMITS.reserveMicros >
+          wallet.total_budget_micros ||
+        totals.dailyReserved + AI_LIMITS.reserveMicros >
+          wallet.daily_budget_micros ||
+        totals.dailyAttempts >= wallet.daily_requests
+      : totals.attempts >= PILOT_CEILING.attempts ||
+        totals.reserved + AI_LIMITS.reserveMicros > PILOT_CEILING.reserveMicros;
     if (path.endsWith("/config")) {
       if (!session.workbook_id)
         return json({ enabled: false, reason: "select_workbook" });
       const quote = {
         preferenceScope,
+        ...(paid ? { billing: "credits", creditsUrl: "/api/credits" } : {}),
         ...(wallet
           ? {
               priceMicros: wallet.price_micros,
-              balanceMicros: wallet.balance_micros,
+              balanceMicros: Math.max(0, wallet.balance_micros),
             }
           : {}),
       };
       if (eligible && exhausted)
-        return json({ enabled: false, reason: "pilot_exhausted", ...quote });
+        return json({
+          enabled: false,
+          reason: paid ? "credit_capacity" : "pilot_exhausted",
+          ...quote,
+        });
       if (eligible && wallet.balance_micros < wallet.price_micros)
         return json({ enabled: false, reason: "credits_exhausted", ...quote });
       if (eligible)
@@ -152,16 +207,20 @@ export async function handleAI(context) {
           enabled: true,
           ...quote,
         });
-      const policy = await env.GOOGLE_SESSIONS.prepare(
-        "SELECT active,daily_budget_micros FROM streamlion_ai_policy_v1 WHERE id=1",
-      ).first();
+      const policy = paid
+        ? wallet
+        : await env.GOOGLE_SESSIONS.prepare(
+            "SELECT active,daily_budget_micros FROM streamlion_ai_policy_v1 WHERE id=1",
+          ).first();
       return json({
         enabled: false,
-        reason: !policy?.active
-          ? "pilot_paused"
-          : policy.daily_budget_micros < AI_LIMITS.reserveMicros
-            ? "pilot_unavailable"
-            : "account_not_enabled",
+        reason: paid
+          ? "credits_not_active"
+          : !policy?.active
+            ? "pilot_paused"
+            : policy.daily_budget_micros < AI_LIMITS.reserveMicros
+              ? "pilot_unavailable"
+              : "account_not_enabled",
         ...quote,
       });
     }
@@ -169,15 +228,16 @@ export async function handleAI(context) {
       return json(
         {
           error:
-            "This account is not enabled for the AI pilot. Select a Google workbook.",
+            "AI is not available for this account. Select a Google workbook and check availability.",
         },
         403,
       );
     if (exhausted)
       return json(
         {
-          error:
-            "The approved AI pilot allowance has been used. No credits were charged.",
+          error: paid
+            ? "AI usage is temporarily paused. No credits were charged."
+            : "The approved AI pilot allowance has been used. No credits were charged.",
         },
         429,
       );
@@ -212,15 +272,22 @@ export async function handleAI(context) {
       return json(
         {
           error:
-            "The pilot price changed. Review the updated price before asking.",
+            "The AI credit price changed. Review the updated price before asking.",
         },
         409,
       );
-    const prior = await env.GOOGLE_SESSIONS.prepare(
-      "SELECT state FROM streamlion_ai_turns_v1 WHERE google_subject=? AND request_id=?",
-    )
-      .bind(session.google_subject, input.requestId)
-      .first();
+    const prior = paid
+      ? await database
+          .prepare(
+            "SELECT state FROM streamlion_credit_turns_v1 WHERE mode=? AND google_subject=? AND request_id=?",
+          )
+          .bind(creditMode, session.google_subject, input.requestId)
+          .first()
+      : await env.GOOGLE_SESSIONS.prepare(
+          "SELECT state FROM streamlion_ai_turns_v1 WHERE google_subject=? AND request_id=?",
+        )
+          .bind(session.google_subject, input.requestId)
+          .first();
     if (prior)
       return json(
         {
@@ -243,17 +310,26 @@ export async function handleAI(context) {
       const records = projectContext(snapshot.project, snapshot.notes);
       if (controller.signal.aborted) throw new Error("cancelled");
       try {
-        await reserveTurn(
-          env.GOOGLE_SESSIONS,
-          session.google_subject,
-          input.requestId,
-          wallet.price_micros,
-        );
+        if (paid)
+          await reserveCreditTurn(
+            database,
+            creditMode,
+            session.google_subject,
+            input.requestId,
+            wallet.price_micros,
+          );
+        else
+          await reserveTurn(
+            env.GOOGLE_SESSIONS,
+            session.google_subject,
+            input.requestId,
+            wallet.price_micros,
+          );
       } catch {
         return json(
           {
             error:
-              "AI credits or pilot capacity are unavailable. No credits were charged.",
+              "AI credits or capacity are unavailable. No credits were charged.",
           },
           429,
         );
@@ -353,20 +429,12 @@ export async function handleAI(context) {
               }
             }
           }
-          await finishTurn(
-            env.GOOGLE_SESSIONS,
-            session.google_subject,
-            input.requestId,
-            "complete",
-          );
+          await finish("complete");
           textComplete = true;
-          const balanceMicros = (
-            await env.GOOGLE_SESSIONS.prepare(
-              "SELECT balance_micros FROM streamlion_ai_wallets_v1 WHERE google_subject=?",
-            )
-              .bind(session.google_subject)
-              .first()
-          )?.balance_micros;
+          const balanceMicros = Math.max(
+            0,
+            (await readAccount())?.balance_micros || 0,
+          );
           await send({ type: "text_done", balanceMicros });
           enqueueSpeech(phrase);
           await speechQueue;
@@ -394,13 +462,7 @@ export async function handleAI(context) {
           controller.signal.removeEventListener("abort", stopStream);
           controller.abort();
           await speechQueue.catch(() => {});
-          if (!textComplete)
-            await finishTurn(
-              env.GOOGLE_SESSIONS,
-              session.google_subject,
-              input.requestId,
-              "failed",
-            );
+          if (!textComplete) await finish("failed");
           const errorFrame = {
             type: "error",
             message: textComplete

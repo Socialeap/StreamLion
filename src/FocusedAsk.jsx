@@ -444,10 +444,15 @@ export default function FocusedAsk({
                 </details>
               )}
               <p className="hint">
-                Pilot credits are internal allowances. Purchase pricing and
-                service markup are not finalized. The displayed credit charge is
-                checked before each AI request.
+                {ai.config?.billing === "credits"
+                  ? "Purchased credits are separate from your one-time app purchase. The displayed charge is checked before each AI request."
+                  : "Pilot credits are internal test allowances, separate from purchased credits."}
               </p>
+              {!ai.demo && (
+                <p>
+                  <a href="/api/credits">Manage AI credits</a>
+                </p>
+              )}
               <p className="hint">
                 Free lookup uses saved project details. With AI credits enabled,
                 your question and Google project records go to OpenAI; answer

@@ -123,6 +123,27 @@
   font-size: 13px;
   color: #637268;
 }
+.credit-balance {
+  font-size: 22px;
+  font-weight: 700;
+}
+.credit-packs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 24px 0;
+}
+.credit-packs button {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+@media (max-width: 400px) {
+  .credit-packs {
+    grid-template-columns: 1fr;
+  }
+}
 .purchase-shell > button {
   margin: 12px;
 }
