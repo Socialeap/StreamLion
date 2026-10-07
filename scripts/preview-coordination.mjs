@@ -38,7 +38,7 @@ job = reduceClientJob(
   Date.now(),
 );
 const handler = async (req, res, next) => {
-  if (!req.url.startsWith("/api/api/client-requests")) return next();
+  if (!req.url.startsWith("/api/coordination/")) return next();
   let body = "";
   for await (const chunk of req) {
     body += chunk;
@@ -50,10 +50,12 @@ const handler = async (req, res, next) => {
   }
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
-  const path = req.url.slice("/api/api/client-requests".length);
+  const path = req.url.slice("/api/coordination/".length);
   try {
     let result;
-    if (path === "provider/status")
+    if (path.endsWith("/notifications"))
+      result = { enabled: false, devices: [] };
+    else if (path === "provider/status")
       result = {
         synthetic: true,
         enabled: true,
@@ -64,12 +66,34 @@ const handler = async (req, res, next) => {
         wallet: { available: 7500000 },
       };
     else if (path === "provider/jobs")
-      result = { jobs: [job], pending: [], archives: [] };
+      result = {
+        jobs: [job],
+        pending: [],
+        archives: [],
+        activity: [
+          {
+            id: "sample-event",
+            jobId: job.id,
+            at: job.updatedAt,
+            revision: job.revision,
+            label: "Request submitted",
+          },
+        ],
+      };
     else if (path === "client/job")
       result = {
         synthetic: true,
         job: clientView(job),
         brand: "Synthetic provider",
+        activity: [
+          {
+            id: "sample-event",
+            jobId: job.id,
+            at: job.updatedAt,
+            revision: job.revision,
+            label: "Request submitted",
+          },
+        ],
       };
     else if (path.endsWith("/command")) {
       const data = JSON.parse(body),

@@ -36,13 +36,13 @@ Existing AI price, model budgets, rate limits, Stripe reconciliation and purchas
 
 One project charge follows mutual approval. Drafts, clarification, rejected requests, later revisions and reopening incur no second charge. Cancellation after confirmed activation does not automatically refund it. Commercial cancellation/refund terms need owner approval before a paid pilot.
 
-## Email service binding
+## PWA notifications and Resend
 
-The backend requires an **owner-approved** `COORDINATION_MAILER` service. This repository provides a durable outbox and adapter contract; it does not provision an email vendor.
+The integrated notification implementation replaces the production mailer binding with Resend. Invitations and important notices use transactional email; routine edits coalesce and prefer optional device alerts. Provider/client updates are routed to the opposite party, with private provider attachments excluded from client alerts. Authorized Google history appears in the portal's Updates panel.
 
-`fetch(Request("https://mailer.internal/send"))` receives JSON `{to,subject,text,url,expiresAt?}`, a fixed `Idempotency-Key` and a 15-second timeout. Successful JSON must be `{accepted:true,idempotencyKey:<same-key>}`. The adapter must enforce sender/recipient policy, persist idempotency, avoid private-payload logging and acknowledge only that exact message.
+Coordination additionally requires the additive `0010_coordination_notifications.sql` schema. Event-triggered dispatch and a one-minute fallback worker use durable notices, bounded retries and approved daily/monthly attempt ceilings. Acceptance, signed delivery evidence and explicit project acknowledgment remain separate. The old `COORDINATION_MAILER` exists only for synthetic test compatibility.
 
-The five-minute worker drains bounded batches of 20 messages. Ten failures retain a message for administrator review; the portal reports stalled delivery. Expired links and revoked/expired grants are not sent. Invitation UI says **queued**. Delivery latency requires pilot validation; event-triggered transport can follow without changing the outbox contract.
+The complete configuration, exact migration preflight, credential boundaries, device limitations and deployment/QA procedure is in [notifications-activation.md](notifications-activation.md). All flags remain disabled pending owner configuration and authorization.
 
 ## Archival and pilot limits
 
@@ -61,7 +61,7 @@ Limits: 100 open requests per enrolled workbook; existing 10,000-row workbook ce
 3. Save the local inspection as `{"schema":[...],"stamps":{"streamlion_purchase_schema_v2":2,...}}`. Run `node scripts/preflight-coordination.mjs <inspection.json>`. It checks all committed prerequisite definitions and financial triggers.
 4. Only when all new markers are absent and preflight reports `pending`, apply **committed `migrations/0009_client_coordination.sql` byte-for-byte in one transaction**. If all markers match and it reports `already_applied`, skip. Stop on partial state, drift or missing stamps. Never synthesize SQL. Record the file SHA-256 and platform migration receipt.
 5. Reinspect/recheck. Verify both policies remain inactive, unique workbook/write indexes and shared-spend triggers match, and existing Stripe grant/AI transition triggers remain intact. Compare preserved purchase/order/wallet/reservation counts and backfilled allocation counts.
-6. With separate owner authorization, configure the approved mail binding and existing Google settings in **both** Pages Functions and `ops/wrangler-coordination.jsonc`: `GOOGLE_SESSIONS`, `COORDINATION_MAILER`, `GOOGLE_AUTH_ORIGIN`, `ENABLE_PERSISTENT_GOOGLE`, `VITE_GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `STREAMLION_PAYMENTS_MODE`, `STREAMLION_AI_CREDITS_MODE`, `ENABLE_CLIENT_COORDINATION`. Keep secret values out of source/prompts/receipts; use the approved encryption key consistently. Preserve unrelated settings.
+6. After the separate `0010` notification preflight/migration, and with owner authorization, configure the approved Resend/PWA settings from the notification procedure and existing Google settings in **both** Pages Functions and `ops/wrangler-coordination.jsonc`: `GOOGLE_SESSIONS`, `GOOGLE_AUTH_ORIGIN`, `ENABLE_PERSISTENT_GOOGLE`, `VITE_GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `STREAMLION_PAYMENTS_MODE`, `STREAMLION_AI_CREDITS_MODE`, `ENABLE_CLIENT_COORDINATION`. Keep secret values out of source/prompts/receipts; use the approved encryption key consistently. Preserve unrelated settings.
 7. Deploy merged Pages Functions and **only** the dedicated coordination worker. Its source config is disabled by default. Frontend release is separate.
 8. Enable only the approved test policy/flag first; payment and credit modes must match. This document authorizes no live activation, real email/AI charge/purchase, secret/access creation or paid service.
 9. Prove two isolated purchased test accounts/client grants; Google readback; interrupted/duplicate confirmation; source allocations; revocation/renewal; private uploads; delivery/closure; fake-clock expiry/reminder/archive recovery. Use synthetic data and an approved email test sink; no real AI spend.

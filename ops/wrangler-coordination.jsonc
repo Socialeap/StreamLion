@@ -9,8 +9,12 @@
     "logs": { "enabled": true, "invocation_logs": false },
     "traces": { "enabled": false },
   },
-  "vars": { "ENABLE_CLIENT_COORDINATION": "false" },
-  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": {
+    "ENABLE_CLIENT_COORDINATION": "false",
+    "ENABLE_RESEND_EMAIL": "false",
+    "ENABLE_WEB_PUSH": "false",
+  },
+  "triggers": { "crons": ["* * * * *"] },
   "d1_databases": [
     {
       "binding": "GOOGLE_SESSIONS",

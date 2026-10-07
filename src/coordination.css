@@ -393,6 +393,21 @@ h3 {
     margin-bottom: 14px;
   }
 }
+.coord-notification-settings {
+  margin-bottom: 18px;
+}
+.coord-activity {
+  padding-left: 20px;
+}
+.coord-activity li {
+  margin: 12px 0;
+}
+.coord-activity span {
+  display: block;
+  font-size: 12px;
+  color: #4a6255;
+  margin-top: 4px;
+}
 @media (max-width: 500px) {
   .coord-heading {
     flex-direction: column;

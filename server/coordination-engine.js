@@ -19,6 +19,7 @@ import {
 import { FIELD_KEYS } from "../src/project-schema.js";
 import { readiness } from "../src/client-workflow.js";
 import { WORKFLOW_AREA, validateWorkflow } from "../src/workflow.js";
+import { enqueueNotice } from "./coordination-notifications.js";
 export const operationID = (value) =>
   typeof value === "string" && /^[\w-]{1,80}$/.test(value);
 const eventFor = (id, job, actor, action) => ({
@@ -56,19 +57,7 @@ const projectionFor = (job, snapshot, id) =>
         reviewState: "reviewed",
       }
     : null;
-export async function queueNotice(env, jobRow, id, message) {
-  const email = await unseal(
-    env,
-    jobRow.client_email,
-    "job-email:" + jobRow.id,
-  );
-  const payload = await seal(env, { to: email, ...message }, "mail:" + id);
-  await env.GOOGLE_SESSIONS.prepare(
-    "INSERT INTO streamlion_coordination_outbox_v1(id,job_id,payload,created_at) SELECT ?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM streamlion_coordination_outbox_v1 WHERE id=?)",
-  )
-    .bind(id, jobRow.id, payload, Date.now(), id)
-    .run();
-}
+export const queueNotice = enqueueNotice;
 export class CoordinationEngine {
   constructor(
     env,
@@ -490,15 +479,41 @@ export class CoordinationEngine {
         )
         .bind(last.jobId, this.connection.id)
         .first();
-      if (row)
-        await queueNotice(this.env, row, "notice-" + id, {
-          subject: "Your StreamLion project was updated",
-          text: "Your provider updated the project. Review the current brief and status in your private portal.",
-          url:
-            this.env.GOOGLE_AUTH_ORIGIN +
-            "/api/client-portal?job=" +
-            last.jobId,
-        });
+      if (
+        row &&
+        first.action !== "create" &&
+        !(
+          first.action === "attach" &&
+          plan.file?.attachment.visibility === "provider"
+        )
+      ) {
+        const recipients =
+          operation.actor === "system"
+            ? ["client", "provider"]
+            : [operation.actor === "client" ? "provider" : "client"];
+        for (const role of recipients)
+          await queueNotice(
+            this.env,
+            row,
+            "notice-" + id + "-" + role,
+            {
+              subject: "Your StreamLion project was updated",
+              text: "The project has an update. Review the current brief, outstanding actions and status in StreamLion.",
+              kind:
+                ["edit", "attach"].includes(first.action) &&
+                !last.job.updates.some((u) => u.id === id || !u.acknowledged)
+                  ? "routine"
+                  : "action",
+              url:
+                this.env.GOOGLE_AUTH_ORIGIN +
+                (role === "client"
+                  ? "/api/client-portal?job="
+                  : "/api/client-requests?job=") +
+                last.jobId,
+            },
+            role,
+          );
+      }
     }
     await this.db
       .prepare(
