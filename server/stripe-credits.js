@@ -8,7 +8,7 @@ import {
 } from "./stripe-purchase.js";
 import { getSession } from "./google-auth.js";
 import { hasPurchase, paymentMode } from "./purchase-access.js";
-import { boundedText } from "./request-body.js";
+import { boundedText, RequestBodyError } from "./request-body.js";
 import {
   paidCreditMode,
   creditAccount,
@@ -525,6 +525,8 @@ export async function handleCredits({ request, env, params }) {
       });
     }
   } catch (error) {
+    if (error instanceof RequestBodyError)
+      return json({ error: error.message }, error.status);
     if (error.message === "bad_request" || error instanceof SyntaxError)
       return json({ error: "Invalid credit request." }, 400);
     if (error.message === "purchase_limit")

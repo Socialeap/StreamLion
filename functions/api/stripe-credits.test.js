@@ -192,7 +192,12 @@ function fixture(t) {
           ...headers,
         },
         ...(body !== undefined
-          ? { body: typeof body === "string" ? body : JSON.stringify(body) }
+          ? {
+              body:
+                typeof body === "string" || body instanceof Uint8Array
+                  ? body
+                  : JSON.stringify(body),
+            }
           : {}),
       }),
     });
@@ -274,6 +279,36 @@ test("30 percent markup uses exact integer ceiling; unknown cost fails closed", 
   assert.equal(creditPrice(10001), 13002);
   assert.throws(() => creditPrice(0));
   assert.throws(() => creditPrice(5999));
+});
+test("credit endpoints reject oversized and malformed UTF-8 bodies with client status codes", async (t) => {
+  const f = fixture(t),
+    cookie = await f.login();
+  for (const path of ["checkout", "confirm", "webhook"]) {
+    const maximum = path === "webhook" ? 256 * 1024 : 2048;
+    const headers =
+      path === "webhook" ? { "Stripe-Signature": "synthetic" } : {};
+    for (const [body, status] of [
+      ["x".repeat(maximum + 1), 413],
+      [new Uint8Array([0xc3, 0x28]), 400],
+    ]) {
+      const response = await f.request(path, {
+        method: "POST",
+        cookie,
+        headers,
+        body,
+      });
+      assert.equal(response.status, status, path);
+      assert.match(response.headers.get("Cache-Control"), /no-store/);
+    }
+  }
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_credit_orders_v1").get().n,
+    0,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_credit_events_v1").get().n,
+    0,
+  );
 });
 test("new paid-credit policy is closed and zero-budget; pilot remains separate", (t) => {
   const f = fixture(t);
