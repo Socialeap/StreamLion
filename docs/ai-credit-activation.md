@@ -2,7 +2,7 @@
 
 **HOLD — ACTIVATE ONLY AFTER THIS PR IS MERGED AND THE OWNER APPROVES THE TEST CONFIGURATION.**
 
-Backend, frontend, additive durable D1 state, Stripe catalog/webhooks and server-only configuration are separate release gates. The implementation does not open live sales or increase provider spending on merge. Use the existing Cloudflare Pages project `streamlion`, D1 `streamlion-google-sessions` / `GOOGLE_SESSIONS`, Google and Stripe account `acct_1JnHIaCQXdxBxU8G`. The repository's StreamLion boundary excludes Lovable; any conflicting generic handoff instruction needs an owner decision before activation. No Supabase objects are involved.
+Backend, frontend, additive durable D1 state, Stripe catalog/webhooks and server-only configuration are separate release gates. The implementation does not open live sales or increase provider spending on merge. Payment setup and releases use only GitHub, Cloudflare and Stripe, as reaffirmed by the owner on October 6, 2026. Use the existing Cloudflare Pages project `streamlion`, D1 `streamlion-google-sessions` / `GOOGLE_SESSIONS`, existing Google account bindings and Stripe account `acct_1JnHIaCQXdxBxU8G`. **No Lovable action is required.** Lovable has no role whatsoever; generic Lovable handoff rules do not apply and require no further owner clarification. No Supabase objects are involved.
 
 ## Commercial policy
 
