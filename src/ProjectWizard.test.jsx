@@ -298,7 +298,7 @@ test("Projects shows a named unfinished draft, its count and edit/delete control
   assert.ok(ui.getByText("Brooklyn"));
   assert.ok(ui.getByText("Oct 1, 2026"));
   assert.ok(ui.getByText("Needs review"));
-  assert.ok(ui.getByRole("button", { name: "Ask about a project" }));
+  assert.ok(ui.getByRole("searchbox", { name: "Find a project" }));
   fireEvent.click(ui.getByRole("button", { name: "Edit" }));
   fireEvent.click(ui.getByRole("button", { name: "Delete" }));
   assert.equal(edited, true);

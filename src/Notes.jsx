@@ -214,10 +214,9 @@ export default function Notes({
   }
   return (
     <>
-      <header className="page-head">
+      <header className="page-head workspace-page-head">
         <div>
           <h1>Field notes</h1>
-          <p>Capture details on site.</p>
         </div>
       </header>
       {!workspace.jobs.length ? (
@@ -229,7 +228,7 @@ export default function Notes({
       ) : (
         <>
           <label className="job-select">
-            Current job
+            Project
             <select
               value={selected}
               disabled={captureBusy || busy}
@@ -243,26 +242,8 @@ export default function Notes({
               ))}
             </select>
           </label>
-          {job && (
-            <details className="scope">
-              <summary>Scope and access instructions</summary>
-              <h3>Access</h3>
-              <p className="note-text">
-                {job.accessInstructions || "Not recorded"}
-              </p>
-              <h3>Scope</h3>
-              <p className="note-text">{job.scope || "Not recorded"}</p>
-              <h3>Requested outputs</h3>
-              <p className="note-text">{job.deliverables || "Not recorded"}</p>
-              <h3>Excluded work</h3>
-              <p className="note-text">{job.exclusions || "Not recorded"}</p>
-            </details>
-          )}
           <div className="field-layout">
-            <section className="editor">
-              <SectionHeading icon={NotebookPen} tone="blue">
-                New field note
-              </SectionHeading>
+            <section className="editor" aria-label="New field note">
               <form onSubmit={submit}>
                 <label>
                   Area
@@ -286,18 +267,13 @@ export default function Notes({
                   <textarea
                     value={text}
                     onChange={(e) => updateDraft(area, e.target.value)}
-                    placeholder="Record measurements with their exact units, observations, or access issues…"
-                    rows={6}
+                    placeholder="Observations, exact readings, or access issues…"
+                    rows={4}
                     maxLength={10000}
                     required
                     disabled={busy}
                   />
                 </label>
-                <p className="hint">
-                  Original wording and fractions are preserved. Notes are not
-                  automatically parsed into measurements. You can use your phone
-                  keyboard's dictation button to speak a written note.
-                </p>
                 <button
                   className="primary full"
                   disabled={busy || captureBusy || !selected}
@@ -343,8 +319,7 @@ export default function Notes({
                     }}
                   />
                   <small>
-                    Choose the area first. Photos and recordings up to 5 MB are
-                    kept here before sending to Google.
+                    Choose an area. Up to 5 MB per photo or recording.
                   </small>
                 </label>
               )}
@@ -356,6 +331,25 @@ export default function Notes({
                   onBusy={onCaptureBusy}
                 />
               ) : null}
+              {job && (
+                <details className="scope">
+                  <summary>Scope and access instructions</summary>
+                  <h3>Access</h3>
+                  <p className="note-text">
+                    {job.accessInstructions || "Not recorded"}
+                  </p>
+                  <h3>Scope</h3>
+                  <p className="note-text">{job.scope || "Not recorded"}</p>
+                  <h3>Requested outputs</h3>
+                  <p className="note-text">
+                    {job.deliverables || "Not recorded"}
+                  </p>
+                  <h3>Excluded work</h3>
+                  <p className="note-text">
+                    {job.exclusions || "Not recorded"}
+                  </p>
+                </details>
+              )}
             </section>
             <section aria-label="Saved notes" className="note-list">
               <SectionHeading icon={Archive}>
