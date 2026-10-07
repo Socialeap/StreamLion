@@ -37,7 +37,13 @@ test("device dictation instructions, organized readings and reviewed save stay i
       }}
     />,
   );
-  assert.ok(ui.getByText(/microphone on your device/));
+  const guidance = ui.getByText(/microphone on your device/).closest("details");
+  assert.equal(guidance.open, false);
+  const capture = ui.getByRole("region", { name: "Measurement batch" });
+  assert.ok(
+    capture.compareDocumentPosition(guidance) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+  );
   fireEvent.change(ui.getByLabelText("Room or exterior area"), {
     target: { value: "Office 2" },
   });

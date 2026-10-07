@@ -264,7 +264,15 @@ export default function FocusedAsk({
               <button
                 className="primary"
                 disabled={running}
-                onClick={() => onStageChange("ask")}
+                onClick={() => {
+                  if (canListen) onVoice();
+                  else {
+                    onStageChange("ask");
+                    window.requestAnimationFrame(() =>
+                      inputRef.current?.focus(),
+                    );
+                  }
+                }}
               >
                 <Mic size={20} aria-hidden="true" />
                 Ask another

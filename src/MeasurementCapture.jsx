@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Ruler, Mic, Layers } from "lucide-react";
+import { Layers } from "lucide-react";
 import SectionHeading from "./SectionHeading.jsx";
 import { readDraft, writeDraft, clearDraft } from "./drafts";
 import { download } from "./storage";
@@ -240,55 +240,11 @@ export default function Measurements({
   }
   return (
     <>
-      <header className="page-head">
+      <header className="page-head workspace-page-head">
         <div>
           <h1>Measurements</h1>
-          <p>{project.title} · Record exact readings, one room at a time.</p>
         </div>
       </header>
-      <section
-        className="intake-panel measurement-guide"
-        aria-label="How to dictate measurements"
-      >
-        <SectionHeading icon={Mic} tone="violet">
-          Speak your readings. StreamLion organizes them.
-        </SectionHeading>
-        <ol>
-          <li>Choose the room or exterior area below.</li>
-          <li>
-            Tap the <strong>Dictate or type measurements</strong> box, then tap
-            the <strong>microphone on your device's keyboard</strong>. You can
-            also type. On a computer, use your system's dictation shortcut.
-          </li>
-          <li>
-            Say the measurement name and units: “Length twelve feet four and
-            three eighths inches. Width ten feet six inches. Ceiling eight feet
-            nine inches.”
-          </li>
-          <li>
-            Finish dictating, tap <strong>Organize measurements</strong>, then
-            check the cleaned-up readings against your tape.
-          </li>
-        </ol>
-        <p className="hint">
-          StreamLion groups and formats your readings when you tap Organize.
-          Fractions are kept exactly. Voice typing and its offline support
-          depend on your device; typing and organizing work offline.
-        </p>
-      </section>
-      <details className="scope">
-        <summary>Job requirements</summary>
-        <p>{project.scope || "Scope not recorded."}</p>
-        <p>
-          Requested outputs:{" "}
-          {project.deliverables || "Confirm with the customer."}
-        </p>
-        <p>
-          Exclusions:{" "}
-          {project.exclusions ||
-            "None recorded. Do not assume a room is excluded."}
-        </p>
-      </details>
       {invalid && (
         <p className="error" role="alert">
           {invalid} The original remains in Field notes; no record was
@@ -296,9 +252,6 @@ export default function Measurements({
         </p>
       )}
       <section className="editor" aria-label="Measurement batch">
-        <SectionHeading icon={Ruler} tone="blue">
-          Capture a measurement batch
-        </SectionHeading>
         <div className="measurement-room">
           <label>
             Room or exterior area
@@ -350,11 +303,11 @@ export default function Measurements({
             value={input}
             disabled={locked || !draft.room.trim()}
             maxLength={3000}
-            rows={4}
+            rows={3}
             onChange={(e) =>
               retain({ ...draft, checked: false }, e.target.value)
             }
-            placeholder="Length 12 feet 4 3/8 inches. Width 10 feet 6 inches. Ceiling 8 feet 9 inches to underside of beam."
+            placeholder="Length 12 ft 4 3/8 in. Width 10 ft 6 in."
           />
         </label>
         {draft.clarifyingIssue != null && (
@@ -371,153 +324,168 @@ export default function Measurements({
           >
             Organize measurements
           </button>
-          <button
-            disabled={locked || !draft.entries.length}
-            onClick={() =>
-              retain({
-                ...draft,
-                entries: draft.entries.slice(0, -1),
-                checked: false,
-              })
-            }
-          >
-            Undo last unsaved entry
-          </button>
+          {!!draft.entries.length && (
+            <button
+              disabled={locked || !draft.entries.length}
+              onClick={() =>
+                retain({
+                  ...draft,
+                  entries: draft.entries.slice(0, -1),
+                  checked: false,
+                })
+              }
+            >
+              Undo last unsaved entry
+            </button>
+          )}
         </div>
-        <details className="quiet-details">
-          <summary>More ways to describe a reading</summary>
-          <p>
-            Use Length, Width, Ceiling, Height, Depth, Diagonal, or Segment.
-            Include units with every reading: feet/inches, mm, cm, or m. Add
-            descriptions after “from”, “to”, “along”, or in parentheses. Say
-            “Continuing six feet eight inches” to connect to the previous
-            reading in this batch. Connected totals describe a measured run;
-            they do not establish floor area or a floor plan.
-          </p>
-        </details>
-        <h2>
-          Organized readings{" "}
-          <span className="count">{draft.entries.length}</span>
-        </h2>
-        <ul className="measurement-list">
-          {draft.entries.map((entry, i) => (
-            <li key={entry.id}>
-              <strong>
-                {entry.label}: {entry.display}
-              </strong>
-              {entry.detail && <span>{entry.detail}</span>}
-              {entry.continues && <small>Continues previous segment</small>}
-              <details>
-                <summary>Original / correct this reading</summary>
-                <p>{entry.raw}</p>
+        {(!!draft.entries.length ||
+          !!draft.issues.length ||
+          !!draft.editingId) && (
+          <>
+            <h2>
+              Organized readings{" "}
+              <span className="count">{draft.entries.length}</span>
+            </h2>
+            <ul className="measurement-list">
+              {draft.entries.map((entry, i) => (
+                <li key={entry.id}>
+                  <strong>
+                    {entry.label}: {entry.display}
+                  </strong>
+                  {entry.detail && <span>{entry.detail}</span>}
+                  {entry.continues && <small>Continues previous segment</small>}
+                  <details>
+                    <summary>Original / correct this reading</summary>
+                    <p>{entry.raw}</p>
+                    <button
+                      disabled={locked}
+                      onClick={() => {
+                        const replacement = window.prompt(
+                          "Enter this reading with its name and exact units",
+                          entry.raw,
+                        );
+                        if (replacement === null) return;
+                        try {
+                          const parsed = parseMeasurements(
+                            replacement,
+                            draft.entries.slice(0, i),
+                          );
+                          if (
+                            parsed.issues.length ||
+                            parsed.entries.length !== 1
+                          )
+                            throw new Error(
+                              parsed.issues[0]?.message ||
+                                "Enter one measurement at a time.",
+                            );
+                          const entries = draft.entries.map((e, index) =>
+                            index === i
+                              ? { ...parsed.entries[0], id: entry.id }
+                              : e,
+                          );
+                          const next = {
+                            ...draft,
+                            kind: MEASUREMENT_KIND,
+                            version: 1,
+                            entries,
+                            raw: `${draft.raw}\nCorrection: ${replacement}`,
+                            checked: false,
+                          };
+                          measurementSet(next);
+                          retain(next);
+                        } catch (e) {
+                          setError(e.message);
+                        }
+                      }}
+                    >
+                      Correct reading
+                    </button>
+                  </details>
+                </li>
+              ))}
+            </ul>
+            {connectedTotals(draft.entries).map((total) => (
+              <p key={total}>{total}</p>
+            ))}
+            {draft.issues.map((issue, i) => (
+              <div className="measurement-issue" key={i}>
+                <strong>Needs clarification</strong>
+                <p>{issue.raw}</p>
+                <p>{issue.message}</p>
                 <button
                   disabled={locked}
                   onClick={() => {
-                    const replacement = window.prompt(
-                      "Enter this reading with its name and exact units",
-                      entry.raw,
-                    );
-                    if (replacement === null) return;
-                    try {
-                      const parsed = parseMeasurements(
-                        replacement,
-                        draft.entries.slice(0, i),
-                      );
-                      if (parsed.issues.length || parsed.entries.length !== 1)
-                        throw new Error(
-                          parsed.issues[0]?.message ||
-                            "Enter one measurement at a time.",
-                        );
-                      const entries = draft.entries.map((e, index) =>
-                        index === i
-                          ? { ...parsed.entries[0], id: entry.id }
-                          : e,
-                      );
-                      const next = {
-                        ...draft,
-                        kind: MEASUREMENT_KIND,
-                        version: 1,
-                        entries,
-                        raw: `${draft.raw}\nCorrection: ${replacement}`,
-                        checked: false,
-                      };
-                      measurementSet(next);
-                      retain(next);
-                    } catch (e) {
-                      setError(e.message);
+                    if (input.trim()) {
+                      setError("Organize your current dictation first.");
+                      return;
                     }
+                    retain(
+                      {
+                        ...draft,
+                        clarifyingIssue: i,
+                        checked: false,
+                      },
+                      issue.raw,
+                    );
                   }}
                 >
-                  Correct reading
+                  Correct this wording
                 </button>
-              </details>
-            </li>
-          ))}
-        </ul>
-        {connectedTotals(draft.entries).map((total) => (
-          <p key={total}>{total}</p>
-        ))}
-        {draft.issues.map((issue, i) => (
-          <div className="measurement-issue" key={i}>
-            <strong>Needs clarification</strong>
-            <p>{issue.raw}</p>
-            <p>{issue.message}</p>
-            <button
-              disabled={locked}
-              onClick={() => {
-                if (input.trim()) {
-                  setError("Organize your current dictation first.");
-                  return;
+              </div>
+            ))}
+            <label className="measurement-check">
+              <input
+                type="checkbox"
+                checked={draft.checked}
+                disabled={
+                  locked ||
+                  !!draft.issues.length ||
+                  !draft.entries.length ||
+                  !!input.trim()
                 }
-                retain(
-                  {
-                    ...draft,
-                    clarifyingIssue: i,
-                    checked: false,
-                  },
-                  issue.raw,
-                );
-              }}
-            >
-              Correct this wording
-            </button>
-          </div>
-        ))}
-        <label className="measurement-check">
-          <input
-            type="checkbox"
-            checked={draft.checked}
-            disabled={
-              locked ||
-              !!draft.issues.length ||
-              !draft.entries.length ||
-              !!input.trim()
-            }
-            onChange={(e) => retain({ ...draft, checked: e.target.checked })}
-          />
-          I checked these readings against the tape.
-        </label>
-        <div className="actions">
+                onChange={(e) =>
+                  retain({ ...draft, checked: e.target.checked })
+                }
+              />
+              I checked these readings against the tape.
+            </label>
+            <div className="actions">
+              <button
+                disabled={locked || stale || !dirty || !!input.trim()}
+                className="primary"
+                onClick={save}
+              >
+                {busy
+                  ? "Saving…"
+                  : draft.checked
+                    ? "Save reviewed measurements"
+                    : "Save unreviewed measurements"}
+              </button>
+              <button
+                disabled={locked || dirty}
+                onClick={() =>
+                  retain(
+                    { ...empty(), floor: draft.floor, side: draft.side },
+                    "",
+                  )
+                }
+              >
+                Start next room
+              </button>
+            </div>
+          </>
+        )}
+        {!dirty && !!draft.room.trim() && (
           <button
-            disabled={locked || stale || !dirty || !!input.trim()}
-            className="primary"
-            onClick={save}
-          >
-            {busy
-              ? "Saving…"
-              : draft.checked
-                ? "Save reviewed measurements"
-                : "Save unreviewed measurements"}
-          </button>
-          <button
-            disabled={locked || dirty}
+            disabled={locked}
             onClick={() =>
               retain({ ...empty(), floor: draft.floor, side: draft.side }, "")
             }
           >
             Start next room
           </button>
-        </div>
+        )}
         {stale && (
           <p className="error" role="alert">
             The saved batch changed. Your draft is kept; reopen the latest batch
@@ -536,22 +504,74 @@ export default function Measurements({
         )}
         {notice && <p role="status">{notice}</p>}
       </section>
+      <details
+        className="measurement-guide"
+        aria-label="How to dictate measurements"
+      >
+        <summary>Measurement help</summary>
+        <ol>
+          <li>Choose the room or exterior area.</li>
+          <li>
+            Tap the <strong>Dictate or type measurements</strong> box, then tap
+            the <strong>microphone on your device's keyboard</strong>. You can
+            also type. On a computer, use your system's dictation shortcut.
+          </li>
+          <li>
+            Say the measurement name and units: “Length twelve feet four and
+            three eighths inches. Width ten feet six inches. Ceiling eight feet
+            nine inches.”
+          </li>
+          <li>
+            Finish dictating, tap <strong>Organize measurements</strong>, then
+            check the cleaned-up readings against your tape.
+          </li>
+        </ol>
+        <p className="hint">
+          StreamLion groups and formats your readings when you tap Organize.
+          Fractions are kept exactly. Voice typing and its offline support
+          depend on your device; typing and organizing work offline.
+        </p>
+        <details className="quiet-details">
+          <summary>More ways to describe a reading</summary>
+          <p>
+            Use Length, Width, Ceiling, Height, Depth, Diagonal, or Segment.
+            Include units with every reading: feet/inches, mm, cm, or m. Add
+            descriptions after “from”, “to”, “along”, or in parentheses. Say
+            “Continuing six feet eight inches” to connect to the previous
+            reading in this batch. Connected totals describe a measured run;
+            they do not establish floor area or a floor plan.
+          </p>
+        </details>
+      </details>
+      <details className="scope">
+        <summary>Job requirements</summary>
+        <p>{project.scope || "Scope not recorded."}</p>
+        <p>
+          Requested outputs:{" "}
+          {project.deliverables || "Confirm with the customer."}
+        </p>
+        <p>
+          Exclusions:{" "}
+          {project.exclusions ||
+            "None recorded. Do not assume a room is excluded."}
+        </p>
+      </details>
       <section className="note-list" aria-label="Saved measurement batches">
         <div className="actions">
           <SectionHeading icon={Layers}>
             Saved rooms and measurements
           </SectionHeading>
-          <button disabled={!records.length} onClick={exportReport}>
-            Download measurement report
-          </button>
-          <button disabled={!records.length} onClick={() => window.print()}>
-            Print / save as PDF
-          </button>
+          {!!records.length && (
+            <>
+              <button onClick={exportReport}>
+                Download measurement report
+              </button>
+              <button onClick={() => window.print()}>
+                Print / save as PDF
+              </button>
+            </>
+          )}
         </div>
-        <p className="hint">
-          Each saved batch shows whether you checked it and where it is stored.
-          Save multiple batches for the same room when needed.
-        </p>
         {!records.length && (
           <p>Saved measurements for this project will appear here.</p>
         )}
