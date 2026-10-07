@@ -17,6 +17,7 @@
     "verify:capacity": "node scripts/verify-capacity.mjs"
   },
   "dependencies": {
+    "@block65/webcrypto-web-push": "2.0.0",
     "@modelcontextprotocol/ext-apps": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "agents": "^0.24.0",

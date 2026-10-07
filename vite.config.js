@@ -74,6 +74,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ["/notification-sw.js"],
         globPatterns: ["**/*.{js,mjs,css,html,svg,png,webmanifest}"],
         globIgnores: [
           "client/index.html",

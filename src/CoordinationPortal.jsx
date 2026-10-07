@@ -1,5 +1,12 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { PROJECT_FIELDS } from "./project-schema.js";
+import NotificationSettings from "./NotificationSettings.jsx";
+import { subscribeUpdate, updateReady, applyUpdate } from "./updates.js";
 import {
   CLIENT_FIELDS,
   MATERIAL_FIELDS,
@@ -94,6 +101,8 @@ export default function CoordinationPortal({
   const requestRef = useRef(null);
   const [synthetic, setSynthetic] = useState(false);
   const [mail, setMail] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const updateAvailable = useSyncExternalStore(subscribeUpdate, updateReady);
   const jobId =
     typeof window === "undefined"
       ? ""
@@ -105,6 +114,7 @@ export default function CoordinationPortal({
       setJobs([data.job]);
       setSelected(data.job.id);
       setBrand(data.brand);
+      setActivity(data.activity || []);
       setVerified(true);
       return { jobs: [data.job] };
     } else {
@@ -117,11 +127,20 @@ export default function CoordinationPortal({
         setPending(result.pending);
         setArchives(result.archives || []);
         setMail(result.mail);
+        setActivity(result.activity || []);
         return result;
       }
       return { jobs: [] };
     }
   }
+  useEffect(() => {
+    if (!client || !verified) return;
+    const link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = "/api/coordination/client/manifest";
+    document.head.appendChild(link);
+    return () => link.remove();
+  }, [client, verified]);
   useEffect(() => {
     if (client) {
       const token = new URLSearchParams(window.location.hash.slice(1)).get(
@@ -208,6 +227,12 @@ export default function CoordinationPortal({
         )}
       </header>
       <main>
+        {updateAvailable && (
+          <p className="coord-notice">
+            An app update is ready. Save any edits first.{" "}
+            <button onClick={applyUpdate}>Update StreamLion</button>
+          </p>
+        )}
         {synthetic && (
           <p className="coord-notice" role="status">
             Local synthetic preview — no email, Google writes or charges.
@@ -254,6 +279,14 @@ export default function CoordinationPortal({
           <div role="status" className="coord-notice">
             {message}
           </div>
+        )}
+        {(client ? verified : status?.connected) && (
+          <NotificationSettings
+            key={"notifications-" + (client ? selected : status?.subject)}
+            role={client ? "client" : "provider"}
+            subject={status?.subject}
+            api={api}
+          />
         )}
         {requestRef.current && error && (
           <div className="coord-actions">
@@ -400,9 +433,9 @@ export default function CoordinationPortal({
           <>
             {mail?.stalled > 0 && (
               <p className="coord-alert">
-                {mail.stalled} notification(s) could not be delivered. Keep the
-                client’s project link and ask the service administrator to
-                review the email transport.
+                {mail.stalled} notification(s) need review. Keep the client’s
+                project link and ask the service administrator to review the
+                email transport.
               </p>
             )}
             {jobs.some(
@@ -518,6 +551,9 @@ export default function CoordinationPortal({
                   <JobPanel
                     key={selectedJob.id}
                     job={selectedJob}
+                    activity={activity.filter(
+                      (e) => e.jobId === selectedJob.id,
+                    )}
                     client={false}
                     busy={busy}
                     command={command}
@@ -562,6 +598,7 @@ export default function CoordinationPortal({
           <JobPanel
             key={selectedJob.id}
             job={selectedJob}
+            activity={activity.filter((e) => e.jobId === selectedJob.id)}
             client
             busy={busy}
             command={command}
@@ -575,6 +612,7 @@ export default function CoordinationPortal({
   );
 }
 function JobPanel({
+  activity = [],
   job,
   client,
   busy,
@@ -929,6 +967,21 @@ function JobPanel({
       {tab === "Updates" && (
         <>
           <h2>What needs attention</h2>
+          {activity.length > 0 && (
+            <details>
+              <summary>Recent project activity</summary>
+              <ol className="coord-activity">
+                {activity.slice(0, 20).map((e) => (
+                  <li key={e.id}>
+                    <strong>{e.label}</strong>
+                    <span>
+                      {date(e.at)} · Revision {e.revision}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
           {issues
             .filter((i) => i.kind === "missing")
             .map((i) => (

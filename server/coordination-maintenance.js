@@ -1,7 +1,8 @@
 import { coordinationReady } from "./client-coordination.js";
 import { CoordinationEngine, queueNotice } from "./coordination-engine.js";
-import { unseal, seal, hash } from "./google-auth.js";
+import { hash } from "./google-auth.js";
 import { DAY } from "../src/client-workflow.js";
+import { dispatchNotifications } from "./coordination-notifications.js";
 export async function maintainCoordination(env, now = Date.now()) {
   const counts = {
     recovered: 0,
@@ -9,6 +10,8 @@ export async function maintainCoordination(env, now = Date.now()) {
     reminders: 0,
     sent: 0,
     retained: 0,
+    skipped: 0,
+    pushed: 0,
   };
   if (!(await coordinationReady(env))) return counts;
   const db = env.GOOGLE_SESSIONS;
@@ -82,65 +85,11 @@ export async function maintainCoordination(env, now = Date.now()) {
       }
     }
   }
-  const mail = await db
-    .prepare(
-      "SELECT * FROM streamlion_coordination_outbox_v1 WHERE sent_at IS NULL AND attempts<10 ORDER BY created_at LIMIT 20",
-    )
-    .all();
-  for (const row of mail.results) {
-    await db
-      .prepare(
-        "UPDATE streamlion_coordination_outbox_v1 SET attempts=attempts+1 WHERE id=? AND sent_at IS NULL AND attempts<10",
-      )
-      .bind(row.id)
-      .run();
-    try {
-      const payload = await unseal(env, row.payload, "mail:" + row.id);
-      const grant = await db
-        .prepare(
-          "SELECT c.revoked,c.expires_at,j.archived,j.archive_at FROM streamlion_coordination_jobs_v1 j JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id WHERE j.id=?",
-        )
-        .bind(row.job_id)
-        .first();
-      if (
-        grant &&
-        !grant.revoked &&
-        grant.expires_at > now &&
-        !grant.archived &&
-        (!grant.archive_at || grant.archive_at > now) &&
-        (!payload.expiresAt || payload.expiresAt > now)
-      ) {
-        const response = await env.COORDINATION_MAILER.fetch(
-          new Request("https://mailer.internal/send", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": row.id,
-            },
-            body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(15000),
-          }),
-        );
-        if (!response.ok) throw new Error("mail_unverified");
-        const receipt = await response.json();
-        if (receipt.accepted !== true || receipt.idempotencyKey !== row.id)
-          throw new Error("mail_unverified");
-      }
-      await db
-        .prepare(
-          "UPDATE streamlion_coordination_outbox_v1 SET sent_at=?,payload=? WHERE id=? AND sent_at IS NULL",
-        )
-        .bind(
-          now,
-          await seal(env, { delivered: true }, "mail:" + row.id),
-          row.id,
-        )
-        .run();
-      counts.sent++;
-    } catch {
-      counts.retained++;
-    }
-  }
+  const delivery = await dispatchNotifications(env, now);
+  counts.sent += delivery.sent;
+  counts.retained += delivery.retained;
+  counts.skipped = delivery.skipped;
+  counts.pushed = delivery.pushed;
   await db.batch([
     db
       .prepare(
@@ -157,6 +106,26 @@ export async function maintainCoordination(env, now = Date.now()) {
       .bind(Math.floor(now / 3600000) - 24),
     db
       .prepare("DELETE FROM streamlion_coordination_outbox_v1 WHERE sent_at<?")
+      .bind(now - 7 * DAY),
+    db
+      .prepare(
+        "DELETE FROM streamlion_coordination_push_subscriptions_v1 WHERE expires_at<?",
+      )
+      .bind(now),
+    db
+      .prepare(
+        "DELETE FROM streamlion_coordination_push_outbox_v1 WHERE sent_at<? OR (attempts>=5 AND created_at<?)",
+      )
+      .bind(now - 7 * DAY, now - 30 * DAY),
+    db
+      .prepare(
+        "DELETE FROM streamlion_coordination_email_budget_v1 WHERE day<?",
+      )
+      .bind(Math.floor(now / DAY) - 62),
+    db
+      .prepare(
+        "DELETE FROM streamlion_coordination_email_events_v1 WHERE created_at<?",
+      )
       .bind(now - 7 * DAY),
     // Encrypted in-flight copies are removed after verified completion. Audit events remain in Google.
     db

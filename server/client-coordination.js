@@ -15,6 +15,12 @@ import {
 } from "./coordination-engine.js";
 import { grantStarter, sharedWallet } from "./shared-credits.js";
 import {
+  emailReady,
+  notificationsSchema,
+  notificationSettings,
+  rememberProviderEmail,
+} from "./coordination-notifications.js";
+import {
   newClientJob,
   clientView,
   CoordinationError,
@@ -49,7 +55,7 @@ export async function coordinationReady(env) {
   if (
     env.ENABLE_CLIENT_COORDINATION !== "true" ||
     !googleConfigurationReady(env) ||
-    !env.COORDINATION_MAILER ||
+    !emailReady(env) ||
     !["test", "live"].includes(paymentMode(env)) ||
     env.STREAMLION_AI_CREDITS_MODE !== paymentMode(env)
   )
@@ -63,7 +69,9 @@ export async function coordinationReady(env) {
     )
       .bind(paymentMode(env))
       .first();
-    return Boolean(schema && policy?.active === 1);
+    return Boolean(
+      schema && policy?.active === 1 && (await notificationsSchema(env)),
+    );
   } catch {
     return false;
   }
@@ -151,7 +159,7 @@ async function client(request, env) {
       "Your provider must renew project access.",
       409,
     );
-  return { row, connection };
+  return { row, connection, grantHash: await hash(token) };
 }
 async function invite(env, row) {
   const token = random(),
@@ -315,12 +323,18 @@ export async function handleCoordination({ request, env, params = {} }) {
     }
     if (route === "client/logout" && request.method === "POST") {
       const token = cookie(request);
-      if (token)
+      if (token) {
         await env.GOOGLE_SESSIONS.prepare(
           "UPDATE streamlion_coordination_sessions_v1 SET revoked=1 WHERE hash=?",
         )
           .bind(await hash(token))
           .run();
+        await env.GOOGLE_SESSIONS.prepare(
+          "DELETE FROM streamlion_coordination_push_subscriptions_v1 WHERE grant_hash=?",
+        )
+          .bind(await hash(token))
+          .run();
+      }
       return json({ signedOut: true }, 200, {
         "Set-Cookie":
           COOKIE + "=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
@@ -329,6 +343,53 @@ export async function handleCoordination({ request, env, params = {} }) {
     if (route.startsWith("client/")) {
       const principal = await client(request, env),
         engine = new CoordinationEngine(env, principal.connection);
+      if (route === "client/notifications") {
+        if (request.method === "POST")
+          await limited(env, "push-client:" + principal.grantHash, 30);
+        return json(
+          await notificationSettings(
+            env,
+            {
+              role: "client",
+              connection: principal.connection,
+              jobId: principal.row.id,
+              grantHash: principal.grantHash,
+              expiresAt: principal.row.session_expires,
+            },
+            request,
+            request.method === "POST" ? await bodyJSON(request, 4096) : null,
+          ),
+        );
+      }
+      if (route === "client/manifest" && request.method === "GET") {
+        return json(
+          {
+            name: "StreamLion · Client project",
+            short_name: "My project",
+            id: "/client-project/" + principal.row.id,
+            start_url:
+              "/api/client-portal?job=" + encodeURIComponent(principal.row.id),
+            scope: "/",
+            display: "standalone",
+            theme_color: "#194f39",
+            background_color: "#ffffff",
+            icons: [
+              {
+                src: "/lion-mint-192.png",
+                sizes: "192x192",
+                type: "image/png",
+              },
+              {
+                src: "/lion-mint-512.png",
+                sizes: "512x512",
+                type: "image/png",
+              },
+            ],
+          },
+          200,
+          { "Content-Type": "application/manifest+json" },
+        );
+      }
       if (route === "client/file" && request.method === "GET")
         return download(
           env,
@@ -353,6 +414,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         return json({
           job: clientView(job),
           brand: principal.connection.client_brand,
+          activity: activityFor(snapshot, principal.row.id, true),
         });
       }
       const body = await bodyJSON(
@@ -503,6 +565,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         value.google_subject,
         Date.now(),
       );
+      await rememberProviderEmail(env, value, session.email);
       return json({ connected: true });
     }
     if (
@@ -515,6 +578,18 @@ export async function handleCoordination({ request, env, params = {} }) {
         409,
       );
     const engine = new CoordinationEngine(env, connection);
+    if (route === "provider/notifications") {
+      if (request.method === "POST")
+        await rememberProviderEmail(env, connection, session.email);
+      return json(
+        await notificationSettings(
+          env,
+          { role: "provider", connection, expiresAt: connection.expires_at },
+          request,
+          body,
+        ),
+      );
+    }
     if (route === "provider/file" && request.method === "GET") {
       const query = new URL(request.url).searchParams;
       const row = await env.GOOGLE_SESSIONS.prepare(
@@ -544,12 +619,13 @@ export async function handleCoordination({ request, env, params = {} }) {
         .bind(connection.id)
         .all();
       const mail = await env.GOOGLE_SESSIONS.prepare(
-        "SELECT COUNT(*) AS queued,SUM(CASE WHEN o.attempts>=10 THEN 1 ELSE 0 END) AS stalled FROM streamlion_coordination_outbox_v1 o JOIN streamlion_coordination_jobs_v1 j ON j.id=o.job_id WHERE j.connection_id=? AND o.sent_at IS NULL",
+        "SELECT SUM(CASE WHEN o.status='queued' AND o.attempts<10 THEN 1 ELSE 0 END) AS queued,SUM(CASE WHEN o.status IN ('uncertain','failed','bounced','complained') OR (o.status='queued' AND o.attempts>=10) THEN 1 ELSE 0 END) AS stalled FROM streamlion_coordination_outbox_v1 o JOIN streamlion_coordination_jobs_v1 j ON j.id=o.job_id WHERE j.connection_id=?",
       )
         .bind(connection.id)
         .first();
       return json({
         jobs: [...snapshot.heads.values()],
+        activity: activityFor(snapshot),
         pending: pending.results,
         mail,
         archives: snapshot.rows[3]
@@ -672,6 +748,46 @@ export async function handleCoordination({ request, env, params = {} }) {
       error instanceof CoordinationError ? error.status : 503,
     );
   }
+}
+function activityFor(snapshot, jobId, clientOnly = false) {
+  const labels = {
+    create: "Request created",
+    edit: "Project information updated",
+    submit: "Request submitted",
+    question: "Clarification requested",
+    answer: "Answer recorded",
+    approve: "Approval recorded",
+    activate: "Project confirmed",
+    propose: "Scope revision proposed",
+    accept_proposal: "Revision approval recorded",
+    reject_proposal: "Revision rejected",
+    acknowledge: "Instructions acknowledged",
+    attach: "Reference file added",
+    progress: "Progress updated",
+    accept_delivery: "Delivery acknowledged",
+    close: "Job closed",
+    cancel: "Job cancelled",
+    reopen: "Job reopened",
+    extend: "Client access extended",
+  };
+  return [...(snapshot.events?.values() || [])]
+    .filter(
+      (e) =>
+        (!jobId || e.jobId === jobId) &&
+        labels[e.action] &&
+        (!clientOnly ||
+          e.action !== "attach" ||
+          e.job.attachments.at(-1)?.visibility === "client"),
+    )
+    .sort((a, b) => b.at - a.at || b.revision - a.revision)
+    .slice(0, 100)
+    .map((e) => ({
+      id: e.id,
+      jobId: e.jobId,
+      at: e.at,
+      revision: e.revision,
+      label: labels[e.action],
+    }));
 }
 async function download(env, engine, jobId, id, isClient) {
   const job = (await engine.google.snapshot()).heads.get(jobId);

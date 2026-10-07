@@ -97,7 +97,7 @@ function fixture(t) {
   };
   sql
     .prepare(
-      "INSERT INTO streamlion_coordination_connections_v1 VALUES(?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO streamlion_coordination_connections_v1(id,google_subject,mode,workbook_id,folder_id,credentials,client_brand,expires_at,revoked) VALUES(?,?,?,?,?,?,?,?,?)",
     )
     .run(...Object.values(connection));
   return { sql, db, env, purchase, connection };
@@ -255,6 +255,59 @@ test("separate engines serialize writes and recover unknown save without another
       ),
     /identity/,
   );
+  await db
+    .prepare(
+      "UPDATE streamlion_coordination_connections_v1 SET notification_email=? WHERE id=?",
+    )
+    .bind(
+      await seal(
+        env,
+        "provider@example.com",
+        "connection-email:" + connection.id,
+      ),
+      connection.id,
+    )
+    .run();
+  await engine.command(
+    "provider-access-change",
+    job.id,
+    {
+      action: "edit",
+      expectedRevision: google.heads.get(job.id).revision,
+      fields: { accessInstructions: "Meet the onsite manager" },
+    },
+    { role: "provider" },
+  );
+  const clientNotice = sql
+    .prepare(
+      "SELECT * FROM streamlion_coordination_outbox_v1 WHERE id='notice-provider-access-change-client'",
+    )
+    .get();
+  assert.equal(clientNotice.kind, "action");
+  assert.equal(
+    (await unseal(env, clientNotice.payload, "mail:" + clientNotice.id)).to,
+    "client@example.com",
+  );
+  await engine.command(
+    "client-access-change",
+    job.id,
+    {
+      action: "edit",
+      expectedRevision: google.heads.get(job.id).revision,
+      fields: { accessInstructions: "Use the side entrance" },
+    },
+    { role: "client" },
+  );
+  const providerNotice = sql
+    .prepare(
+      "SELECT * FROM streamlion_coordination_outbox_v1 WHERE id='notice-client-access-change-provider'",
+    )
+    .get();
+  assert.equal(providerNotice.kind, "action");
+  assert.equal(
+    (await unseal(env, providerNotice.payload, "mail:" + providerNotice.id)).to,
+    "provider@example.com",
+  );
 });
 test("client verification consumes a challenge once; expired access and cross-origin writes fail", async (t) => {
   const { env, sql } = fixture(t),
@@ -391,7 +444,7 @@ test("provider project status cannot cross account or selected-workbook boundari
   });
   assert.deepEqual(await response.json(), { managed: false });
 });
-test("notification retries retain identity, require an exact receipt and erase delivered payloads", async (t) => {
+test("notification retries retain identity, require an exact receipt and erase accepted payloads", async (t) => {
   const { env, db, sql } = fixture(t),
     now = Date.now();
   const row = {
@@ -421,20 +474,20 @@ test("notification retries retain identity, require an exact receipt and erase d
       idempotencyKey: acknowledged ? "notice-one" : "wrong",
     });
   };
-  assert.equal((await maintainCoordination(env, now)).retained, 1);
+  assert.equal((await maintainCoordination(env, now + 1000)).retained, 1);
   assert.equal(
     sql.prepare("SELECT sent_at FROM streamlion_coordination_outbox_v1").get()
       .sent_at,
     null,
   );
   acknowledged = true;
-  assert.equal((await maintainCoordination(env, now)).sent, 1);
+  assert.equal((await maintainCoordination(env, now + 60000)).sent, 1);
   assert.deepEqual(keys, ["notice-one", "notice-one"]);
   const saved = await db
     .prepare("SELECT * FROM streamlion_coordination_outbox_v1")
     .first();
   assert.deepEqual(await unseal(env, saved.payload, "mail:notice-one"), {
-    delivered: true,
+    accepted: true,
   });
 });
 test("migration preflight recognizes complete state and rejects partial or altered triggers", (t) => {

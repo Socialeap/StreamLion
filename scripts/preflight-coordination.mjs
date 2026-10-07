@@ -5,13 +5,16 @@ import { fileURLToPath } from "node:url";
 const migrations = new URL("../migrations/", import.meta.url);
 const normalized = (sql) =>
   sql.replace(/;\s*$/, "").replace(/\s+/g, " ").trim();
-export function coordinationPreflight(input) {
+export function coordinationPreflight(
+  input,
+  target = "0009_client_coordination.sql",
+) {
   if (!Array.isArray(input.schema) || !input.stamps)
     throw new Error("Provide schema rows and verified version stamps.");
   const db = new DatabaseSync(":memory:");
   try {
     for (const f of readdirSync(migrations)
-      .filter((f) => f.endsWith(".sql") && f < "0009")
+      .filter((f) => f.endsWith(".sql") && f < target.slice(0, 4))
       .sort())
       db.exec(readFileSync(new URL(f, migrations), "utf8"));
     const rows = () =>
@@ -21,19 +24,31 @@ export function coordinationPreflight(input) {
         )
         .all();
     const before = new Map(rows().map((r) => [r.name, r]));
-    db.exec(
-      readFileSync(new URL("0009_client_coordination.sql", migrations), "utf8"),
-    );
+    db.exec(readFileSync(new URL(target, migrations), "utf8"));
     const after = new Map(rows().map((r) => [r.name, r])),
       actual = new Map(input.schema.map((r) => [r.name, r]));
     const added = [...after.keys()].filter((k) => !before.has(k)),
       present = added.filter((k) => actual.has(k));
     if (present.length && present.length !== added.length)
       throw new Error(
-        "Partial 0009 state. Stop; do not apply or synthesize SQL.",
+        "Partial migration state. Stop; do not apply or synthesize SQL.",
       );
     const applied = present.length === added.length,
       expected = applied ? after : before;
+    // A complete later additive notification migration is a supported 0009 state.
+    if (
+      target.startsWith("0009") &&
+      applied &&
+      input.stamps.streamlion_coordination_notifications_schema_v1 === 1
+    ) {
+      db.exec(
+        readFileSync(
+          new URL("0010_coordination_notifications.sql", migrations),
+          "utf8",
+        ),
+      );
+      for (const r of rows()) expected.set(r.name, r);
+    }
     for (const [name, row] of expected) {
       const found = actual.get(name);
       if (
