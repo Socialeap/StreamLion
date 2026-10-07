@@ -102,6 +102,10 @@ export default function App() {
   const [noteEpoch, setNoteEpoch] = useState(0);
   const [restoreError, setRestoreError] = useState("");
   const restoreEpoch = useRef(0);
+  const editorOpen = !!editing;
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [page, editorOpen]);
   async function restoreConnection() {
     const epoch = ++restoreEpoch.current;
     setRestoreError("");
@@ -902,13 +906,7 @@ export default function App() {
           className={page === "Ask" && !editing ? "ask-app-header" : undefined}
         >
           <div className="brand">
-            <img
-              src="/lion-mint.png"
-              width="44"
-              height="44"
-              alt=""
-              aria-hidden="true"
-            />
+            <span className="brand-mark" aria-hidden="true" />
             <span>StreamLion</span>
           </div>
           {page === "Ask" && !editing && (
@@ -956,17 +954,18 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="workspace-status">
-          <span>
-            {page !== "Ask" && (
-              <>
-                {bookId ? "Google workbook" : "Local device"}
-                <br />
-              </>
-            )}
+        {!(page === "Connections" && bookId) && (
+          <div
+            className={
+              status.startsWith("Google records refreshed") ||
+              status === "Device workspace"
+                ? "sr-only"
+                : "workspace-status"
+            }
+          >
             <span role="status">{status}</span>
-          </span>
-        </div>
+          </div>
+        )}
       </aside>
       <main>
         <div className="app-utility">{page !== "Ask" && <ThemeSwitch />}</div>
@@ -1039,27 +1038,6 @@ export default function App() {
           </section>
         )}
 
-        {bookId && (page !== "Ask" || !(remote && hasGoogleSession())) && (
-          <div className="sync-bar">
-            <span>
-              {page === "Ask" ? "Google · " : "Google-owned records · "}
-              {remote && hasGoogleSession()
-                ? "connected"
-                : siteCopy
-                  ? `site copy checked ${new Date(siteCopy.verifiedAt).toLocaleString()}`
-                  : "reconnect needed"}
-            </span>
-            <button
-              aria-label="Refresh from Google"
-              disabled={disabled || !!editing || !hasGoogleSession()}
-              onClick={async () => {
-                await refresh(); /* Keep unresolved writes until the same operation is retried. */
-              }}
-            >
-              {page === "Ask" ? "Refresh" : "Refresh from Google"}
-            </button>
-          </div>
-        )}
         {waitingNotes.length > 0 && (
           <section className="outbox-bar" aria-label="Waiting field records">
             <span>
@@ -1121,7 +1099,6 @@ export default function App() {
             workspace={workspace}
             bookId={bookId}
             googleConnected={!!remote && hasGoogleSession()}
-            onAsk={() => setPage("Ask")}
             archivedProjects={archivedProjects}
             archivedDrafts={visibleDrafts(bookId, true)}
             drafts={drafts}
@@ -1259,28 +1236,6 @@ export default function App() {
           </>
         ) : page === "Field notes" ? (
           <>
-            {active && (
-              <div className="actions project-toolbar">
-                <button disabled={disabled} onClick={() => setEditing(active)}>
-                  Edit project details
-                </button>
-                <button
-                  disabled={disabled}
-                  onClick={() => setPage("Project home")}
-                >
-                  Project home
-                </button>
-                <button
-                  disabled={disabled}
-                  onClick={() => setPage("Measurements")}
-                >
-                  Measurements
-                </button>
-                <button disabled={disabled} onClick={() => setPage("Ask")}>
-                  Ask about this project
-                </button>
-              </div>
-            )}
             <Notes
               key={`${noteControls.draftScope}:${selected}:${noteEpoch}`}
               workspace={workspace}
@@ -1360,6 +1315,9 @@ export default function App() {
         ) : (
           <Connections
             bookId={bookId}
+            googleConnected={!!remote && hasGoogleSession()}
+            recordStatus={status}
+            onRefresh={refresh}
             onRestore={restoreConnection}
             restoreError={restoreError}
             onWorkbook={connectBook}

@@ -1234,3 +1234,76 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
 @media(prefers-reduced-motion:reduce) {
   .focused-ask .ask-activity span, .focused-ask .ask-mic-button { animation: none !important; }
 }
+
+/* Keep field work ahead of connection status and guidance. */
+.brand { color: var(--green); }
+.brand-mark {
+  display: inline-block;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  background: currentColor;
+  mask: url('/lion-mint.png') center / contain no-repeat;
+  -webkit-mask: url('/lion-mint.png') center / contain no-repeat;
+}
+.workspace-page-head { align-items: center; margin-bottom: 20px; gap: 16px; }
+.workspace-page-head h1 { margin: 0; }
+.workspace-page-head .actions { margin: 0; }
+.app:not(.app-ask) main label { font-size: 16px; }
+.app:not(.app-ask) main input,
+.app:not(.app-ask) main select,
+.app:not(.app-ask) main textarea { font-size: 17px; }
+.app:not(.app-ask) main button { font-size: 16px; min-height: 44px; }
+.app:not(.app-ask) main .hint,
+.app:not(.app-ask) main small { font-size: 14px; line-height: 1.5; }
+.job-select { max-width: none; margin-bottom: 20px; }
+.search { margin-top: 0; max-width: none; }
+.project-table td { font-size: 16px; }
+.project-name-button { font-size: 18px !important; }
+.project-status { font-size: 14px; }
+.project-overview { margin: 24px 0; padding-top: 16px; border-top: 1px solid var(--line); }
+.project-overview .metrics { margin: 18px 0 0; }
+.project-overview summary,
+.measurement-guide summary,
+.scope summary { cursor: pointer; min-height: 44px; padding: 10px 0; font-size: 16px; font-weight: 650; }
+.app .metric:nth-child(3) svg { color: var(--green); }
+.connection-records {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; padding: 18px; margin: 20px 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface-raised);
+}
+.connection-records > div { min-width: 0; flex: 1 1 210px; }
+.connection-records p { margin: 8px 0 0; overflow-wrap: anywhere; }
+.connection-records button { flex-shrink: 0; }
+.measurement-guide { margin: 24px 0 12px; border-top: 1px solid var(--line); padding: 12px 0; }
+.measurement-room > label { min-width: 0; display: flex; flex-direction: column; }
+.measurement-room > label > input, .measurement-room > label > select { margin-top: auto; }
+@media (max-width: 760px) {
+  .sidebar nav button { font-size: 12px; white-space: normal; line-height: 1.25; }
+}
+@media (max-width: 1100px) {
+  .project-table thead { display: none; }
+  .project-table, .project-table tbody, .project-table td { display: block; width: 100%; }
+  .project-table td:first-child { min-width: 0; }
+  .project-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; padding: 12px 0; }
+  .project-table td { min-width: 0; display: block; padding: 0; border: 0; }
+  .project-table td:not(:first-child)::before { content: attr(data-label); color: var(--muted); }
+  .project-table td:first-child, .project-table td:last-child { grid-column: 1 / -1; }
+  .project-table td:not(:first-child)::before { display: block; font-size: 14px; margin-bottom: 5px; }
+  .project-table td:last-child::before { display: none; }
+  .project-row-actions { justify-content: flex-start; margin-top: 8px; }
+  .measurement-room { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .measurement-room > label:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .brand { gap: 10px; font-size: 22px; }
+  .brand-mark { width: 40px; height: 40px; flex-basis: 40px; }
+  .theme-switch .theme-label { display: none; }
+  .theme-switch button { width: 44px; min-height: 44px; padding: 10px; justify-content: center; }
+  .theme-switch button svg { width: 20px; height: 20px; }
+  .app-utility { top: 18px; }
+  .workspace-page-head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+  .workspace-page-head h1 { font-size: 28px; }
+  .workspace-page-head .actions button { padding: 10px 14px; }
+  .connection-records { padding: 16px; }
+}

@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  Plus,
-  FileText,
-  NotebookPen,
-  ClipboardCheck,
-  FolderOpen,
-} from "lucide-react";
-import SectionHeading from "./SectionHeading.jsx";
+import { Plus, FileText, NotebookPen, ClipboardCheck } from "lucide-react";
 import { searchProjects } from "./project-schema";
 import { WORKFLOW_AREA, readWorkflow, progressLabel } from "./workflow";
 
@@ -38,7 +31,6 @@ export default function Jobs({
   onDeleteProject,
   onRestoreProject,
   onRestoreDraft,
-  onAsk,
 }) {
   const [query, setQuery] = useState("");
   const rows = [
@@ -56,18 +48,11 @@ export default function Jobs({
   ).length;
   return (
     <>
-      <header className="page-head">
+      <header className="page-head workspace-page-head">
         <div>
           <h1>Projects</h1>
-          <p>Find a project, finish a draft, or start a new one.</p>
         </div>
         <div className="actions">
-          <button
-            onClick={onAsk}
-            title="Choose a project for quick answers or a ChatGPT conversation."
-          >
-            Ask about a project
-          </button>
           <button
             className="primary"
             onClick={onCreate}
@@ -78,34 +63,6 @@ export default function Jobs({
           </button>
         </div>
       </header>
-      <div className="metrics">
-        <div className="metric">
-          <FileText aria-hidden="true" />
-          <div>
-            <strong>{rows.length}</strong>
-            <span>Projects and named drafts</span>
-          </div>
-        </div>
-        <div className="metric">
-          <NotebookPen aria-hidden="true" />
-          <div>
-            <strong>
-              {
-                workspace.notes.filter((note) => note.area !== WORKFLOW_AREA)
-                  .length
-              }
-            </strong>
-            <span>Field annotations</span>
-          </div>
-        </div>
-        <div className="metric">
-          <ClipboardCheck aria-hidden="true" />
-          <div>
-            <strong>{pendingCount}</strong>
-            <span>Details pending review</span>
-          </div>
-        </div>
-      </div>
       <label className="search">
         Find a project
         <input
@@ -133,7 +90,6 @@ export default function Jobs({
         </section>
       ) : (
         <section className="project-list" aria-label="Projects">
-          <SectionHeading icon={FolderOpen}>Project records</SectionHeading>
           <table className="project-table">
             <thead>
               <tr>
@@ -178,7 +134,7 @@ export default function Jobs({
                             ? googleConnected
                               ? "Saved on this device only · Edit to save to Google"
                               : "Saved on this device only"
-                            : row.reference || "No project ID"}
+                            : row.reference}
                       </small>
                     </td>
                     <td data-label="City">{row.city || "Not set"}</td>
@@ -230,6 +186,37 @@ export default function Jobs({
           </table>
         </section>
       )}
+      <details className="project-overview">
+        <summary>Workspace overview</summary>
+        <div className="metrics">
+          <div className="metric">
+            <FileText aria-hidden="true" />
+            <div>
+              <strong>{rows.length}</strong>
+              <span>Projects and named drafts</span>
+            </div>
+          </div>
+          <div className="metric">
+            <NotebookPen aria-hidden="true" />
+            <div>
+              <strong>
+                {
+                  workspace.notes.filter((note) => note.area !== WORKFLOW_AREA)
+                    .length
+                }
+              </strong>
+              <span>Field annotations</span>
+            </div>
+          </div>
+          <div className="metric">
+            <ClipboardCheck aria-hidden="true" />
+            <div>
+              <strong>{pendingCount}</strong>
+              <span>Details pending review</span>
+            </div>
+          </div>
+        </div>
+      </details>
       {archivedProjects.length + archivedDrafts.length > 0 && (
         <details className="deleted-projects">
           <summary>

@@ -25,6 +25,9 @@ const localGoogleConfig = {
 };
 export default function Connections({
   bookId,
+  googleConnected = false,
+  recordStatus,
+  onRefresh,
   onWorkbook,
   onDisconnect,
   busyCapture,
@@ -133,11 +136,40 @@ export default function Connections({
         aria-label="Google Sheets & Drive"
       >
         <SectionHeading icon={FolderSync}>Google Sheets & Drive</SectionHeading>
-        <p>
-          {googleConfig?.persistentEnabled
-            ? "Connect Google once, then choose where your projects will be saved. We'll reopen your saved workbook when you return."
-            : "Connect Google and choose or create the workbook for your projects."}
-        </p>
+        {!(connected && bookId) && (
+          <p>
+            {googleConfig?.persistentEnabled
+              ? "Connect Google once, then choose where your projects will be saved. We'll reopen your saved workbook when you return."
+              : "Connect Google and choose or create the workbook for your projects."}
+          </p>
+        )}
+        {bookId && (
+          <div className="connection-records">
+            <div>
+              <strong>
+                {googleConnected
+                  ? "Google records connected"
+                  : siteCopy
+                    ? "Saved site copy"
+                    : "Reconnect to refresh records"}
+              </strong>
+              {siteCopy && !googleConnected && (
+                <p className="hint">
+                  Last checked {new Date(siteCopy.verifiedAt).toLocaleString()}
+                </p>
+              )}
+              {recordStatus && <p role="status">{recordStatus}</p>}
+            </div>
+            <button
+              className="primary"
+              disabled={busy || busyCapture || !connected || !onRefresh}
+              onClick={() => act(() => onRefresh())}
+            >
+              <FolderSync size={20} aria-hidden="true" />
+              {busy ? "Refreshing…" : "Refresh from Google"}
+            </button>
+          </div>
+        )}
         {configLoading && <p role="status">Loading Google connection…</p>}
         {!configLoading && configLoadError && (
           <div className="error" role="alert">
@@ -186,7 +218,7 @@ export default function Connections({
         )}
         <div className="actions">
           <button
-            className="primary"
+            className={connected ? undefined : "primary"}
             disabled={
               busy || busyCapture || configLoading || !googleConfig?.clientId
             }

@@ -405,6 +405,95 @@ test("dictation shows real listening state but final words wait for explicit Get
   }
 });
 
+test("Ask another begins a fresh voice capture in one tap and spends only after submission", async () => {
+  const original = globalThis.fetch;
+  let recognition,
+    starts = 0,
+    paid = 0,
+    ui;
+  window.SpeechRecognition = class {
+    constructor() {
+      recognition = this;
+    }
+    start() {
+      starts++;
+    }
+    abort() {
+      this.aborted = true;
+    }
+  };
+  globalThis.fetch = async (url) => {
+    if (url.endsWith("config"))
+      return Response.json({
+        enabled: true,
+        priceMicros: 12500,
+        balanceMicros: 262500,
+        preferenceScope: "f".repeat(43),
+      });
+    paid++;
+    return new Response(
+      '{"type":"text","delta":"A concise project answer."}\n{"type":"text_done"}\n{"type":"done"}\n',
+    );
+  };
+  window.localStorage.clear();
+  try {
+    await act(async () => {
+      ui = render(<Answers {...props} source="google" />);
+    });
+    fireEvent.change(ui.getByRole("textbox"), {
+      target: { value: "Who is the site contact?" },
+    });
+    fireEvent.click(
+      ui.getByRole("button", { name: "Get answer", exact: true }),
+    );
+    await act(async () =>
+      fireEvent.click(
+        ui.getByRole("button", { name: "Use AI and get answer" }),
+      ),
+    );
+    assert.equal(paid, 1);
+    fireEvent.click(
+      ui.getByRole("button", { name: "Ask another", exact: true }),
+    );
+    assert.equal(starts, 1);
+    assert.equal(
+      ui.container.querySelector(".focused-ask").dataset.phase,
+      "listening",
+    );
+    assert.equal(ui.getByRole("textbox").value, "");
+    assert.equal(paid, 1);
+    act(() =>
+      recognition.onresult({
+        results: [
+          Object.assign(
+            [{ transcript: "Are room dimensions required?", confidence: 1 }],
+            { isFinal: true },
+          ),
+        ],
+      }),
+    );
+    assert.equal(
+      ui.getByRole("textbox").value,
+      "Are room dimensions required?",
+    );
+    assert.equal(recognition.aborted, true);
+    assert.equal(paid, 1);
+    await act(async () =>
+      fireEvent.click(
+        ui.getByRole("button", { name: "Get answer", exact: true }),
+      ),
+    );
+    assert.equal(paid, 2);
+    assert.equal(ui.queryByRole("dialog"), null);
+    assert.ok(ui.getByText("A concise project answer."));
+  } finally {
+    cleanup();
+    delete window.SpeechRecognition;
+    globalThis.fetch = original;
+    window.localStorage.clear();
+  }
+});
+
 test("voice playback and Stop drive the speaking state without losing its answer", () => {
   let utterance;
   window.SpeechSynthesisUtterance = class {

@@ -26,7 +26,7 @@ Object.defineProperty(globalThis, "navigator", {
   configurable: true,
 });
 window.scrollTo = () => {};
-const { render, fireEvent, waitFor, cleanup } =
+const { render, fireEvent, waitFor, act, cleanup } =
   await import("@testing-library/react");
 const { default: App } = await import("./App.jsx");
 const { disconnectGoogle, restoreGoogleSession } = await import("./google.js");
@@ -170,6 +170,14 @@ test("a failed Google refresh replaces the success status, preserves records and
     const ui = render(<App />);
     await ui.findByRole("button", { name: "Automatically restored job" });
     await ui.findByText("Google records refreshed", { exact: true });
+    assert.equal(
+      ui.queryByRole("button", { name: "Refresh from Google" }),
+      null,
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Connections", exact: true }),
+    );
+    await ui.findByRole("button", { name: "Refresh from Google" });
     fail = true;
     fireEvent.click(ui.getByRole("button", { name: "Refresh from Google" }));
     await ui.findByText("Google refresh failed · records were not updated");
@@ -177,7 +185,11 @@ test("a failed Google refresh replaces the success status, preserves records and
       ui.queryByText("Google records refreshed", { exact: true }),
       null,
     );
+    fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
     assert.ok(ui.getByRole("button", { name: "Automatically restored job" }));
+    fireEvent.click(
+      ui.getByRole("button", { name: "Connections", exact: true }),
+    );
     fail = false;
     fireEvent.click(ui.getByRole("button", { name: "Refresh from Google" }));
     await ui.findByText(/^Google records refreshed /);
@@ -192,13 +204,105 @@ test("a failed Google refresh replaces the success status, preserves records and
     localStorage.clear();
   }
 });
+test("working pages keep drafts while Google refresh lives in Connections", async () => {
+  const original = globalThis.fetch;
+  const read = workbookFetch([]);
+  globalThis.fetch = (url, options) =>
+    url === "/api/ai/config"
+      ? Promise.resolve(json({ enabled: false, reason: "pilot_paused" }))
+      : read(url, options);
+  try {
+    const ui = render(<App />);
+    await ui.findByRole("button", { name: "Automatically restored job" });
+    assert.equal(
+      ui.queryByRole("button", { name: "Refresh from Google" }),
+      null,
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Field notes", exact: true }),
+    );
+    fireEvent.change(
+      ui.getByRole("combobox", { name: "Project", exact: true }),
+      { target: { value: "saved-project" } },
+    );
+    fireEvent.change(ui.getByLabelText("Area", { exact: true }), {
+      target: { value: "Office 2" },
+    });
+    fireEvent.change(ui.getByLabelText("Note", { exact: true }), {
+      target: { value: "Keep this unfinished field note." },
+    });
+    assert.equal(
+      ui.queryByRole("button", { name: "Refresh from Google" }),
+      null,
+    );
+    assert.equal(
+      ui.queryByRole("button", { name: "Ask about this project" }),
+      null,
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Measurements", exact: true }),
+    );
+    assert.equal(
+      ui.queryByRole("button", { name: "Refresh from Google" }),
+      null,
+    );
+    fireEvent.change(ui.getByLabelText("Room or exterior area"), {
+      target: { value: "Office 2" },
+    });
+    fireEvent.change(ui.getByLabelText("Dictate or type measurements"), {
+      target: { value: "Length 12 ft 4 3/8 in" },
+    });
+    fireEvent.click(
+      ui.getByRole("button", { name: "Connections", exact: true }),
+    );
+    assert.equal(
+      ui.getByRole("button", { name: "Refresh from Google" }).disabled,
+      false,
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Measurements", exact: true }),
+    );
+    assert.equal(ui.getByLabelText("Room or exterior area").value, "Office 2");
+    assert.equal(
+      ui.getByLabelText("Dictate or type measurements").value,
+      "Length 12 ft 4 3/8 in",
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Field notes", exact: true }),
+    );
+    assert.equal(ui.getByLabelText("Area", { exact: true }).value, "Office 2");
+    assert.equal(
+      ui.getByLabelText("Note", { exact: true }).value,
+      "Keep this unfinished field note.",
+    );
+    fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
+    fireEvent.click(
+      ui.getByRole("button", { name: "Automatically restored job" }),
+    );
+    fireEvent.click(ui.getByRole("button", { name: /On site/ }));
+    await act(async () =>
+      fireEvent.click(
+        ui.getByRole("button", { name: "Ask about this project", exact: true }),
+      ),
+    );
+    assert.ok(
+      ui.getByRole("heading", { name: "Ask Automatically restored job" }),
+    );
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+    disconnectGoogle();
+    localStorage.clear();
+  }
+});
+
 test("a remembered archived project leaves the restored workbook on the Projects list", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = workbookFetch([], "archived");
   localStorage.setItem("streamlion-last-project:server-book", "saved-project");
   try {
     const ui = render(<App />);
-    await ui.findByRole("button", { name: "Refresh from Google" });
+    await ui.findByText("Google records refreshed", { exact: true });
     // Google and the device workspace load independently. Await the final view.
     await ui.findByRole("heading", { name: "Projects", exact: true });
     assert.equal(
