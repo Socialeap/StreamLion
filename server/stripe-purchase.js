@@ -5,7 +5,7 @@ import {
   licenseRequired,
   hasPurchase,
 } from "./purchase-access.js";
-const API_VERSION = "2026-09-30.endive";
+const API_VERSION = "2026-08-26.dahlia";
 const LAUNCH_PLACES = 200;
 const purchaseMethods = new Map([
   ["config", "GET"],
@@ -37,7 +37,7 @@ const run = (env, sql, ...args) =>
     .bind(...args)
     .run();
 const idOf = (value) => (typeof value === "string" ? value : value?.id);
-function configuration(env) {
+export function configuration(env) {
   const mode = paymentMode(env),
     origin = new URL(env.GOOGLE_AUTH_ORIGIN || "");
   if (
@@ -63,7 +63,7 @@ function configuration(env) {
     refundDays: Number(env.STREAMLION_REFUND_DAYS),
   };
 }
-function client(env) {
+export function client(env) {
   return new Stripe(env.STRIPE_SECRET_KEY, {
     apiVersion: API_VERSION,
     httpClient: Stripe.createFetchHttpClient(),
@@ -72,7 +72,7 @@ function client(env) {
   });
 }
 const accountChecks = new Map();
-async function preflight(env, stripe) {
+export async function preflight(env, stripe) {
   const stamp = await first(
     env,
     "SELECT version FROM streamlion_purchase_schema_v2 WHERE version = 2",
@@ -105,10 +105,11 @@ async function prices(env, stripe, mode) {
     return p;
   };
   const standard = await load(env.STRIPE_PRICE_ID);
+  if (standard.unit_amount !== 3995) throw new Error("purchase_configuration");
   const launch = env.STRIPE_LAUNCH_PRICE_ID
     ? await load(env.STRIPE_LAUNCH_PRICE_ID)
     : null;
-  if (launch && launch.unit_amount >= standard.unit_amount)
+  if (launch && launch.unit_amount !== 2996)
     throw new Error("purchase_configuration");
   return { standard, launch };
 }
@@ -162,7 +163,7 @@ async function boundedJSON(request) {
     throw new Error("bad_request");
   }
 }
-async function limited(env, subject, maximum = 10) {
+export async function limited(env, subject, maximum = 10) {
   const now = Date.now(),
     window = Math.floor(now / 60000);
   const identity = await hash(`purchase:${paymentMode(env)}:${subject}`);
@@ -474,7 +475,11 @@ async function webhook(request, env, stripe, config) {
   const object = event.data.object;
   let order;
   if (event.type.startsWith("checkout.session.")) {
-    if (object.metadata?.app !== "streamlion") return json({ received: true });
+    if (
+      object.metadata?.app !== "streamlion" ||
+      object.metadata?.kind === "ai_credits"
+    )
+      return json({ received: true });
     order = await first(
       env,
       "SELECT * FROM streamlion_purchases_v1 WHERE order_id=?",
@@ -490,7 +495,10 @@ async function webhook(request, env, stripe, config) {
     );
     if (!order) {
       const payment = await stripe.paymentIntents.retrieve(intent);
-      if (payment.metadata?.app !== "streamlion")
+      if (
+        payment.metadata?.app !== "streamlion" ||
+        payment.metadata?.kind === "ai_credits"
+      )
         return json({ received: true });
       order = await first(
         env,

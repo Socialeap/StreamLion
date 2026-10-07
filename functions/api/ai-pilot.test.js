@@ -583,6 +583,133 @@ test("end-to-end route reads the selected workbook, streams text and speech, cha
   }
 });
 
+test("commercial answers debit only live purchased credits at the approved 30 percent markup", async () => {
+  const { sql, env, req } = await routeFixture(),
+    original = globalThis.fetch,
+    calls = [];
+  for (const name of [
+    "0004_streamlion_purchases",
+    "0005_streamlion_launch_200",
+    "0008_streamlion_ai_credits",
+  ])
+    sql.exec(
+      readFileSync(
+        new URL(`../../migrations/${name}.sql`, import.meta.url),
+        "utf8",
+      ),
+    );
+  sql.exec(`INSERT INTO streamlion_purchases_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,status,created_at,expires_at,updated_at)
+    VALUES('paid-core','live','a','synthetic@example.test','price_core','prod_core',3995,'usd','paid',1,2,1);
+    UPDATE streamlion_credit_policy_v1 SET active=1,cost_micros=6000,daily_budget_micros=6000,total_budget_micros=6000,daily_requests=1 WHERE mode='live';
+    INSERT INTO streamlion_credit_wallets_v1 VALUES('live','a',100000),('test','a',10000000);`);
+  Object.assign(env, {
+    STREAMLION_AI_CREDITS_MODE: "live",
+    STREAMLION_PAYMENTS_MODE: "live",
+    STREAMLION_AI_COST_APPROVED: "true",
+    STREAMLION_LIVE_PAYMENTS_APPROVED: "true",
+  });
+  const project = makeRevision({ title: "Synthetic venue" }, null, "project");
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    if (url.includes("sheets.googleapis.com"))
+      return url.includes("batchGet")
+        ? Response.json({
+            valueRanges: Object.keys(TABS).map((tab) => ({
+              values: [
+                TABS[tab],
+                ...(tab === "Projects" ? [rowFor(project, TABS.Projects)] : []),
+              ],
+            })),
+          })
+        : Response.json({
+            properties: { title: "Synthetic workbook" },
+            sheets: Object.keys(TABS).map((title) => ({
+              properties: { title, gridProperties: { rowCount: 20 } },
+            })),
+          });
+    if (url.includes("openai"))
+      return stream([
+        {
+          type: "response.output_text.delta",
+          delta: "The location is Synthetic venue. Source: Project name.",
+        },
+        { type: "response.completed" },
+      ]);
+    return Response.json({ audio: "UklGRg==" });
+  };
+  const tasks = [];
+  try {
+    const config = await (
+      await handleAI({ request: req("/config"), env })
+    ).json();
+    assert.equal(config.billing, "credits");
+    assert.equal(config.priceMicros, 7800);
+    assert.equal(calls.length, 0);
+    const body = {
+      projectId: "project",
+      question: "What is the name of the location?",
+      requestId: uuid,
+      speech: true,
+      priceMicros: 7800,
+      preferenceScope: config.preferenceScope,
+    };
+    const answer = await handleAI({
+      request: req("/answer", body),
+      env,
+      waitUntil: (task) => tasks.push(task),
+    });
+    assert.equal(answer.status, 200);
+    const events = (await answer.text()).trim().split("\n").map(JSON.parse);
+    await Promise.all(tasks);
+    assert.equal(events.at(-1).balanceMicros, 92200);
+    assert.equal(
+      sql
+        .prepare(
+          "SELECT balance_micros b FROM streamlion_ai_wallets_v1 WHERE google_subject='a'",
+        )
+        .get().b,
+      100000,
+    );
+    assert.equal(
+      sql
+        .prepare(
+          "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test' AND google_subject='a'",
+        )
+        .get().b,
+      10000000,
+    );
+    assert.equal(
+      sql.prepare("SELECT COUNT(*) n FROM streamlion_ai_turns_v1").get().n,
+      0,
+    );
+    const before = calls.length;
+    assert.equal(
+      (await handleAI({ request: req("/answer", body), env })).status,
+      429,
+    );
+    const exhausted = await handleAI({
+      request: req("/answer", {
+        ...body,
+        requestId: "22222222-2222-4222-8222-222222222222",
+      }),
+      env,
+    });
+    assert.equal(exhausted.status, 429);
+    assert.equal(calls.length, before);
+    sql.exec(
+      "UPDATE streamlion_credit_policy_v1 SET active=0 WHERE mode='live'",
+    );
+    const paused = await (
+      await handleAI({ request: req("/config"), env })
+    ).json();
+    assert.equal(paused.reason, "credits_not_active");
+    assert.equal(calls.length, before);
+  } finally {
+    globalThis.fetch = original;
+    sql.close();
+  }
+});
+
 test("per-account minute limits and the global daily request cap reject before debit", async () => {
   const { sql, db } = fixture(),
     now = Date.now();

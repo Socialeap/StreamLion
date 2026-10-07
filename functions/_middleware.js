@@ -2,7 +2,7 @@ let windowStart = 0,
   failuresLogged = 0;
 function routeClass(request) {
   const path = new URL(request.url).pathname;
-  for (const route of ["google", "extension", "purchase", "ai"])
+  for (const route of ["google", "extension", "purchase", "credits", "ai"])
     if (path === `/api/${route}` || path.startsWith(`/api/${route}/`))
       return route;
   if (path === "/api/health") return "health";

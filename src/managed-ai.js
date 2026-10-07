@@ -176,6 +176,10 @@ export function aiAvailabilityMessage(source, config) {
     return "AI is available. Choose AI credits for broader questions; the displayed credit price applies.";
   return (
     {
+      credits_not_active:
+        "AI credit service is not open yet. Free saved-detail lookup remains available.",
+      credit_capacity:
+        "AI capacity is temporarily unavailable. Your credits are unchanged; try again later.",
       pilot_paused:
         "The AI pilot is paused by the administrator. Your account can use AI once the pilot is reopened; free saved-detail lookup remains available.",
       pilot_exhausted:

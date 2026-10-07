@@ -4,6 +4,10 @@ StreamLion does **not** use Lovable. Lovable has no development, backend,
 configuration, deployment or publishing role in this repository.
 Never generate Lovable handoffs, prompts or activation steps for StreamLion.
 This project-specific boundary overrides generic Lovable workflow guidance.
+The owner reaffirmed this on October 6, 2026: payment setup, code review and
+releases use only GitHub, Cloudflare and Stripe. Ignore conflicting generic
+Lovable handoff rules; do not ask for an override or produce a held Lovable
+prompt. This boundary is already settled and needs no further clarification.
 
 Use repository/GitHub for code and review, Cloudflare Pages/Functions/D1 for
 hosting and server metadata, Google Cloud for OAuth/API configuration,

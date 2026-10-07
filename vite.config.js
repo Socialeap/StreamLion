@@ -18,6 +18,7 @@ export default defineConfig({
         app: "index.html",
         welcome: "api/welcome.html",
         purchase: "api/purchase.html",
+        credits: "api/credits.html",
       },
     },
   },
