@@ -86,3 +86,49 @@ test("focus during an in-flight poll schedules one subsequent full refresh", asy
   assert.equal(f.timers.size, 1);
   f.stop();
 });
+for (const event of ["pointerdown", "keydown"]) {
+  test(`${event} resumes active cadence without postponing it on subsequent activity`, async () => {
+    const calls = [],
+      f = fixture(async (opts) => {
+        calls.push(opts);
+      });
+    f.setTime(61000);
+    await f.tick();
+    const idleTimer = f.timers.keys().next().value;
+    assert.equal(f.timers.get(idleTimer).delay, 60000);
+    f.setTime(61001);
+    f.doc.dispatchEvent(new Event(event));
+    assert.equal(f.timers.has(idleTimer), false);
+    assert.equal(f.timers.size, 1);
+    const activeTimer = f.timers.keys().next().value;
+    assert.equal(f.timers.get(activeTimer).delay, 15000);
+    f.setTime(62000);
+    f.doc.dispatchEvent(new Event(event));
+    assert.equal(f.timers.keys().next().value, activeTimer);
+    assert.equal(calls.length, 1);
+    await f.tick();
+    assert.equal(calls.length, 2);
+    assert.equal(f.timers.size, 1);
+    f.stop();
+    f.doc.dispatchEvent(new Event(event));
+    assert.equal(f.timers.size, 0);
+  });
+}
+test("activity during an idle refresh does not arm an overlapping timer", async () => {
+  let release;
+  const f = fixture(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  f.setTime(61000);
+  const pending = f.tick();
+  f.doc.dispatchEvent(new Event("keydown"));
+  assert.equal(f.timers.size, 0);
+  release();
+  await pending;
+  assert.equal(f.timers.size, 1);
+  assert.equal([...f.timers.values()][0].delay, 15000);
+  f.stop();
+});

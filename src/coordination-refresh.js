@@ -18,7 +18,13 @@ export function startCoordinationRefresh({
   const visible = () =>
     doc.visibilityState === "visible" && nav.onLine !== false;
   const activity = () => {
-    lastActivity = now();
+    const timestamp = now();
+    const wasIdle = timestamp - lastActivity >= 60000;
+    lastActivity = timestamp;
+    if (wasIdle && !running && !stopped) {
+      cancel(timer);
+      arm();
+    }
   };
   const arm = () => {
     if (!stopped)
