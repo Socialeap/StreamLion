@@ -23,6 +23,7 @@ import {
 } from "../src/measurements.js";
 import { boundedText, RequestBodyError } from "./request-body.js";
 import { validateWorkflow, WORKFLOW_AREA } from "../src/workflow.js";
+import { managedAppend } from "./coordination-engine.js";
 
 // The OAuth grant selects the sole workbook. No tool accepts a workbook, URL,
 // account, token, Drive search query, or arbitrary Google request path.
@@ -32,6 +33,19 @@ async function request(env, principal, path, method = "GET", data) {
     throw new ExtensionError(
       "Choose a valid StreamLion workbook before connecting.",
     );
+  if (method === "POST" && path.includes(":append")) {
+    try {
+      const managed = await managedAppend(
+        env,
+        session,
+        `https://sheets.googleapis.com/v4/spreadsheets/${bookId}${path}`,
+        JSON.stringify(data),
+      );
+      if (managed) return managed;
+    } catch (error) {
+      throw new ExtensionError(error.message, error.status || 503);
+    }
+  }
   const capacity = await reserveGoogleRequest(
     env.GOOGLE_SESSIONS,
     session.google_subject,

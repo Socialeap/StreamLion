@@ -1,4 +1,5 @@
 import ProjectFolderButton from "./ProjectFolderButton.jsx";
+import ClientCoordinationStatus from "./ClientCoordinationStatus.jsx";
 import ProjectVoiceAnswers from "./ProjectVoiceAnswers.jsx";
 import BriefTaskBuilder from "./BriefTaskBuilder.jsx";
 import SiteException from "./SiteException.jsx";
@@ -415,6 +416,7 @@ function ProjectHomeContent({
   );
   return (
     <section className="project-home">
+      <ClientCoordinationStatus project={project} />
       <header className="page-head">
         <div>
           <p className="wizard-eyebrow">

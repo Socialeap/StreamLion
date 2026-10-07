@@ -10,6 +10,8 @@ export const navigationFallbackDenylist = [
   /^\/privacy(?:\.html)?(?:[/?]|$)/,
   /^\/release\.json(?:\?|$)/,
   /^\/welcome(?:\.html)?(?:[/?]|$)/,
+  /^\/client(?:[/?]|$)/,
+  /^\/coordination(?:[/?]|$)/,
 ];
 export default defineConfig({
   build: {
@@ -19,6 +21,10 @@ export default defineConfig({
         welcome: "api/welcome.html",
         purchase: "api/purchase.html",
         credits: "api/credits.html",
+        coordination: "coordination/index.html",
+        client: "client/index.html",
+        clientPortal: "api/client-portal.html",
+        clientRequests: "api/client-requests.html",
       },
     },
   },
@@ -69,6 +75,12 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,mjs,css,html,svg,png,webmanifest}"],
+        globIgnores: [
+          "client/index.html",
+          "coordination/index.html",
+          "api/client-portal.html",
+          "api/client-requests.html",
+        ],
         // Sign-in redirects and standalone policy/release pages must reach their
         // actual routes rather than receiving the offline workspace shell.
         navigateFallbackDenylist: navigationFallbackDenylist,
