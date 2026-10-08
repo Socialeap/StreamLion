@@ -155,6 +155,153 @@ function googleFixture() {
     },
   };
 }
+test("invalid brief fields return actionable rejection before any operation or credit change", async (t) => {
+  const f = fixture(t),
+    token = "v".repeat(43),
+    google = googleFixture();
+  let job = newClientJob({
+    id: "job-validation",
+    provider: "a",
+    clientEmail: "client@example.com",
+    title: "Synthetic validation",
+    now: 1,
+  });
+  for (const [action, fields] of [
+    [
+      "edit",
+      {
+        address: "1 QA Road",
+        scope: "QA",
+        deliverables: "QA",
+        accessInstructions: "QA",
+      },
+    ],
+    ["submit"],
+    ["approve"],
+  ])
+    job = reduceClientJob(
+      job,
+      { action, fields, expectedRevision: job.revision },
+      { role: "client" },
+      job.revision + 2,
+    );
+  google.heads.set(job.id, job);
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_google_sessions_v1(session_hash,google_subject,email,credentials,expires_at,workbook_id,folder_id) VALUES(?,'a','a@example.com','encrypted',?,'book-a','folder-a')",
+    )
+    .run(await hash(token), Date.now() + 86400000);
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) VALUES(?,'connection-a',?,?,1)",
+    )
+    .run(
+      job.id,
+      job.id,
+      await seal(f.env, "client@example.com", "job-email:" + job.id),
+    );
+  let snapshotUnavailable = false;
+  t.mock.method(CoordinationGoogle.prototype, "snapshot", async () => {
+    if (snapshotUnavailable)
+      throw new Error("private upstream detail must not escape");
+    return google.snapshot();
+  });
+  t.mock.method(
+    CoordinationGoogle.prototype,
+    "event",
+    google.event.bind(google),
+  );
+  t.mock.method(
+    CoordinationGoogle.prototype,
+    "projection",
+    google.projection.bind(google),
+  );
+  const call = (operation, fields) =>
+    handleCoordination({
+      env: f.env,
+      params: { path: ["provider", "command"] },
+      request: new Request(
+        "https://app.example/api/coordination/provider/command",
+        {
+          method: "POST",
+          headers: {
+            Cookie: "__Host-streamlion-session=" + token,
+            Origin: "https://app.example",
+            "Content-Type": "application/json",
+            "X-StreamLion-Account": "a",
+          },
+          body: JSON.stringify({
+            operation,
+            jobId: job.id,
+            command: { action: "edit", expectedRevision: job.revision, fields },
+          }),
+        },
+      ),
+    });
+  const counters = () =>
+    Object.fromEntries(
+      ["operations", "shared_spends", "outbox"].map((name) => [
+        name,
+        f.sql
+          .prepare(
+            "SELECT COUNT(*) AS count FROM streamlion_" +
+              (name === "shared_spends" ? name : "coordination_" + name) +
+              "_v1",
+          )
+          .get().count,
+      ]),
+    );
+  for (const [operation, fields, message] of [
+    [
+      "missing-currency",
+      { offeredFee: "100" },
+      "Specify the currency for monetary amounts.",
+    ],
+    [
+      "insecure-reference",
+      { reference1Url: "http://example.com/qa" },
+      "Reference 1 link must use HTTPS.",
+    ],
+    [
+      "missing-timezone",
+      { startLocal: "2026-10-08T09:30" },
+      "A scheduled time needs an explicit time zone.",
+    ],
+  ]) {
+    const response = await call(operation, fields);
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: message,
+      code: "invalid_project_fields",
+    });
+    assert.deepEqual(counters(), {
+      operations: 0,
+      shared_spends: 0,
+      outbox: 0,
+    });
+    assert.deepEqual(google.heads.get(job.id), job);
+    assert.equal(google.events.size, 0);
+  }
+  const corrected = await call("corrected-fee", {
+    offeredFee: "100",
+    currency: "USD",
+  });
+  assert.equal(corrected.status, 200);
+  assert.equal(google.heads.get(job.id).fields.offeredFee, "100");
+  assert.equal(google.heads.get(job.id).clientApproved, false);
+  assert.deepEqual(counters(), { operations: 1, shared_spends: 0, outbox: 1 });
+  snapshotUnavailable = true;
+  const unavailable = await call("upstream-failure", {
+    offeredFee: "200",
+    currency: "USD",
+  });
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(await unavailable.json(), {
+    error:
+      "Coordination is temporarily unavailable. Your original operation is preserved.",
+  });
+  assert.deepEqual(counters(), { operations: 1, shared_spends: 0, outbox: 1 });
+});
 async function recoveryFixture(t) {
   const f = fixture(t);
   const target = {
