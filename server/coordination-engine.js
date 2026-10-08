@@ -20,6 +20,10 @@ import { FIELD_KEYS } from "../src/project-schema.js";
 import { readiness } from "../src/client-workflow.js";
 import { WORKFLOW_AREA, validateWorkflow } from "../src/workflow.js";
 import { enqueueNotice } from "./coordination-notifications.js";
+import {
+  reviseIntakeTemplate,
+  isIntakeTemplate,
+} from "../src/intake-templates.js";
 export const operationID = (value) =>
   typeof value === "string" && /^[\w-]{1,80}$/.test(value);
 const eventFor = (id, job, actor, action) => ({
@@ -124,7 +128,11 @@ export class CoordinationEngine {
       return this.run(id);
     }
     const snapshot = await this.google.snapshot();
-    if (snapshot.heads.has(job.id))
+    if (
+      isIntakeTemplate(job) ||
+      snapshot.heads.has(job.id) ||
+      snapshot.templates?.has(job.id)
+    )
       throw new CoordinationError("This job already exists.", 409);
     return this.store(
       id,
@@ -133,6 +141,39 @@ export class CoordinationEngine {
       { action: "create", job },
       { events: [eventFor(id, job, "provider", "create")] },
     );
+  }
+  async saveTemplate(id, input) {
+    if (!operationID(id))
+      throw new CoordinationError("Invalid operation identity.");
+    const command = { action: "template-save", ...input };
+    const prior = await this.operation(id);
+    if (prior) {
+      if (
+        prior.actor !== "provider" ||
+        prior.job_id !== input.id ||
+        prior.fingerprint !== (await hash(stableJSON(command)))
+      )
+        throw new CoordinationError("Operation identity changed.", 409);
+      return this.run(id);
+    }
+    const snapshot = await this.google.snapshot();
+    const previous = snapshot.templates?.get(input.id);
+    if (
+      snapshot.heads.has(input.id) ||
+      (!previous && (snapshot.templates?.size || 0) >= 20)
+    )
+      throw new CoordinationError(
+        "This workspace supports 20 saved service templates.",
+        409,
+      );
+    const record = reviseIntakeTemplate(
+      previous,
+      { ...input, provider: this.connection.google_subject },
+      Date.now(),
+    );
+    return this.store(id, record.id, "provider", command, {
+      template: eventFor(id, record, "provider", "template-save"),
+    });
   }
   async command(id, jobId, command, actor) {
     if (!operationID(id))
@@ -373,7 +414,11 @@ export class CoordinationEngine {
         "Provider Google connection needs renewal.",
         409,
       );
-    if (plan.core) {
+    if (plan.template) {
+      // Templates share the workbook writer gate, but never a job's charge,
+      // invitation, projection or client-grant lifecycle.
+      await this.google.event(plan.template);
+    } else if (plan.core) {
       const { tab, revision } = plan.core;
       const snapshot = await this.google.snapshot(),
         history = tab === "Projects" ? snapshot.projects : snapshot.notes;

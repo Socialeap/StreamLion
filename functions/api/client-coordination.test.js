@@ -31,6 +31,10 @@ import {
   reduceClientJob,
   stableJSON,
 } from "../../src/client-workflow.js";
+import {
+  INTAKE_PRESETS,
+  isIntakeTemplate,
+} from "../../src/intake-templates.js";
 function fixture(t) {
   const sql = new DatabaseSync(":memory:");
   for (const f of readdirSync(new URL("../../migrations/", import.meta.url))
@@ -111,15 +115,18 @@ function fixture(t) {
 function googleFixture() {
   const events = new Map(),
     heads = new Map(),
+    templates = new Map(),
     revisions = [];
   return {
     events,
     heads,
+    templates,
     revisions,
     failProjection: false,
     snapshot: async () => ({
       events,
       heads,
+      templates,
       projects: { heads: revisions.slice(-1), revisions },
       notes: { heads: [], revisions: [] },
     }),
@@ -129,9 +136,10 @@ function googleFixture() {
         assert.equal(stableJSON(existing), stableJSON(event));
         return;
       }
-      assert.equal(heads.get(event.jobId)?.revision ?? -1, event.parent);
+      const records = isIntakeTemplate(event.job) ? templates : heads;
+      assert.equal(records.get(event.jobId)?.revision ?? -1, event.parent);
       events.set(event.id, event);
-      heads.set(event.jobId, structuredClone(event.job));
+      records.set(event.jobId, structuredClone(event.job));
     },
     async projection(revision) {
       if (this.failProjection) throw new Error("synthetic timeout");
@@ -143,6 +151,183 @@ function googleFixture() {
     },
   };
 }
+test("template saves recover a lost Google acknowledgment through the shared writer without jobs, mail or charges", async (t) => {
+  const { env, sql, connection } = fixture(t),
+    google = googleFixture();
+  const engine = new CoordinationEngine(env, connection, google);
+  const input = {
+    id: "intake-capture",
+    expectedVersion: 0,
+    config: INTAKE_PRESETS[0],
+  };
+  const append = google.event.bind(google);
+  let lost = true;
+  google.event = async (event) => {
+    await append(event);
+    if (lost) {
+      lost = false;
+      throw new Error("synthetic lost acknowledgment");
+    }
+  };
+  await assert.rejects(
+    () => engine.saveTemplate("template-save", input),
+    /lost acknowledgment/,
+  );
+  assert.equal(google.templates.get(input.id).revision, 0);
+  await assert.rejects(
+    () =>
+      new CoordinationEngine(env, connection, google).saveTemplate(
+        "blocked-other",
+        { ...input, id: "intake-other" },
+      ),
+    /Another save/,
+  );
+  await engine.saveTemplate("template-save", input);
+  await engine.saveTemplate("template-save", input);
+  assert.equal(google.events.size, 1);
+  assert.equal(google.heads.size, 0);
+  assert.equal(google.revisions.length, 0);
+  assert.equal(
+    sql
+      .prepare(
+        "SELECT state FROM streamlion_coordination_operations_v1 WHERE id='template-save'",
+      )
+      .get().state,
+    "complete",
+  );
+  await assert.rejects(
+    () =>
+      engine.saveTemplate("template-save", {
+        ...input,
+        config: INTAKE_PRESETS[1],
+      }),
+    /identity changed/,
+  );
+  for (const table of [
+    "streamlion_coordination_jobs_v1",
+    "streamlion_coordination_outbox_v1",
+    "streamlion_shared_spends_v1",
+  ])
+    assert.equal(sql.prepare("SELECT COUNT(*) n FROM " + table).get().n, 0);
+  await engine.saveTemplate("template-two", {
+    ...input,
+    expectedVersion: 1,
+    config: INTAKE_PRESETS[1],
+  });
+  assert.equal(google.templates.get(input.id).revision, 1);
+  await assert.rejects(() => engine.saveTemplate("stale", input), /changed/);
+});
+test("provider API pins an exact saved service version and rejects foreign or forged templates before creating a job", async (t) => {
+  const f = fixture(t),
+    token = "p".repeat(43),
+    google = googleFixture();
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_google_sessions_v1(session_hash,google_subject,email,credentials,expires_at,workbook_id,folder_id) VALUES(?,'a','a@example.com','encrypted',?,'book-a','folder-a')",
+    )
+    .run(await hash(token), Date.now() + 86400000);
+  t.mock.method(CoordinationGoogle.prototype, "snapshot", async () => ({
+    ...(await google.snapshot()),
+    rows: [[], [], [], []],
+  }));
+  t.mock.method(
+    CoordinationGoogle.prototype,
+    "event",
+    google.event.bind(google),
+  );
+  t.mock.method(
+    CoordinationGoogle.prototype,
+    "projection",
+    google.projection.bind(google),
+  );
+  const call = (route, body) =>
+    handleCoordination({
+      env: f.env,
+      params: { path: route.split("/") },
+      request: new Request("https://app.example/api/coordination/" + route, {
+        headers: {
+          Cookie: "__Host-streamlion-session=" + token,
+          ...(body
+            ? {
+                Origin: "https://app.example",
+                "Content-Type": "application/json",
+                "X-StreamLion-Account": "a",
+              }
+            : {}),
+        },
+        ...(body ? { method: "POST", body: JSON.stringify(body) } : {}),
+      }),
+    });
+  assert.equal(
+    (
+      await call("provider/template", {
+        operation: "service-one",
+        templateId: "intake-capture",
+        expectedVersion: 0,
+        config: INTAKE_PRESETS[0],
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await call("provider/template", {
+        operation: "service-two",
+        templateId: "intake-capture",
+        expectedVersion: 1,
+        config: INTAKE_PRESETS[1],
+      })
+    ).status,
+    200,
+  );
+  const list = await (await call("provider/jobs")).json();
+  assert.equal(list.jobs.length, 0);
+  assert.equal(list.templates.length, 1);
+  assert.equal(list.templates[0].revision, 1);
+  const request = {
+    operation: "request-a",
+    email: "client@example.com",
+    title: "Office",
+    template: { id: "intake-capture", version: 1 },
+  };
+  assert.equal((await call("provider/create", request)).status, 200);
+  assert.equal(google.heads.get("job-request-a").intake.version, 1);
+  assert.equal(google.heads.get("job-request-a").intake.name, "3D capture");
+  assert.equal((await call("provider/create", request)).status, 200);
+  assert.equal(google.heads.size, 1);
+  assert.equal(
+    (
+      await call("provider/create", {
+        ...request,
+        template: { id: "intake-capture", version: 2 },
+      })
+    ).status,
+    409,
+  );
+  for (const selection of [
+    { id: "intake-foreign", version: 1 },
+    { id: "intake-capture", version: 1, config: INTAKE_PRESETS[2] },
+  ])
+    assert.ok(
+      (
+        await call("provider/create", {
+          ...request,
+          operation: "bad-selection",
+          template: selection,
+        })
+      ).status >= 400,
+    );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_coordination_jobs_v1")
+      .get().n,
+    1,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
+    0,
+  );
+});
 test("public availability exposes only readiness and never treats the restricted pilot as public", async (t) => {
   const { env, sql } = fixture(t);
   const originalClock = Date.now;

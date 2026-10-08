@@ -7,6 +7,7 @@ const visible = new Set([
   "endLocal",
   "timeZone",
   "appointmentStatus",
+  "offeredFee",
   "agreedFee",
   "currency",
   "paymentTerms",
@@ -33,6 +34,7 @@ export function clientWorkOrder(
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>${escape(job.fields.title)} · Work order</title><style>body{font:16px/1.6 system-ui,sans-serif;color:#173e31;margin:40px auto;padding:0 24px;max-width:900px}h1{line-height:1.2}dt{font-weight:700;margin-top:18px}dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.notice{padding:16px;background:#f3f6f1;border:1px solid #d3dcd0}li{white-space:pre-wrap;overflow-wrap:anywhere}@media print{body{margin:0;max-width:none}.notice{background:transparent}}</style></head><body>
 <p>StreamLion · ${escape(brand)}</p><h1>${escape(job.fields.title)}</h1>
 <p>Work order version ${escape(job.revision)} · ${escape(job.state.replaceAll("_", " "))}</p>
+${job.intake ? `<p>Service: ${escape(job.intake.name)} · intake version ${escape(job.intake.version)}</p>` : ""}
 <p>Last project update: ${escape(new Date(job.updatedAt).toISOString())}<br>Downloaded: ${escape(generatedAt)}</p>
 <p class="notice">This is the shared project record at the stated version. Unsaved device edits and provider-only notes are excluded. Payment information is provider-reported; bank settlement is not connected.</p>
 ${job.accepted ? `<h2>Agreed scope and arrangements</h2><dl>${terms(job.accepted)}</dl>` : `<p class="notice">This draft has not been agreed by both parties.</p>`}
