@@ -183,6 +183,69 @@ test("cost allocation includes free and failed work, preserves unknowns and only
   assert.equal(maximum.markupPriceMicros, 117000000000000);
 });
 
+test("a reserved AI turn alone requires review for its mode and for the separate pilot", () => {
+  const sql = operationsFixture();
+  try {
+    const clean = operationsResponse(sql);
+    for (const part of clean)
+      for (const row of part.results)
+        row.value =
+          row.section === "schema" || row.metric === "row_present" ? 1 : 0;
+    assert.equal(
+      parseOperations(clean, OPERATIONS_NOW).status,
+      "snapshot_consistent",
+    );
+    for (const [section, mode, findingMode] of [
+      ["credit_turns", "test", "test"],
+      ["credit_turns", "live", "live"],
+      ["pilot_turns", "pilot", "all"],
+    ]) {
+      const input = structuredClone(clean),
+        row = input
+          .flatMap((part) => part.results)
+          .find(
+            (row) =>
+              row.section === section &&
+              row.mode === mode &&
+              row.metric === "pending",
+          );
+      row.value = 1;
+      const report = parseOperations(input, OPERATIONS_NOW);
+      assert.equal(report.status, "attention");
+      assert.deepEqual(report.findings, [
+        { code: "pending_ai", section, mode: findingMode },
+      ]);
+    }
+  } finally {
+    sql.close();
+  }
+});
+
+test("cost allocation preserves exact decimal micros and rounds only fractional micros upward", () => {
+  const values = Object.fromEntries(COST_KEYS.map((key) => [key, 0]));
+  for (const [amount, expected] of [
+    [0.000123, 123],
+    [0.001001, 1001],
+    [0.01, 10000],
+    [1.234567, 1234567],
+    [0.000000123, 1],
+    [1e-7, 1],
+    [Number.MIN_VALUE, 1],
+    [0, 0],
+  ]) {
+    const result = allocateCost(1, { ...values, provider: amount });
+    assert.equal(result.periodMicros, expected);
+    assert.equal(result.unitMicros, expected);
+    assert.equal(result.approved, false);
+  }
+  const result = allocateCost(
+    1,
+    Object.fromEntries(COST_KEYS.map((key) => [key, 0.000123])),
+  );
+  assert.equal(result.periodMicros, 1107);
+  assert.equal(result.markupPriceMicros, 1440);
+});
+
 test("private dashboard switches modes and keeps an incomplete allocation unapproved", () => {
   const sql = operationsFixture();
   let dom;
@@ -244,6 +307,19 @@ test("private dashboard switches modes and keeps an incomplete allocation unappr
     assert.match(
       document.getElementById("cost-result").textContent,
       /Approval remains required/,
+    );
+    document.getElementById("paid-units").value = "1";
+    document.getElementById("cost-provider").value = "0.000123";
+    document
+      .getElementById("cost-provider")
+      .dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    assert.match(
+      document.getElementById("cost-result").textContent,
+      /Cost per paid unit \$0\.000123/,
+    );
+    assert.match(
+      document.getElementById("cost-result").textContent,
+      /30% markup \$0\.000160/,
     );
   } finally {
     dom?.window.close();

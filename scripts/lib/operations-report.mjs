@@ -351,6 +351,8 @@ export function parseOperations(input, now = Date.now()) {
         findings.push({ code: "policy_missing", section, mode });
     if (metrics.operations[mode].pending > 0)
       findings.push({ code: "pending_write", section: "operations", mode });
+    if (metrics.credit_turns[mode].pending > 0)
+      findings.push({ code: "pending_ai", section: "credit_turns", mode });
     if (metrics.operations[mode].pending_without_grant > 0)
       findings.push({ code: "reconnect", section: "operations", mode });
     if (metrics.jobs[mode].archive_overdue > 0)
@@ -378,6 +380,8 @@ export function parseOperations(input, now = Date.now()) {
       section: "pilot_policy",
       mode: "all",
     });
+  if (metrics.pilot_turns.pilot.pending > 0)
+    findings.push({ code: "pending_ai", section: "pilot_turns", mode: "all" });
   return {
     kind: "streamlion.private.operations",
     version: 1,
@@ -421,9 +425,23 @@ export function allocateCost(paidUnits, costs) {
     )
   )
     return { status: "invalid" };
-  const periodMicros = values.reduce((s, n) => s + Math.ceil(n * 1000000), 0);
-  const unitMicros = Math.ceil(periodMicros / paidUnits);
-  const markupPriceMicros = Number((BigInt(unitMicros) * 130n + 99n) / 100n);
+  // Convert the decimal amount exactly. Binary multiplication can turn an
+  // already exact six-decimal input into an extra micro-dollar on rounding.
+  const micros = (amount) => {
+    const [coefficient, exponent = "0"] = String(amount).split("e"),
+      [whole, fraction = ""] = coefficient.split("."),
+      digits = BigInt(whole + fraction),
+      shift = 6 + Number(exponent) - fraction.length;
+    if (shift >= 0) return digits * 10n ** BigInt(shift);
+    const divisor = 10n ** BigInt(-shift);
+    return (digits + divisor - 1n) / divisor;
+  };
+  const period = values.reduce((s, n) => s + micros(n), 0n),
+    units = BigInt(paidUnits),
+    unit = (period + units - 1n) / units;
+  const periodMicros = Number(period),
+    unitMicros = Number(unit),
+    markupPriceMicros = Number((unit * 130n + 99n) / 100n);
   return {
     status: "scenario_complete",
     periodMicros,
