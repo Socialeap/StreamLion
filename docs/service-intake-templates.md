@@ -20,7 +20,9 @@ Reusable defaults cover scope, exclusions, access, deliverables, deadline, hando
 
 ## Verification
 
-The complete suite passed 429 tests, followed by 18 focused rendered-UI/export checks after the final unsaved-status adjustment. App/extension builds and Cloudflare Functions compilation passed. Focused cases cover immutable versions and request replay, cross-provider/forged selectors, private defaults, missing conditional answers, choice validation, stale editing, signed history isolation, lost Google acknowledgment, unchanged credit/outbox counts and recovery after a failed follow-up read. The final source checks are recorded in the PR receipt.
+The review follow-up makes offered fees material agreement terms: an accepted offer cannot be edited directly and changes only after both sides approve its proposal. It also includes PR #64's verification recovery and preserves wording typed immediately after the first form appears; initial reconciliation no longer resets the same revision.
+
+The complete follow-up suite passed 433 tests and 26 focused state/rendered checks; app/extension builds passed. Earlier Cloudflare Functions compilation passed and required CI must verify the updated head. Focused cases cover immutable versions and request replay, cross-provider/forged selectors, private defaults, missing conditional answers, choice validation, stale editing, signed history isolation, lost Google acknowledgment, unchanged credit/outbox counts, recovery after a failed follow-up read and offered-fee mutual approval. Native prior template acceptance stays separate from the new source checks and fresh deployed acceptance.
 
 Native local browser QA used synthetic transports only: saved template version 2, observed an existing client still on version 1, created a new request pinned to version 2, revealed a large-site reference above 10,000 sq ft, and checked a 390 × 844 viewport without horizontal overflow. These UI checks sent no email and wrote nothing to Google, Stripe or an AI provider. Screenshots are retained locally outside the repository.
 

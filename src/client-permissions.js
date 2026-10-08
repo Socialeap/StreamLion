@@ -37,6 +37,7 @@ export const MATERIAL_FIELDS = new Set([
   "deliverables",
   "deliveryDeadline",
   "deliveryDestination",
+  "offeredFee",
   "agreedFee",
   "currency",
   "paymentTerms",
