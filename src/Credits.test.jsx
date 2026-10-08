@@ -68,7 +68,7 @@ test("top-up options are gated by verified availability, Google identity and app
     ),
   );
   assert.ok(ui.getByRole("button", { name: "800 credits for $10.00" }));
-  assert.ok(ui.getByText(/cannot pay for live AI answers/));
+  assert.ok(ui.getByText(/cannot pay for live jobs or AI answers/));
 });
 test("duplicate clicks do not create another checkout, and server revalidates the account", async (t) => {
   const calls = [];
