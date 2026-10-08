@@ -208,6 +208,9 @@ export default function CoordinationPortal({
       setBrand(data.brand);
       setActivity(data.activity || []);
       setVerified(true);
+      setVerification("");
+      if (requestRef.current?.path === "client/verify")
+        requestRef.current = null;
       setAccess("ready");
       return { jobs: [data.job] };
     } else {
@@ -300,8 +303,14 @@ export default function CoordinationPortal({
     setError("");
     setMessage("");
     requestRef.current = { path, body };
+    let verificationAcknowledged = false;
     try {
       const result = await api(path, body, status?.subject);
+      if (path === "client/verify") {
+        verificationAcknowledged = true;
+        setVerification("");
+        requestRef.current = null;
+      }
       const loaded = path !== "client/logout" ? await load() : null;
       requestRef.current = null;
       return {
@@ -312,6 +321,25 @@ export default function CoordinationPortal({
       };
     } catch (e) {
       reportAccessError(e);
+      if (path === "client/verify") {
+        if (
+          !verificationAcknowledged &&
+          !e.serviceUnavailable &&
+          [401, 403].includes(e.status)
+        ) {
+          setVerification("");
+          requestRef.current = null;
+          setMessage(
+            "This private link is expired or already used. Request a new private link below.",
+          );
+        } else if (
+          verificationAcknowledged &&
+          !e.serviceUnavailable &&
+          ![401, 403].includes(e.status)
+        ) {
+          setAccess("offline");
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -488,12 +516,9 @@ export default function CoordinationPortal({
                 <p>Continue to this project. Your link can be used once.</p>
                 <button
                   disabled={busy}
-                  onClick={async () => {
-                    const result = await perform("client/verify", {
-                      token: verification,
-                    });
-                    if (result) setVerification("");
-                  }}
+                  onClick={() =>
+                    perform("client/verify", { token: verification })
+                  }
                 >
                   Verify and open project
                 </button>
@@ -993,6 +1018,12 @@ function JobPanel({
     issues = readiness(job);
   const canEdit = !closed && job.state !== "activation_pending";
   useEffect(() => {
+    // Initial state already uses this revision. Its passive effect must not
+    // replace wording entered immediately after the first form commit.
+    if (job.revision === draftRevision) {
+      setAuthorized(false);
+      return;
+    }
     const normalized = Object.fromEntries(
       Object.entries(draft).map(([k, v]) => [
         k,

@@ -42,7 +42,9 @@ The synthetic original was 68 bytes, SHA-256 `eb17861bd2d540a1ce8adb27f8c93add53
 2. An app update could reload the page after its private token was captured and removed from the URL but before verification completed. Update is now disabled during pending verification and writes, with explicit guidance to finish opening the private link first.
 3. A client session is bound to one project. Opening a different project's locator must not display that previous project's brief. The portal compares the requested job ID with the authorized response before storing or rendering the view, clears the private view on mismatch and requires verification for the requested project. Server job authorization remains bound to the session.
 
-Focused rendered tests: 13 passed. Complete source suite: 418 passed, zero failed/skipped. App/extension builds and Pages Functions compile passed; the Functions source and existing relay were not changed. Native local checks proved the new mismatch screen, same-tab verification capture and exact unsaved draft recovery. No provider request or email was issued by the local fixtures.
+Review follow-up: verification acknowledgement now clears the consumed token before project readback. Expired/consumed-link rejection clears the retry and offers a new link; an unacknowledged transient failure preserves its token until retry or an authorized current-project session read. A failed post-acknowledgement read offers an availability check without retrying verification. The update lock is released after a known outcome.
+
+Focused rendered tests: 16 passed. Complete source suite: 421 passed, zero failed/skipped. App/extension builds passed for this follow-up. Earlier Pages Functions compilation passed; Functions source and the existing relay were not changed. Native local checks previously proved the mismatch screen, same-tab verification capture and exact unsaved draft recovery; the new failure cases are source checks and need deployed acceptance. No provider request or email was issued by the local fixtures.
 
 ## Release classification
 
