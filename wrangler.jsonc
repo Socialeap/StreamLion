@@ -10,7 +10,7 @@
         "ENABLE_AI_PILOT": "true",
         "ENABLE_CLIENT_COORDINATION": "true",
         "ENABLE_RESEND_EMAIL": "true",
-        "ENABLE_WEB_PUSH": "false",
+        "ENABLE_WEB_PUSH": "true",
         "ENABLE_COORDINATION_METRICS": "false",
         "COORDINATION_RECONCILE_SECONDS": "60",
         "COORDINATION_POLL_SECONDS": "15",
