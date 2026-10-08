@@ -385,7 +385,7 @@ test("large recovery journals round trip without changing ciphertext format and 
   assert.deepEqual(await unseal(env, encrypted, "operation:large"), value);
   await assert.rejects(() => unseal(env, encrypted, "operation:different"));
 });
-test("early archival packages the final signed history and revokes sessions only after verified recovery", async (t) => {
+test("accepted early archival ends client access before archive verification and retains reasoned recovery history", async (t) => {
   const f = fixture(t),
     g = archiveGoogleFixture(f.connection, f.env);
   const now = Date.now(),
@@ -439,11 +439,12 @@ test("early archival packages the final signed history and revokes sessions only
       job.archiveAt,
       first.createdAt,
     );
+  const clientToken = "A".repeat(43);
   f.sql
     .prepare(
-      "INSERT INTO streamlion_coordination_sessions_v1(hash,job_id,expires_at) VALUES('early-session',?,9999999999999)",
+      "INSERT INTO streamlion_coordination_sessions_v1(hash,job_id,expires_at) VALUES(?,?,9999999999999)",
     )
-    .run(job.id);
+    .run(await hash(clientToken), job.id);
   f.sql
     .prepare(
       "INSERT INTO streamlion_coordination_challenges_v1(hash,job_id,expires_at) VALUES('early-challenge',?,9999999999999)",
@@ -485,8 +486,34 @@ test("early archival packages the final signed history and revokes sessions only
     f.sql
       .prepare("SELECT revoked FROM streamlion_coordination_sessions_v1")
       .get().revoked,
-    0,
+    1,
   );
+  const pending = await engine.operation("early-archive");
+  assert.equal(pending.state, "pending");
+  const deadline = f.sql
+    .prepare("SELECT archive_at FROM streamlion_coordination_jobs_v1")
+    .get().archive_at;
+  assert.ok(deadline <= Date.now());
+  assert.equal(deadline, packageBody.job.archiveAt);
+  assert.equal(
+    f.sql
+      .prepare("SELECT consumed FROM streamlion_coordination_challenges_v1")
+      .get().consumed,
+    1,
+  );
+  assert.equal(
+    (await g.google.snapshot()).heads.get(job.id).state,
+    "cancelled",
+  );
+  const denied = await handleCoordination({
+    request: new Request("https://app.example/api/coordination/client/job", {
+      headers: { Cookie: "__Host-streamlion-client=" + clientToken },
+    }),
+    env: f.env,
+    params: { path: "client/job" },
+  });
+  assert.equal(denied.status, 401);
+  assert.match((await denied.json()).error, /expired/);
   assert.equal(packageBody.job.state, "archived");
   assert.equal(packageBody.history.at(-1).action, "archive_early");
   assert.equal(packageBody.history.length, 3);
@@ -513,6 +540,174 @@ test("early archival packages the final signed history and revokes sessions only
       .n,
     0,
   );
+  const archived = (await g.google.snapshot()).heads.get(job.id);
+  await engine.command(
+    "early-reopen",
+    job.id,
+    {
+      action: "reopen",
+      expectedRevision: archived.revision,
+      reason: "  Correct the archived delivery detail  ",
+    },
+    { role: "provider" },
+  );
+  const reopened = (await g.google.snapshot()).heads.get(job.id);
+  assert.equal(reopened.reopenReason, "Correct the archived delivery detail");
+  assert.equal(reopened.reopenedAt, reopened.updatedAt);
+  assert.ok(reopened.reopenedAt >= deadline);
+  assert.equal(
+    (await g.google.snapshot()).events.get("early-reopen").job.reopenReason,
+    reopened.reopenReason,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT revoked FROM streamlion_coordination_sessions_v1")
+      .get().revoked,
+    1,
+  );
+});
+test("early-archive journal acquisition is atomic and rejects stale or changed retry identities", async (t) => {
+  for (const scenario of [
+    "stale",
+    "transaction failure",
+    "lost acknowledgment",
+  ])
+    await t.test(scenario, async (t) => {
+      const f = fixture(t),
+        now = Date.now(),
+        jobId = "job-atomic";
+      f.sql
+        .prepare(
+          "INSERT INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,closed_at,archive_at,created_at) VALUES(?,?,?,'encrypted',?,?,?)",
+        )
+        .run(jobId, f.connection.id, jobId, now - 100, now + 10000, now - 200);
+      f.sql
+        .prepare(
+          "INSERT INTO streamlion_coordination_sessions_v1(hash,job_id,expires_at) VALUES('atomic-session',?,9999999999999)",
+        )
+        .run(jobId);
+      f.sql
+        .prepare(
+          "INSERT INTO streamlion_coordination_challenges_v1(hash,job_id,expires_at) VALUES('atomic-challenge',?,9999999999999)",
+        )
+        .run(jobId);
+      const engine = new CoordinationEngine(
+          f.env,
+          f.connection,
+          googleFixture(),
+        ),
+        command = {
+          action: "archive_early",
+          expectedRevision: 1,
+          reason: "End access",
+        },
+        plan = {
+          endAccess: {
+            closedAt: now - 100,
+            previousArchiveAt: now + 10000,
+            until: now,
+          },
+        };
+      let runs = 0;
+      engine.run = async (id) => {
+        runs++;
+        return { operation: id };
+      };
+      const batch = f.db.batch;
+      if (scenario === "stale") plan.endAccess.previousArchiveAt++;
+      if (scenario === "transaction failure")
+        f.db.batch = (list) =>
+          batch([
+            ...list.slice(0, 2),
+            {
+              sync: () => {
+                throw new Error("synthetic D1 failure");
+              },
+            },
+            ...list.slice(2),
+          ]);
+      if (scenario === "lost acknowledgment")
+        f.db.batch = async (list) => {
+          await batch(list);
+          throw new Error("synthetic lost D1 acknowledgment");
+        };
+      if (scenario !== "lost acknowledgment") {
+        await assert.rejects(
+          () =>
+            engine.store("atomic-archive", jobId, "provider", command, plan),
+          (error) => error.status === 409,
+        );
+        assert.equal(runs, 0);
+        assert.equal(await engine.operation("atomic-archive"), null);
+        assert.equal(
+          f.sql
+            .prepare("SELECT archive_at FROM streamlion_coordination_jobs_v1")
+            .get().archive_at,
+          now + 10000,
+        );
+        assert.equal(
+          f.sql
+            .prepare("SELECT revoked FROM streamlion_coordination_sessions_v1")
+            .get().revoked,
+          0,
+        );
+        assert.equal(
+          f.sql
+            .prepare(
+              "SELECT consumed FROM streamlion_coordination_challenges_v1",
+            )
+            .get().consumed,
+          0,
+        );
+      } else {
+        await engine.store("atomic-archive", jobId, "provider", command, plan);
+        assert.equal(runs, 1);
+        assert.equal(
+          (await engine.operation("atomic-archive")).state,
+          "pending",
+        );
+        assert.equal(
+          f.sql
+            .prepare("SELECT archive_at FROM streamlion_coordination_jobs_v1")
+            .get().archive_at,
+          now,
+        );
+        assert.equal(
+          f.sql
+            .prepare("SELECT revoked FROM streamlion_coordination_sessions_v1")
+            .get().revoked,
+          1,
+        );
+        assert.equal(
+          f.sql
+            .prepare(
+              "SELECT consumed FROM streamlion_coordination_challenges_v1",
+            )
+            .get().consumed,
+          1,
+        );
+        f.db.batch = batch;
+        // A concurrent changed retry must not advance the existing deadline.
+        await assert.rejects(
+          () =>
+            engine.store(
+              "atomic-archive",
+              jobId,
+              "provider",
+              { ...command, reason: "Different request" },
+              { endAccess: { ...plan.endAccess, until: now + 100000 } },
+            ),
+          (error) => error.status === 409,
+        );
+        assert.equal(
+          f.sql
+            .prepare("SELECT archive_at FROM streamlion_coordination_jobs_v1")
+            .get().archive_at,
+          now,
+        );
+        assert.equal(runs, 1);
+      }
+    });
 });
 test("template saves recover a lost Google acknowledgment through the shared writer without jobs, mail or charges", async (t) => {
   const { env, sql, connection } = fixture(t),

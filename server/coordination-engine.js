@@ -85,22 +85,73 @@ export class CoordinationEngine {
   async store(id, jobId, actor, command, plan) {
     const fingerprint = await hash(stableJSON(command));
     try {
-      await this.db
-        .prepare(
-          "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES(?,?,?,?,?,?,?)",
-        )
-        .bind(
-          id,
-          this.connection.id,
-          jobId,
-          actor,
-          fingerprint,
-          await seal(this.env, plan, "operation:" + id),
-          Date.now(),
-        )
-        .run();
-    } catch {
+      const values = [
+        id,
+        this.connection.id,
+        jobId,
+        actor,
+        fingerprint,
+        await seal(this.env, plan, "operation:" + id),
+        Date.now(),
+      ];
+      if (
+        plan.endAccess &&
+        command.action === "archive_early" &&
+        actor === "provider"
+      ) {
+        const deadline = plan.endAccess;
+        // Match this exact encrypted journal as well as its identity. A racing
+        // retry that did not insert must not mutate an older pending journal.
+        const fence =
+          "EXISTS(SELECT 1 FROM streamlion_coordination_operations_v1 WHERE id=? AND connection_id=? AND job_id=? AND fingerprint=? AND payload=? AND state='pending')";
+        const match = [id, this.connection.id, jobId, fingerprint, values[5]];
+        const result = await this.db.batch([
+          this.db
+            .prepare(
+              "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) SELECT ?,?,?,?,?,?,? FROM streamlion_coordination_jobs_v1 WHERE id=? AND connection_id=? AND archived=0 AND closed_at=? AND archive_at IS ?",
+            )
+            .bind(
+              ...values,
+              jobId,
+              this.connection.id,
+              deadline.closedAt,
+              deadline.previousArchiveAt,
+            ),
+          this.db
+            .prepare(
+              "UPDATE streamlion_coordination_jobs_v1 SET archive_at=?,reminder_at=NULL WHERE id=? AND connection_id=? AND " +
+                fence,
+            )
+            .bind(deadline.until, jobId, this.connection.id, ...match),
+          this.db
+            .prepare(
+              "UPDATE streamlion_coordination_sessions_v1 SET revoked=1 WHERE job_id=? AND " +
+                fence,
+            )
+            .bind(jobId, ...match),
+          this.db
+            .prepare(
+              "UPDATE streamlion_coordination_challenges_v1 SET consumed=1 WHERE job_id=? AND " +
+                fence,
+            )
+            .bind(jobId, ...match),
+        ]);
+        if (result[0]?.meta?.changes !== 1)
+          throw new CoordinationError(
+            "Closed-job metadata changed. Preserve the record and review current status before archiving.",
+            409,
+          );
+      } else {
+        await this.db
+          .prepare(
+            "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES(?,?,?,?,?,?,?)",
+          )
+          .bind(...values)
+          .run();
+      }
+    } catch (error) {
       const existing = await this.operation(id);
+      if (!existing && error instanceof CoordinationError) throw error;
       if (
         !existing ||
         existing.actor !== actor ||
@@ -485,6 +536,12 @@ export class CoordinationEngine {
           ],
         },
       });
+      if (command.action === "archive_early")
+        plan.endAccess = {
+          closedAt: job.closedAt,
+          previousArchiveAt: job.archiveAt,
+          until: next.archiveAt,
+        };
     }
     return this.store(id, jobId, actor.role, command, plan);
   }

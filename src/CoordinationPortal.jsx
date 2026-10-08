@@ -1205,6 +1205,12 @@ function JobPanel({
           Version {job.revision} · updated {date(job.updatedAt)}
         </span>
       </div>
+      {job.reopenReason && (
+        <p className="coord-notice">
+          Provider reopened for correction {date(job.reopenedAt)}:{" "}
+          {job.reopenReason}
+        </p>
+      )}
       {closed && (
         <p className="coord-notice">
           {job.archiveAt <= Date.now()

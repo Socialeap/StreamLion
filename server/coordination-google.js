@@ -687,7 +687,9 @@ export class CoordinationGoogle {
           bytes !== a.bytes ||
           file.mimeType !== a.type ||
           file.parents?.[0] !== this.connection.folder_id ||
-          file.appProperties?.streamlionUpload !== a.id
+          (file.appProperties?.streamlionUpload !== undefined
+            ? file.appProperties.streamlionUpload !== a.id
+            : file.name !== a.name)
         )
           throw new CoordinationError(
             "Original attachment identity changed. Original records retained.",
@@ -718,7 +720,8 @@ export class CoordinationGoogle {
         file.appProperties?.sha256 !== digest) ||
       job.attachments.some(
         (a) => a.driveId === id && a.sha256 && a.sha256 !== digest,
-      )
+      ) ||
+      (file.appProperties?.sha256 && file.appProperties.sha256 !== digest)
     )
       throw new CoordinationError(
         "Original file bytes changed. Original records retained for review.",
@@ -1000,6 +1003,11 @@ export class CoordinationGoogle {
             name: a.name,
             mimeType: a.type,
             parents: [this.connection.folder_id],
+            appProperties: {
+              streamlionUpload: a.id,
+              streamlionBook: this.connection.workbook_id,
+              sha256: await sha256Hex(bytes),
+            },
           }) +
           "\r\n--" +
           boundary +

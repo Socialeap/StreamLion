@@ -328,6 +328,150 @@ test("Drive originals require private ancestry, exact stored identity and byte h
     /shared/,
   );
 });
+test("actual coordination uploads carry archive identity and legacy private uploads remain verifiable", async () => {
+  const { job } = await archiveFixture(),
+    google = new CoordinationGoogle(archiveEnv, archiveSource),
+    bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+    digest = await sha256Hex(bytes),
+    attachment = {
+      id: "upload-one",
+      driveId: "original-upload",
+      name: "Synthetic.png",
+      type: "image/png",
+      bytes: bytes.length,
+      sha256: digest,
+      visibility: "client",
+      at: 1,
+    };
+  job.attachments = [attachment];
+  const refs = [{ kind: "attachment", id: attachment.id }];
+  let file,
+    stored,
+    uploads = 0;
+  google.privateFolder = async () => {};
+  google.callMetadata = async () => file || null;
+  google.json = async (url, options) => {
+    if (url.includes("uploadType=multipart")) {
+      const body = options.body,
+        decoded = new TextDecoder().decode(body),
+        jsonStart = decoded.indexOf("\r\n\r\n") + 4,
+        jsonEnd = decoded.indexOf("\r\n--", jsonStart),
+        meta = JSON.parse(decoded.slice(jsonStart, jsonEnd)),
+        bodyStart = decoded.indexOf("\r\n\r\n", jsonEnd) + 4;
+      // The metadata is ASCII in this transport fixture, so byte offsets match.
+      stored = body.slice(bodyStart, bodyStart + bytes.length);
+      file = {
+        ...meta,
+        size: stored.length,
+        ownedByMe: true,
+        permissions: [{ type: "user", role: "owner" }],
+      };
+      uploads++;
+      return { id: meta.id };
+    }
+    assert.match(url, /\/files\/original-upload\?fields=/);
+    return structuredClone(file);
+  };
+  google.call = async (url) => {
+    assert.match(url, /\/files\/original-upload\?alt=media$/);
+    return new Response(stored);
+  };
+  const plan = { attachment, content: Buffer.from(bytes).toString("base64") };
+  await google.upload(plan);
+  await google.upload(plan);
+  assert.equal(uploads, 1);
+  assert.deepEqual(file.appProperties, {
+    streamlionUpload: attachment.id,
+    streamlionBook: archiveSource.workbook_id,
+    sha256: digest,
+  });
+  const expected = await google.originalFile(attachment.driveId, refs, job, {
+    bytes: 0,
+  });
+  assert.equal(expected.sha256, digest);
+  assert.equal(expected.name, attachment.name);
+  delete file.appProperties;
+  delete attachment.sha256; // Old signed job records predate captured checksums.
+  assert.deepEqual(
+    await google.originalFile(
+      attachment.driveId,
+      refs,
+      job,
+      { bytes: 0 },
+      expected,
+    ),
+    expected,
+  );
+  file.name = "Replaced.png";
+  await assert.rejects(
+    () => google.originalFile(attachment.driveId, refs, job, { bytes: 0 }),
+    /identity changed/,
+  );
+  file.name = attachment.name;
+  file.appProperties = { streamlionUpload: "other-upload" };
+  await assert.rejects(
+    () => google.originalFile(attachment.driveId, refs, job, { bytes: 0 }),
+    /identity changed/,
+  );
+  file.appProperties = {
+    streamlionUpload: attachment.id,
+    sha256: "0".repeat(64),
+  };
+  await assert.rejects(
+    () => google.originalFile(attachment.driveId, refs, job, { bytes: 0 }),
+    /bytes changed/,
+  );
+  delete file.appProperties;
+  stored[0] = 0;
+  await assert.rejects(
+    () =>
+      google.originalFile(
+        attachment.driveId,
+        refs,
+        job,
+        { bytes: 0 },
+        expected,
+      ),
+    /archived original changed/,
+  );
+  stored = bytes;
+  file.permissions.push({ type: "anyone", role: "reader" });
+  await assert.rejects(
+    () => google.originalFile(attachment.driveId, refs, job, { bytes: 0 }),
+    /shared/,
+  );
+  file.permissions.pop();
+  file.parents = [];
+  await assert.rejects(
+    () => google.originalFile(attachment.driveId, refs, job, { bytes: 0 }),
+    /location/,
+  );
+});
+
+test("reopening records a bounded correction reason and keeps prior closed history intact", async () => {
+  const { job } = await archiveFixture();
+  const command = {
+    action: "reopen",
+    expectedRevision: job.revision,
+    reason: "  Fix the delivery detail  ",
+  };
+  for (const reason of [undefined, null, 12, " ", "x".repeat(2001)])
+    assert.throws(
+      () =>
+        reduceClientJob(job, { ...command, reason }, { role: "provider" }, 10),
+      /correction reason/,
+    );
+  assert.throws(
+    () => reduceClientJob(job, command, { role: "client" }, 10),
+    /Provider/,
+  );
+  const reopened = reduceClientJob(job, command, { role: "provider" }, 10);
+  assert.equal(reopened.reopenReason, "Fix the delivery detail");
+  assert.equal(reopened.reopenedAt, 10);
+  assert.equal(reopened.closedAt, null);
+  assert.equal(job.closedAt, 2);
+  assert.equal(job.reopenReason, undefined);
+});
 test("archive loading verifies private Drive metadata and checksum before accepting signed provenance", async () => {
   const archive = await archiveFixture(),
     google = new CoordinationGoogle(archiveEnv, archiveTarget);

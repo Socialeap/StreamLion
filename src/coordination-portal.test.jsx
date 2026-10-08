@@ -104,6 +104,14 @@ test("verified archive recovery selects archived history and permits only a reas
           calls.push(body);
           return { complete: true, jobId: job.id, archived: true };
         }
+        if (path === "provider/command") {
+          calls.push(body);
+          Object.assign(
+            job,
+            reduceClientJob(job, body.command, { role: "provider" }, 20),
+          );
+          return { complete: true };
+        }
         return base(path, body);
       }}
     />,
@@ -144,6 +152,12 @@ test("verified archive recovery selects archived history and permits only a reas
     ui.getByRole("button", { name: "Reopen for correction" }).disabled,
     false,
   );
+  fireEvent.click(ui.getByRole("button", { name: "Reopen for correction" }));
+  await ui.findByText(
+    /Provider reopened for correction.*Correct a delivery detail/,
+  );
+  assert.equal(job.reopenReason, "Correct a delivery detail");
+  assert.equal(job.reopenedAt, 20);
 });
 test("a provider creates an invitation with the selected saved service version", async (t) => {
   t.after(cleanup);

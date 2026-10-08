@@ -400,12 +400,19 @@ export function reduceClientJob(previous, command, actor, now) {
       break;
     case "reopen":
       onlyProvider();
-      if (!job.closedAt || !command.reason?.trim())
+      if (
+        !job.closedAt ||
+        typeof command.reason !== "string" ||
+        !command.reason.trim() ||
+        command.reason.length > 2000
+      )
         throw new CoordinationError("Record the correction reason.");
       job.state = job.accepted ? "in_progress" : "draft";
       job.closedAt = null;
       job.archiveAt = null;
       job.deliveryAccepted = false;
+      job.reopenReason = command.reason.trim();
+      job.reopenedAt = now;
       break;
     case "archive":
       if (actor.role !== "system" || !job.closedAt || job.archiveAt > now)
