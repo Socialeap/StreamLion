@@ -1,6 +1,6 @@
 # Client coordination: implementation and activation
 
-This is a disabled pilot implementation. Review/merge, D1 migration, backend configuration/deployment, frontend release and owner/device QA remain separate gates.
+This is a gated pilot implementation. Review/merge, D1 migration, backend configuration/deployment, frontend release and owner/device QA remain separate gates. The current restricted email setup and remaining activation steps are in [coordination-pilot-activation.md](coordination-pilot-activation.md).
 
 ## Architecture and contracts
 
@@ -42,7 +42,7 @@ The integrated notification implementation replaces the production mailer bindin
 
 Coordination additionally requires the additive `0010_coordination_notifications.sql` schema. Event-triggered dispatch and a one-minute fallback worker use durable notices, bounded retries and approved daily/monthly attempt ceilings. Acceptance, signed delivery evidence and explicit project acknowledgment remain separate. The old `COORDINATION_MAILER` exists only for synthetic test compatibility.
 
-The complete configuration, exact migration preflight, credential boundaries, device limitations and deployment/QA procedure is in [notifications-activation.md](notifications-activation.md). All flags remain disabled pending owner configuration and authorization.
+The complete configuration, exact migration preflight, credential boundaries, device limitations and deployment/QA procedure is in [notifications-activation.md](notifications-activation.md). The approved test pilot prepares coordination/email flags; its D1 policy remains inactive until configuration and health checks pass. Push remains disabled.
 
 ## Archival and pilot limits
 
@@ -57,12 +57,12 @@ Limits: 100 open requests per enrolled workbook; existing 10,000-row workbook ce
 ## HOLD — only after merge and explicit owner authorization
 
 1. Sync the current merged `main`; record its SHA. Confirm this document, `0009_client_coordination.sql`, API/coordinator modules and the dedicated worker exist. Do not deploy a draft branch.
-2. Keep `ENABLE_CLIENT_COORDINATION=false`. Inspect D1 read-only: `SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%' AND sql IS NOT NULL`; collect the version row of every existing `*_schema_vN` table. Do not collect secrets or project content.
+2. Keep both coordination policies inactive during schema/configuration preparation. Inspect D1 read-only: `SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%' AND sql IS NOT NULL`; collect the version row of every existing `*_schema_vN` table. Do not collect secrets or project content.
 3. Save the local inspection as `{"schema":[...],"stamps":{"streamlion_purchase_schema_v2":2,...}}`. Run `node scripts/preflight-coordination.mjs <inspection.json>`. It checks all committed prerequisite definitions and financial triggers.
 4. Only when all new markers are absent and preflight reports `pending`, apply **committed `migrations/0009_client_coordination.sql` byte-for-byte in one transaction**. If all markers match and it reports `already_applied`, skip. Stop on partial state, drift or missing stamps. Never synthesize SQL. Record the file SHA-256 and platform migration receipt.
 5. Reinspect/recheck. Verify both policies remain inactive, unique workbook/write indexes and shared-spend triggers match, and existing Stripe grant/AI transition triggers remain intact. Compare preserved purchase/order/wallet/reservation counts and backfilled allocation counts.
-6. After the separate `0010` notification preflight/migration, and with owner authorization, configure the approved Resend/PWA settings from the notification procedure and existing Google settings in **both** Pages Functions and `ops/wrangler-coordination.jsonc`: `GOOGLE_SESSIONS`, `GOOGLE_AUTH_ORIGIN`, `ENABLE_PERSISTENT_GOOGLE`, `VITE_GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `STREAMLION_PAYMENTS_MODE`, `STREAMLION_AI_CREDITS_MODE`, `ENABLE_CLIENT_COORDINATION`. Keep secret values out of source/prompts/receipts; use the approved encryption key consistently. Preserve unrelated settings.
-7. Deploy merged Pages Functions and **only** the dedicated coordination worker. Its source config is disabled by default. Frontend release is separate.
+6. After the separate `0010` notification and `0011` efficiency preflights/migrations, and with owner authorization, configure the approved Resend/PWA settings from the notification procedure and existing Google settings in Pages Functions: `GOOGLE_SESSIONS`, `GOOGLE_AUTH_ORIGIN`, `ENABLE_PERSISTENT_GOOGLE`, `VITE_GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `STREAMLION_PAYMENTS_MODE`, `STREAMLION_AI_CREDITS_MODE`, `ENABLE_CLIENT_COORDINATION`. Keep these credentials in Pages. The dedicated cron relay uses only its matching payment mode, fixed Pages origin, coordination flag and a separate `COORDINATION_SCHEDULER_KEY`, also configured in Pages. Keep secret values out of source/prompts/receipts; preserve the existing encryption key and unrelated settings.
+7. Deploy merged Pages Functions and **only** the dedicated coordination relay using its source configuration. Remove its obsolete D1 binding and public Google/mail settings; preserve encrypted secrets and unrelated workers. Its source flag prepares the approved test pilot; policy activation remains separate. Frontend release is separate.
 8. Enable only the approved test policy/flag first; payment and credit modes must match. This document authorizes no live activation, real email/AI charge/purchase, secret/access creation or paid service.
 9. Prove two isolated purchased test accounts/client grants; Google readback; interrupted/duplicate confirmation; source allocations; revocation/renewal; private uploads; delivery/closure; fake-clock expiry/reminder/archive recovery. Use synthetic data and an approved email test sink; no real AI spend.
 10. Release frontend from the same merged SHA. Verify fresh provider/client loads, service-worker exclusions and provider phone/client-browser acceptance. Public availability requires a separate owner decision, terms approval and transport/cost/support evidence.

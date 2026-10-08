@@ -14,7 +14,7 @@ This implements the first optimization stage of the approved backend plan. Googl
 
 ## Source configuration
 
-These defaults are committed in both Pages production vars and the dedicated coordination Worker configuration. They do not activate anything. Preserve existing unrelated runtime settings when deploying.
+These defaults are committed in Pages production vars. The dedicated Worker is a signed cron relay with only the coordination flag, payment mode and fixed Pages origin; its separate signing key is configured in both runtimes. Google/Resend credentials remain in Pages. The approved test pilot prepares the coordination/email flags; an active D1 policy and complete runtime configuration remain separate requirements. Preserve existing unrelated runtime settings when deploying. Follow [coordination-pilot-activation.md](coordination-pilot-activation.md) for the current setup and remaining gates.
 
 | Variable                         | Default | Accepted values                                                           |
 | -------------------------------- | ------- | ------------------------------------------------------------------------- |
@@ -24,11 +24,11 @@ These defaults are committed in both Pages production vars and the dedicated coo
 | `ENABLE_COORDINATION_METRICS`    | `false` | Only exact `true` enables minimal operational logs                        |
 | `RESEND_DAILY_LIMIT`             | `20`    | Existing sender validation; attempts, not guaranteed arrivals             |
 | `RESEND_MONTHLY_LIMIT`           | `500`   | Existing sender validation; shared account usage requires separate review |
-| `ENABLE_CLIENT_COORDINATION`     | `false` | Explicit owner-authorized activation                                      |
-| `ENABLE_RESEND_EMAIL`            | `false` | Explicit owner-authorized delivery activation                             |
+| `ENABLE_CLIENT_COORDINATION`     | `true`  | Approved test pilot; active policy and runtime readiness remain required  |
+| `ENABLE_RESEND_EMAIL`            | `true`  | Approved allowlisted pilot; configured sender/key and ceilings required   |
 | `ENABLE_WEB_PUSH`                | `false` | Explicit owner-authorized device-alert activation                         |
 
-The sender/API key/webhook, Google configuration, VAPID keys, approved test recipients and policies remain as documented in [notifications-activation.md](notifications-activation.md). No new secret is required by this optimization. The 20/500 defaults are a disabled pilot ceiling, not approval to send to real recipients. No subscription, automatic recharge, new checkout or pricing change is implemented.
+The sender/API key/webhook, Google configuration, VAPID keys, approved test recipients and policies remain as documented in [notifications-activation.md](notifications-activation.md). The efficiency schema requires no new secret; the signed cron relay separately requires `COORDINATION_SCHEDULER_KEY`. The approved 20/500 pilot ceiling is restricted to `info@transcendencemedia.com`; other recipients and general release require separate approval. No subscription, automatic recharge, new checkout or pricing change is implemented.
 
 ## Exact migration and activation procedure
 
@@ -38,7 +38,7 @@ Review/merge, D1 activation, backend deployment, frontend release and owner/devi
 2. Inspect live D1 read-only: collect `name,type,sql` from `sqlite_master` for `streamlion_%` objects and each existing schema table's verified version row. Collect no credentials, project data or financial row contents. Save `{ "schema": [...], "stamps": {...} }` locally.
 3. Run `node scripts/preflight-coordination-efficiency.mjs <inspection.json>`. It compares all prerequisite shapes and exact `0011` definitions. `pending` requires every new marker absent. Only then apply committed `migrations/0011_coordination_efficiency.sql` byte-for-byte through the platform migration facility. `already_applied` means skip. Partial markers, altered definitions or wrong stamps mean stop for review. Never synthesize a migration.
 4. Reinspect, repeat the preflight, verify efficiency stamp `1` and the two maintenance seed modes. Record the migration SHA-256 and platform receipt. Verify existing credit balances, reservations, financial triggers, policy activity and delivery flags are unchanged. The new migration adds only operational tables, indexes and change-marker triggers.
-5. With owner authorization, configure matching defaults in Pages and `streamlion-client-coordination`; retain the approved encryption key and existing credential bindings. Deploy only the merged Pages Functions and that Worker. Do not broaden deployment or enable AI/payment providers. Disabled coordination GETs returning 503 and the Worker HTTP handler returning 404 are safe no-send health checks.
+5. With owner authorization, configure the defaults in Pages and a separate scheduler signing key in Pages and `streamlion-client-coordination`. Retain the approved encryption key and existing Google/Resend credentials only in Pages. Deploy only the merged Pages Functions and that relay Worker; the relay configuration removes its old D1 binding and obsolete public settings. Do not broaden deployment or enable AI/payment providers. Disabled coordination GETs returning 503 and the Worker HTTP handler returning 404 are safe no-send health checks.
 6. Release frontend assets from the same SHA separately. Enable only the explicitly approved synthetic/test policy first, using the existing approved purchase/credit modes. Delivery activation still needs the verified sending domain, sender, server-only API key, webhook, allowlist and ceiling in the appropriate runtimes.
 7. Prove authorized two-account/client isolation, full versus unchanged read counts, external-edit reconciliation across two viewers, rejected conflicting revisions, duplicate/interrupted confirmation without another debit, email pause with existing project access, invitation refusal during pause, backoff/recovery and archive integrity. Real inbox and iPhone/Android push proof require explicit send/device testing and are independent of unit tests.
 
