@@ -31,6 +31,8 @@ const { reviseIntakeTemplate, INTAKE_PRESETS } =
   await import("./intake-templates.js");
 const { default: TemplateSettings } =
   await import("./IntakeTemplateSettings.jsx");
+const { default: ArchiveSettings } =
+  await import("./ArchiveRecoverySettings.jsx");
 const accessError = (status, message, serviceUnavailable = false) =>
   Object.assign(new Error(message), { status, serviceUnavailable });
 function providerAPI(job) {
@@ -51,6 +53,112 @@ function providerAPI(job) {
     throw new Error("Unexpected fixture request: " + path);
   };
 }
+test("archive form retries the original recovery identity and holds new inputs behind a pending writer", async (t) => {
+  t.after(cleanup);
+  const calls = [];
+  const restore = async (body) => {
+    calls.push({ ...body });
+    return calls.length > 1 ? { complete: true } : undefined;
+  };
+  const ui = render(
+    <ArchiveSettings busy={false} recovering={false} restore={restore} />,
+  );
+  fireEvent.change(ui.getByLabelText("Archive file link or ID"), {
+    target: { value: "archive-id" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Verify and recover archived job" }),
+  );
+  await waitFor(() => assert.equal(calls.length, 1));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Verify and recover archived job" }),
+  );
+  await waitFor(() => assert.equal(calls.length, 2));
+  assert.equal(calls[0].operation, calls[1].operation);
+  await waitFor(() =>
+    assert.equal(ui.getByLabelText("Archive file link or ID").value, ""),
+  );
+  ui.rerender(
+    <ArchiveSettings busy={false} recovering={true} restore={restore} />,
+  );
+  assert.equal(ui.getByLabelText("Archive file link or ID").disabled, true);
+  assert.equal(
+    ui.getByRole("button", { name: "Verify and recover archived job" })
+      .disabled,
+    true,
+  );
+});
+test("verified archive recovery selects archived history and permits only a reasoned reopen", async (t) => {
+  t.after(cleanup);
+  const job = { ...fixture(), state: "archived", closedAt: 2, archiveAt: 3 };
+  let recovered = false;
+  const base = providerAPI(job),
+    calls = [];
+  const ui = render(
+    <Portal
+      api={async (path, body) => {
+        if (path === "provider/jobs")
+          return { jobs: recovered ? [job] : [], pending: [], archives: [] };
+        if (path === "provider/archive-restore") {
+          recovered = true;
+          calls.push(body);
+          return { complete: true, jobId: job.id, archived: true };
+        }
+        if (path === "provider/command") {
+          calls.push(body);
+          Object.assign(
+            job,
+            reduceClientJob(job, body.command, { role: "provider" }, 20),
+          );
+          return { complete: true };
+        }
+        return base(path, body);
+      }}
+    />,
+  );
+  await ui.findByRole("heading", { name: "Invite a client" });
+  fireEvent.change(ui.getByLabelText("Archive file link or ID"), {
+    target: { value: "archive-id" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Verify and recover archived job" }),
+  );
+  await ui.findByText(
+    "Archive recovery verified. The job remains archived and client access remains expired.",
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(ui.queryByLabelText("Private project link"), null);
+  fireEvent.click(ui.getByRole("button", { name: "Progress", exact: true }));
+  assert.equal(
+    ui.getByRole("button", { name: "Reopen for correction" }).disabled,
+    true,
+  );
+  assert.equal(
+    ui.queryByRole("button", { name: "Extend client access 90 days" }),
+    null,
+  );
+  assert.equal(
+    ui.queryByRole("button", { name: "Send a fresh client sign-in link" }),
+    null,
+  );
+  assert.equal(
+    ui.queryByRole("button", { name: "Restore provider view" }),
+    null,
+  );
+  fireEvent.change(ui.getByLabelText("Reason to reopen"), {
+    target: { value: "Correct a delivery detail" },
+  });
+  assert.equal(
+    ui.getByRole("button", { name: "Reopen for correction" }).disabled,
+    false,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Reopen for correction" }));
+  await ui.findByText(
+    /Provider reopened for correction.*Correct a delivery detail/,
+  );
+  assert.equal(job.reopenReason, "Correct a delivery detail");
+  assert.equal(job.reopenedAt, 20);
+});
 test("a provider creates an invitation with the selected saved service version", async (t) => {
   t.after(cleanup);
   const job = fixture(),
