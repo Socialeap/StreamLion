@@ -22,9 +22,11 @@ Object.defineProperty(globalThis, "navigator", {
   value: dom.window.navigator,
   configurable: true,
 });
-const { render, fireEvent, cleanup } = await import("@testing-library/react");
+const { render, fireEvent, cleanup, waitFor } =
+  await import("@testing-library/react");
 const { default: Portal } = await import("./CoordinationPortal.jsx");
 const { coordinationDraftKey } = await import("./coordination-drafts.js");
+const { offerUpdate } = await import("./updates.js");
 const accessError = (status, message, serviceUnavailable = false) =>
   Object.assign(new Error(message), { status, serviceUnavailable });
 function providerAPI(job) {
@@ -447,5 +449,224 @@ test("unavailable device storage keeps the form usable and warns before the clie
   assert.equal(
     ui.getByRole("button", { name: "Propose these changes" }).disabled,
     false,
+  );
+});
+test("opening another project link never displays the existing client's different brief", async (t) => {
+  t.after(cleanup);
+  t.after(() => window.history.replaceState(null, "", "/client/?job=job-a"));
+  window.history.replaceState(null, "", "/client/?job=job-b");
+  const job = fixture();
+  const ui = render(
+    <Portal
+      client
+      api={async () => ({ job: clientView(job), brand: "Private provider" })}
+    />,
+  );
+  await ui.findByRole("heading", { name: "Open your project" });
+  assert.ok(ui.getByText(/session belongs to a different project/));
+  assert.equal(ui.queryByRole("heading", { name: "Office" }), null);
+  assert.equal(ui.queryByText("Private provider"), null);
+  assert.equal(ui.queryByRole("button", { name: "Sign out" }), null);
+  assert.equal(ui.queryByRole("button", { name: "Files" }), null);
+});
+test("an app update cannot discard a private link before verification is acknowledged", async (t) => {
+  t.after(cleanup);
+  t.after(() => window.history.replaceState(null, "", "/client/?job=job-a"));
+  const token = "A".repeat(43),
+    job = fixture(),
+    calls = [];
+  let updates = 0,
+    releaseVerification;
+  offerUpdate(() => updates++);
+  window.history.replaceState(null, "", "/client/?job=job-a#verify=" + token);
+  const ui = render(
+    <Portal
+      client
+      api={async (path, body) => {
+        calls.push({ path, body });
+        if (path === "client/verify") {
+          assert.equal(body.token, token);
+          return await new Promise((resolve) => {
+            releaseVerification = resolve;
+          });
+        }
+        if (path === "client/job")
+          return { job: clientView(job), brand: "Provider" };
+        if (path === "client/notifications")
+          return { enabled: false, devices: [] };
+        throw new Error("Unexpected fixture request: " + path);
+      }}
+    />,
+  );
+  const verify = await ui.findByRole("button", {
+    name: "Verify and open project",
+  });
+  assert.equal(window.location.hash, "");
+  assert.equal(calls.length, 0);
+  assert.equal(
+    ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+    true,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Update StreamLion" }));
+  assert.equal(updates, 0);
+  fireEvent.click(verify);
+  await waitFor(() => assert.equal(typeof releaseVerification, "function"));
+  assert.equal(
+    ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+    true,
+  );
+  releaseVerification({ verified: true });
+  await ui.findByRole("heading", { name: "Office" });
+  await waitFor(() =>
+    assert.equal(
+      ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+      false,
+    ),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Update StreamLion" }));
+  assert.equal(updates, 1);
+});
+test("verification acknowledgement unlocks updates even if initial project readback fails", async (t) => {
+  t.after(cleanup);
+  t.after(() => window.history.replaceState(null, "", "/client/?job=job-a"));
+  window.history.replaceState(
+    null,
+    "",
+    "/client/?job=job-a#verify=" + "B".repeat(43),
+  );
+  const job = fixture();
+  let verifies = 0,
+    readFails = true;
+  offerUpdate(() => {});
+  const ui = render(
+    <Portal
+      client
+      api={async (path) => {
+        if (path === "client/verify") {
+          verifies++;
+          return { verified: true };
+        }
+        if (path === "client/job") {
+          if (readFails) throw accessError(500, "Temporary read failure");
+          return { job: clientView(job), brand: "Provider" };
+        }
+        if (path === "client/notifications")
+          return { enabled: false, devices: [] };
+        throw new Error("Unexpected fixture request: " + path);
+      }}
+    />,
+  );
+  fireEvent.click(
+    await ui.findByRole("button", { name: "Verify and open project" }),
+  );
+  const retry = await ui.findByRole("button", {
+    name: "Check availability again",
+  });
+  await waitFor(() =>
+    assert.equal(
+      ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+      false,
+    ),
+  );
+  assert.equal(
+    ui.queryByRole("button", { name: "Retry original request" }),
+    null,
+  );
+  assert.equal(
+    ui.queryByRole("button", { name: "Verify and open project" }),
+    null,
+  );
+  readFails = false;
+  fireEvent.click(retry);
+  await ui.findByRole("heading", { name: "Office" });
+  assert.equal(verifies, 1);
+});
+test("an expired verification link releases the update lock and offers a new link", async (t) => {
+  t.after(cleanup);
+  t.after(() => window.history.replaceState(null, "", "/client/?job=job-a"));
+  window.history.replaceState(
+    null,
+    "",
+    "/client/?job=job-a#verify=" + "C".repeat(43),
+  );
+  offerUpdate(() => {});
+  const ui = render(
+    <Portal
+      client
+      api={async () => {
+        throw accessError(401, "Invalid private link");
+      }}
+    />,
+  );
+  fireEvent.click(
+    await ui.findByRole("button", { name: "Verify and open project" }),
+  );
+  await ui.findByRole("heading", { name: "Open your project" });
+  assert.ok(ui.getByText(/expired or already used/));
+  await waitFor(() =>
+    assert.equal(
+      ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+      false,
+    ),
+  );
+  assert.equal(
+    ui.queryByRole("button", { name: "Retry original request" }),
+    null,
+  );
+  assert.ok(ui.getByRole("button", { name: "Email me a private link" }));
+});
+test("an unacknowledged transient verification keeps its token until authorized session recovery", async (t) => {
+  t.after(cleanup);
+  t.after(() => window.history.replaceState(null, "", "/client/?job=job-a"));
+  window.history.replaceState(
+    null,
+    "",
+    "/client/?job=job-a#verify=" + "D".repeat(43),
+  );
+  const job = fixture();
+  let verifies = 0;
+  offerUpdate(() => {});
+  const ui = render(
+    <Portal
+      client
+      api={async (path) => {
+        if (path === "client/verify") {
+          verifies++;
+          throw new Error("Acknowledgement lost");
+        }
+        if (path === "client/job")
+          return { job: clientView(job), brand: "Provider" };
+        if (path === "client/notifications")
+          return { enabled: false, devices: [] };
+        throw new Error("Unexpected fixture request: " + path);
+      }}
+    />,
+  );
+  fireEvent.click(
+    await ui.findByRole("button", { name: "Verify and open project" }),
+  );
+  await ui.findByText("Acknowledgement lost");
+  await waitFor(() =>
+    assert.equal(
+      ui.getByRole("button", { name: "Retry original request" }).disabled,
+      false,
+    ),
+  );
+  assert.equal(
+    ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+    true,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Review current status" }));
+  await ui.findByRole("heading", { name: "Office" });
+  await waitFor(() =>
+    assert.equal(
+      ui.getByRole("button", { name: "Update StreamLion" }).disabled,
+      false,
+    ),
+  );
+  assert.equal(verifies, 1);
+  assert.equal(
+    ui.queryByRole("button", { name: "Retry original request" }),
+    null,
   );
 });
