@@ -16,6 +16,7 @@ import {
   allocateCost,
   COST_KEYS,
 } from "./lib/operations-report.mjs";
+import { collectOperations } from "./lib/operations-collection.mjs";
 
 function readInput(path) {
   const fd = openSync(path, "r");
@@ -39,51 +40,57 @@ function readInput(path) {
   }
 }
 
+function writeReport(report, output) {
+  const destination = resolve(output);
+  // Create a NEW private folder; an existing output is never overwritten.
+  mkdirSync(destination, { mode: 0o700 });
+  const template = readFileSync(
+    new URL("./templates/operations-report.html", import.meta.url),
+    "utf8",
+  );
+  const html = template
+    .replace("/*REPORT_DATA*/", jsonForHtml(report))
+    .replace(
+      "/*COST_FUNCTION*/",
+      `const COST_KEYS=${jsonForHtml(COST_KEYS)};\n${allocateCost.toString()}`,
+    );
+  writeFileSync(
+    join(destination, "operations.json"),
+    JSON.stringify(report, null, 2) + "\n",
+    { mode: 0o600, flag: "wx" },
+  );
+  writeFileSync(join(destination, "operations.html"), html, {
+    mode: 0o600,
+    flag: "wx",
+  });
+  console.log(
+    JSON.stringify({
+      written: true,
+      directory: destination,
+      status: report.status,
+      launch: "HOLD",
+    }),
+  );
+}
+
 try {
   const [command, input, output] = process.argv.slice(2);
   if (command === "sql" && process.argv.length <= 4) {
     const queries = operationsQueries(input || Date.now());
     console.log(queries.map((q) => q.sql + ";").join("\n\n"));
+  } else if (command === "collect" && input && process.argv.length === 4) {
+    const collection = collectOperations(input);
+    writeReport(collection.report, join(collection.directory, "report"));
   } else if (
     command === "render" &&
     input &&
     output &&
     process.argv.length === 5
   ) {
-    const report = parseOperations(JSON.parse(readInput(input)));
-    const destination = resolve(output);
-    // Create a NEW private folder; an existing output is never overwritten.
-    mkdirSync(destination, { mode: 0o700 });
-    const template = readFileSync(
-      new URL("./templates/operations-report.html", import.meta.url),
-      "utf8",
-    );
-    const html = template
-      .replace("/*REPORT_DATA*/", jsonForHtml(report))
-      .replace(
-        "/*COST_FUNCTION*/",
-        `const COST_KEYS=${jsonForHtml(COST_KEYS)};\n${allocateCost.toString()}`,
-      );
-    writeFileSync(
-      join(destination, "operations.json"),
-      JSON.stringify(report, null, 2) + "\n",
-      { mode: 0o600, flag: "wx" },
-    );
-    writeFileSync(join(destination, "operations.html"), html, {
-      mode: 0o600,
-      flag: "wx",
-    });
-    console.log(
-      JSON.stringify({
-        written: true,
-        directory: destination,
-        status: report.status,
-        launch: "HOLD",
-      }),
-    );
+    writeReport(parseOperations(JSON.parse(readInput(input))), output);
   } else {
     throw new Error(
-      "Usage: operations-report.mjs sql [ISO-as-of] | render private-query-results.json NEW-private-output-folder",
+      "Usage: operations-report.mjs collect NEW-private-folder | sql [ISO-as-of] | render private-query-results.json NEW-private-output-folder",
     );
   }
 } catch (error) {
