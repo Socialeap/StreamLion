@@ -7,6 +7,10 @@ import {
 } from "../../server/coordination-google.js";
 import { PROJECT_HEADERS, NOTE_HEADERS } from "../../src/workbook.js";
 import { newClientJob, stableJSON } from "../../src/client-workflow.js";
+import {
+  INTAKE_PRESETS,
+  reviseIntakeTemplate,
+} from "../../src/intake-templates.js";
 const connection = {
   id: "connection",
   google_subject: "a",
@@ -94,6 +98,73 @@ test("coordination history accepts identical retries but rejects forks and anoth
   await assert.rejects(() => google.snapshot(), /signature/);
   rows[2] = [EVENT_HEADERS, row.slice(0, 8)];
   await assert.rejects(() => google.snapshot(), /signature/);
+});
+test("signed template history stays separate from jobs and rejects a client-authored template", async () => {
+  const google = new CoordinationGoogle(
+    { GOOGLE_TOKEN_ENCRYPTION_KEY: "synthetic-signing-key" },
+    connection,
+  );
+  const record = reviseIntakeTemplate(
+    null,
+    {
+      id: "intake-capture",
+      provider: "a",
+      expectedVersion: 0,
+      config: INTAKE_PRESETS[0],
+    },
+    1,
+  );
+  const event = {
+    id: "template-one",
+    jobId: record.id,
+    revision: 0,
+    parent: -1,
+    at: 1,
+    actor: "provider",
+    action: "template-save",
+    job: record,
+  };
+  const rowForEvent = async (value) => [
+    value.id,
+    value.jobId,
+    value.revision,
+    value.parent,
+    value.at,
+    value.actor,
+    value.action,
+    stableJSON(value.job),
+    await google.signature(value),
+  ];
+  const rows = [
+    [PROJECT_HEADERS],
+    [NOTE_HEADERS],
+    [EVENT_HEADERS, await rowForEvent(event)],
+    [ARCHIVE_HEADERS],
+  ];
+  google.json = async () => ({
+    valueRanges: rows.map((values) => ({ values })),
+  });
+  const snapshot = await google.snapshot();
+  assert.equal(snapshot.heads.size, 0);
+  assert.equal(snapshot.templates.get(record.id).config.name, "3D capture");
+  rows[2][1] = await rowForEvent({ ...event, actor: "client" });
+  await assert.rejects(
+    () => google.snapshot(),
+    /Invalid service template history/,
+  );
+  rows[2][1] = await rowForEvent({
+    ...event,
+    job: { ...record, provider: "b" },
+  });
+  await assert.rejects(() => google.snapshot(), /another provider/);
+  rows[2][1] = await rowForEvent({
+    ...event,
+    job: {
+      ...record,
+      config: { ...record.config, defaults: { paidAmount: "900" } },
+    },
+  });
+  await assert.rejects(() => google.snapshot(), /Unsupported/);
 });
 test("private folder checks reject public or delegated access", async () => {
   const google = new CoordinationGoogle({}, connection);

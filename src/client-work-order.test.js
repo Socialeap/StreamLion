@@ -11,6 +11,7 @@ test("downloaded work order escapes user wording and includes only client-visibl
     now: 1,
   });
   job.fields.scope = "Exact clearance 6 7/16 inches";
+  job.intake = { name: '<img src="https://tracker.example">', version: 2 };
   job.fields.sourceNotes = "provider-only source";
   job.fields.driveFolderUrl = "https://drive.google.com/private-folder";
   job.questions = [
@@ -32,6 +33,7 @@ test("downloaded work order escapes user wording and includes only client-visibl
   assert.match(html, /Provider &amp; Co/);
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /&lt;img src=/);
+  assert.match(html, /Service: &lt;img src=.*intake version 2/);
   assert.match(html, /has not been agreed by both parties/);
   assert.match(html, /provider-reported/);
   assert.match(html, /Shared plan.pdf/);

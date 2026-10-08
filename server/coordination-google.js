@@ -9,6 +9,10 @@ import {
 } from "../src/workbook.js";
 import { stableJSON, CoordinationError } from "../src/client-workflow.js";
 import { coordinationMetric } from "./coordination-runtime.js";
+import {
+  isIntakeTemplate,
+  validateIntakeRecord,
+} from "../src/intake-templates.js";
 export const EVENT_HEADERS = [
   "eventId",
   "jobId",
@@ -280,6 +284,15 @@ export class CoordinationGoogle {
           "Invalid coordination history. Preserve the workbook for review.",
           409,
         );
+      if (event.job.kind !== undefined) {
+        if (
+          !isIntakeTemplate(event.job) ||
+          event.actor !== "provider" ||
+          event.action !== "template-save"
+        )
+          throw new CoordinationError("Invalid service template history.", 409);
+        validateIntakeRecord(event.job);
+      }
       if (
         events.has(event.id) &&
         stableJSON(events.get(event.id)) !== stableJSON(event)
@@ -292,7 +305,14 @@ export class CoordinationGoogle {
       const chain = [...events.values()]
         .filter((e) => e.jobId === id)
         .sort((a, b) => a.revision - b.revision);
-      if (chain.some((e, i) => e.revision !== i || e.parent !== i - 1))
+      if (
+        chain.some(
+          (e, i) =>
+            e.revision !== i ||
+            e.parent !== i - 1 ||
+            e.job.kind !== chain[0].job.kind,
+        )
+      )
         throw new CoordinationError(
           "Concurrent or incomplete client revisions require review.",
           409,
@@ -308,7 +328,11 @@ export class CoordinationGoogle {
         "This workbook contains another provider's coordination records. Stop for review.",
         409,
       );
-    return { rows, projects, notes, events, heads };
+    const templates = new Map(
+      [...heads].filter(([, record]) => isIntakeTemplate(record)),
+    );
+    for (const id of templates.keys()) heads.delete(id);
+    return { rows, projects, notes, events, heads, templates };
   }
   async append(tab, values) {
     await this.json(
@@ -328,7 +352,10 @@ export class CoordinationGoogle {
         throw new CoordinationError("Event identity changed.", 409);
       return;
     }
-    if ((snapshot.heads.get(event.jobId)?.revision ?? -1) !== event.parent)
+    if (
+      ((snapshot.heads.get(event.jobId) || snapshot.templates.get(event.jobId))
+        ?.revision ?? -1) !== event.parent
+    )
       throw new CoordinationError(
         "This job changed before saving. Review its history.",
         409,
