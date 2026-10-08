@@ -6,26 +6,20 @@
   "preview_urls": false,
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "invocation_logs": false },
-    "traces": { "enabled": false },
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false,
+    },
+    "traces": {
+      "enabled": false,
+    },
   },
   "vars": {
-    "ENABLE_CLIENT_COORDINATION": "false",
-    "ENABLE_RESEND_EMAIL": "false",
-    "ENABLE_WEB_PUSH": "false",
-    "COORDINATION_RECONCILE_SECONDS": "60",
-    "COORDINATION_POLL_SECONDS": "15",
-    "COORDINATION_CLEANUP_SECONDS": "3600",
-    "ENABLE_COORDINATION_METRICS": "false",
-    "RESEND_DAILY_LIMIT": "20",
-    "RESEND_MONTHLY_LIMIT": "500",
+    "ENABLE_CLIENT_COORDINATION": "true",
+    "COORDINATION_SCHEDULER_ORIGIN": "https://streamlion.transcendencemedia.com",
+    "STREAMLION_PAYMENTS_MODE": "test",
   },
-  "triggers": { "crons": ["* * * * *"] },
-  "d1_databases": [
-    {
-      "binding": "GOOGLE_SESSIONS",
-      "database_name": "streamlion-google-sessions",
-      "database_id": "f9945b40-00ca-4662-9113-585927e31ec0",
-    },
-  ],
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
 }
