@@ -245,6 +245,21 @@ test("Google continuation allows only the optional authorization page", () => {
   };
   assert.equal(googleReturnPath("purchase", env), "/api/purchase");
   assert.equal(
+    googleReturnPath("/api/client-requests", env),
+    "/api/client-requests",
+  );
+  assert.equal(
+    googleReturnPath("https://attacker.example/api/client-requests", env),
+    "/",
+  );
+  assert.equal(
+    googleReturnPath(
+      "/api/client-requests?returnTo=https://attacker.example",
+      env,
+    ),
+    "/",
+  );
+  assert.equal(
     googleReturnPath("/api/extension/authorize?state=abc", env),
     "/api/extension/authorize?state=abc",
   );

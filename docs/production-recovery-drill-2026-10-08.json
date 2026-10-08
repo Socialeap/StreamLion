@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-10-08T06:03:48.638Z",
+  "scope": "Owner-approved full production D1 export, offline SQLite restore and read-only financial aggregate comparison",
+  "integrity": "ok",
+  "schemaObjects": 88,
+  "stampCount": 9,
+  "restoreMs": 197,
+  "financialTablesCompared": 15,
+  "financialAggregatesMatched": true,
+  "productionModified": false,
+  "credentialValuesPrinted": false,
+  "temporaryBackupFilesDeleted": true,
+  "limits": "No production restore, Cloudflare Time Travel rollback, Google API recovery or physical-device recovery performed"
+}

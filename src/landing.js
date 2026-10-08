@@ -1,4 +1,8 @@
 import "./landing.css";
+import {
+  initializeCoordinationSample,
+  coordinationAvailability,
+} from "./landing-coordination.js";
 import { READINGS } from "./brief-tasks.js";
 import { parseMeasurements } from "./measurements.js";
 import {
@@ -17,6 +21,24 @@ import {
   sampleLockedRoom,
   syncSampleDeliveryTasks,
 } from "./landing-job.js";
+initializeCoordinationSample();
+fetch("/api/coordination/availability", {
+  credentials: "omit",
+  cache: "no-store",
+  signal: AbortSignal.timeout(8000),
+})
+  .then(async (response) => {
+    if (!response.ok) throw new Error("Unavailable");
+    return response.json();
+  })
+  .then((data) => {
+    document.querySelector("#coordination-availability").textContent =
+      coordinationAvailability(data);
+  })
+  .catch(() => {
+    document.querySelector("#coordination-availability").textContent =
+      "Client coordination availability could not be checked. Explore the sample; check the provider page before inviting a client.";
+  });
 
 const descriptions = {
   prepare: {

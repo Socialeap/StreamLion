@@ -738,6 +738,7 @@ export async function handleGoogle({ request, env, params }) {
 export function googleReturnPath(value, env) {
   if (value === "purchase" || value === "/api/purchase") return "/api/purchase";
   if (value === "credits" || value === "/api/credits") return "/api/credits";
+  if (value === "/api/client-requests") return "/api/client-requests";
   if (
     env.ENABLE_CHATGPT_EXTENSION === "true" &&
     typeof value === "string" &&

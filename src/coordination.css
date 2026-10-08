@@ -95,6 +95,30 @@ h3 {
   max-width: 1260px;
   margin: auto;
 }
+.coord-request-guide {
+  padding-left: 24px;
+  max-width: 850px;
+}
+.coord-request-guide li {
+  padding: 5px 0 10px;
+  color: #52645b;
+}
+.coord-request-guide strong {
+  color: #17352c;
+}
+.coord-guide summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.coord-guide h3 {
+  margin-top: 28px;
+}
+.coord-project-link {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #dae4dc;
+  overflow-wrap: anywhere;
+}
 .coord-header {
   display: flex;
   align-items: center;

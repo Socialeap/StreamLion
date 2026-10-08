@@ -5,7 +5,20 @@ import { applyResendEvents } from "./resend-events.js";
 
 const emailPattern = /^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/;
 const countChanges = (r) => r?.meta?.changes === 1;
-const limit = (env) => Number(env.RESEND_DAILY_LIMIT);
+const limit = (env, now = Date.now()) => {
+  const base = Number(env.RESEND_DAILY_LIMIT),
+    temporary = Number(env.RESEND_TEST_DAILY_LIMIT),
+    expires = Date.parse(env.RESEND_TEST_DAILY_LIMIT_UNTIL || "");
+  return env.STREAMLION_PAYMENTS_MODE === "test" &&
+    Number.isSafeInteger(base) &&
+    base > 0 &&
+    Number.isSafeInteger(temporary) &&
+    temporary > base &&
+    temporary <= 100 &&
+    expires > now
+    ? temporary
+    : base;
+};
 const approvedResendRecipient = (env, to) =>
   emailPattern.test(to || "") &&
   (env.STREAMLION_PAYMENTS_MODE !== "test" ||
@@ -31,6 +44,42 @@ export function resendReady(env) {
 export const emailReady = (env) =>
   resendReady(env) ||
   (env.STREAMLION_PAYMENTS_MODE === "test" && Boolean(env.COORDINATION_MAILER));
+// Read-only guidance. The dispatcher still claims every attempt atomically;
+// this never reserves, resets or increases a send allowance.
+export async function emailDeliveryStatus(env, now = Date.now()) {
+  if (!emailReady(env)) return { email: false, reason: "configuration" };
+  if (!resendReady(env)) return { email: true };
+  const date = new Date(now),
+    day = Math.floor(now / DAY),
+    monthStart = Math.floor(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1) / DAY,
+    );
+  try {
+    const used = await env.GOOGLE_SESSIONS.prepare(
+      "SELECT COALESCE(SUM(CASE WHEN day=? THEN attempts ELSE 0 END),0) AS daily,COALESCE(SUM(attempts),0) AS monthly FROM streamlion_coordination_email_budget_v1 WHERE day>=?",
+    )
+      .bind(day, monthStart)
+      .first();
+    if (
+      !used ||
+      ![used.daily, used.monthly].every(
+        (n) => Number.isSafeInteger(n) && n >= 0,
+      )
+    )
+      return { email: false, reason: "unavailable" };
+    if (used.monthly >= Number(env.RESEND_MONTHLY_LIMIT))
+      return {
+        email: false,
+        reason: "monthly_limit",
+        retryAt: Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1),
+      };
+    if (used.daily >= limit(env, now))
+      return { email: false, reason: "daily_limit", retryAt: (day + 1) * DAY };
+    return { email: true };
+  } catch {
+    return { email: false, reason: "unavailable" };
+  }
+}
 export const pushReady = (env) =>
   env.ENABLE_WEB_PUSH === "true" &&
   /^[A-Za-z0-9_-]{87}$/.test(env.VAPID_PUBLIC_KEY || "") &&
@@ -458,7 +507,7 @@ export async function dispatchNotifications(
                 Math.floor(now / DAY),
                 monthStart,
                 Number(env.RESEND_MONTHLY_LIMIT),
-                limit(env),
+                limit(env, now),
               )
               .first();
             if (!budget) {

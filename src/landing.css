@@ -31,6 +31,134 @@
   font-synthesis: weight;
   scroll-behavior: smooth;
 }
+.coordination-section {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 52px;
+  padding-block: 86px;
+}
+.coordination-intro h2 {
+  font-size: clamp(32px, 3vw, 46px);
+  letter-spacing: -0.055em;
+  line-height: 1.16;
+}
+.coordination-intro > p {
+  max-width: 480px;
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.coordination-steps {
+  list-style: none;
+  padding: 0;
+  margin-block: 28px 34px;
+}
+.coordination-steps li {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.coordination-steps span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #e1eee5;
+  font-size: 16px;
+}
+.coordination-sample {
+  padding: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  min-width: 0;
+}
+.coordination-sample h3 {
+  font-size: 23px;
+  margin: 0 0 20px;
+}
+.coordination-sample h4 {
+  font-size: 17px;
+  margin-bottom: 12px;
+}
+.coordination-role {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+.coordination-role button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 12px 4px;
+  font-size: 15px;
+  cursor: pointer;
+}
+.coordination-role button[aria-pressed="true"] {
+  color: var(--forest);
+  border-bottom-color: var(--forest);
+  font-weight: 600;
+}
+.coordination-sample label {
+  display: block;
+  font-size: 14px;
+  margin: 14px 0 7px;
+}
+.coordination-sample .button {
+  width: 100%;
+  margin-top: 22px;
+  background: #c9f3db;
+  color: var(--forest);
+  border-color: #c9f3db;
+}
+.coordination-sample .button:hover {
+  background: #b5e9ca;
+  color: var(--forest);
+  border-color: #b5e9ca;
+}
+.coordination-sample .button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sample-link {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  background: #f8faf9;
+}
+.sample-agreement {
+  padding-top: 10px;
+}
+.coordination-availability {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .coordination-section {
+    grid-template-columns: 1fr;
+    padding-block: 48px;
+    gap: 28px;
+  }
+  .coordination-sample {
+    padding: 22px;
+  }
+  .coordination-availability {
+    padding: 16px;
+  }
+}
 * {
   box-sizing: border-box;
 }
@@ -771,8 +899,8 @@ td:last-child {
 .pricing-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 22px;
-  max-width: 1120px;
+  gap: 64px;
+  max-width: 1400px;
   margin: auto;
 }
 .standard-price,
@@ -781,15 +909,20 @@ td:last-child {
   border: 1px solid var(--line);
   border-radius: 12px;
 }
+.standard-price {
+  padding-inline: 0;
+  border: 0;
+}
 .launch-price {
-  background: var(--lime);
-  border-color: var(--lime);
+  background: var(--forest);
+  border-color: var(--forest);
+  color: var(--white);
 }
 .pricing-layout h3 {
-  font-size: 27px;
+  font-size: clamp(29px, 3.6vw, 44px);
 }
 .price {
-  font-size: clamp(65px, 8.5vw, 90px);
+  font-size: clamp(46px, 4vw, 58px);
   font-weight: 800;
   letter-spacing: -0.065em;
   line-height: 1.15;
@@ -799,48 +932,26 @@ td:last-child {
   font-size: 17px;
   margin-top: 10px;
 }
+.included-title {
+  border-top: 1px solid var(--line);
+  margin: 28px 0 14px;
+  padding-top: 24px;
+  font-size: 20px;
+}
 .included {
-  border-top: 1px solid #bdcbb4;
   list-style: none;
-  padding: 19px 0 0;
-  margin: 28px 0 0;
-  font-size: 16px;
+  padding: 0;
+  margin: 0;
+  font-size: 17px;
 }
 .included li {
-  position: relative;
-  padding: 11px 0 11px 34px;
+  padding: 5px 0;
   line-height: 1.5;
-}
-.included li:before {
-  content: "";
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: absolute;
-  left: 0;
-  top: 12px;
-  background: var(--lime);
-  width: 23px;
-  height: 23px;
-  border-radius: 50%;
-  font-size: 14px;
-  font-weight: 800;
-}
-.included li:after {
-  content: "";
-  position: absolute;
-  top: 18px;
-  left: 7px;
-  width: 9px;
-  height: 5px;
-  border-left: 2px solid var(--forest);
-  border-bottom: 2px solid var(--forest);
-  transform: rotate(-45deg);
 }
 .original-price {
   font-size: 26px;
   font-weight: 800;
-  color: #708363;
+  color: #c9e1d5;
   margin-top: 12px;
 }
 .launch-saving {
@@ -851,30 +962,41 @@ td:last-child {
 }
 .launch-price .button {
   width: 100%;
+  margin-top: 32px;
   font-size: 18px;
   padding: 20px;
+  background: #c9f3db;
+  color: var(--forest);
+  border-color: #c9f3db;
+}
+.launch-price .button:hover {
+  background: #b5e9ca;
+  border-color: #b5e9ca;
 }
 .launch-price > .small {
   text-align: center;
   max-width: 365px;
   margin: 20px auto 0;
-  color: #4e6348;
+  color: #e2eee7;
+  font-size: 16px;
 }
 .roadmap {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 38px;
-  border-block: 1px solid var(--line);
-  padding: 42px 0;
-  margin-top: 52px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--white);
+  padding: 32px 22px;
+  margin-top: 24px;
 }
 .roadmap > div {
-  padding: 0 25px 0 79px;
+  padding: 0 25px;
   position: relative;
 }
 .roadmap > div + div {
   border-left: 1px solid var(--line);
-  padding-left: 100px;
+  padding-left: 38px;
 }
 .roadmap-icon {
   position: absolute;
@@ -895,11 +1017,11 @@ td:last-child {
   left: 27px;
 }
 .roadmap h3 {
-  font-size: 20px;
+  font-size: 25px;
   letter-spacing: -0.025em;
 }
 .roadmap p {
-  font-size: 15px;
+  font-size: 16px;
   color: var(--muted);
   line-height: 1.6;
   margin-top: 11px;
@@ -910,6 +1032,12 @@ td:last-child {
 }
 .roadmap .small {
   margin-top: 18px;
+}
+.service-terms {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
 }
 .faq {
   padding-top: 54px;
@@ -1236,11 +1364,14 @@ dialog .small {
   .launch-price {
     padding: 27px 24px;
   }
+  .standard-price {
+    padding-inline: 0;
+  }
   .pricing-layout h3 {
     font-size: 23px;
   }
   .price {
-    font-size: 65px;
+    font-size: 48px;
   }
   .launch-saving {
     font-size: 20px;
@@ -1250,7 +1381,7 @@ dialog .small {
     font-size: 15px;
   }
   .included li {
-    padding-left: 29px;
+    padding-left: 0;
   }
   .roadmap {
     gap: 19px;
@@ -1529,11 +1660,14 @@ dialog .small {
   .launch-price {
     padding: 29px;
   }
+  .standard-price {
+    padding-inline: 0;
+  }
   .pricing-layout h3 {
     font-size: 25px;
   }
   .price {
-    font-size: 75px;
+    font-size: 52px;
   }
   .standard-price > .price + p {
     font-size: 16px;

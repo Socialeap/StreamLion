@@ -10,6 +10,7 @@ import {
   notificationSettings,
   validateSubscription,
   resendReady,
+  emailDeliveryStatus,
   sendResend,
 } from "../../server/coordination-notifications.js";
 import { handleResendWebhook } from "../../server/resend-webhook.js";
@@ -103,6 +104,130 @@ test("transport configuration and activation fail closed without invoking Resend
   await dispatchNotifications(
     { ...f.env, ENABLE_CLIENT_COORDINATION: "false" },
     Date.now() + 1000,
+  );
+  assert.equal(calls.length, 0);
+});
+test("email-limit guidance reads preserved history and respects UTC day and month boundaries", async (t) => {
+  const f = fixture(t),
+    now = Date.UTC(2026, 9, 8, 6),
+    day = Math.floor(now / 86400000);
+  const calls = network(t);
+  assert.deepEqual(await emailDeliveryStatus(f.env, now), { email: true });
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_email_budget_v1 VALUES(?,100)",
+    )
+    .run(day);
+  assert.deepEqual(await emailDeliveryStatus(f.env, now), {
+    email: false,
+    reason: "daily_limit",
+    retryAt: Date.UTC(2026, 9, 9),
+  });
+  assert.deepEqual(await emailDeliveryStatus(f.env, now + 86400000), {
+    email: true,
+  });
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_email_budget_v1 VALUES(?,2900)",
+    )
+    .run(day - 1);
+  assert.deepEqual(await emailDeliveryStatus(f.env, now), {
+    email: false,
+    reason: "monthly_limit",
+    retryAt: Date.UTC(2026, 10, 1),
+  });
+  assert.deepEqual(await emailDeliveryStatus(f.env, Date.UTC(2026, 10, 1)), {
+    email: true,
+  });
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT SUM(attempts) n FROM streamlion_coordination_email_budget_v1",
+      )
+      .get().n,
+    3000,
+  );
+  assert.equal(calls.length, 0);
+});
+test("a temporary test-only email ceiling expires without resetting counters or affecting live limits", async (t) => {
+  const f = fixture(t),
+    now = Date.UTC(2026, 9, 8, 6),
+    expiry = now + 60000,
+    day = Math.floor(now / 86400000);
+  t.mock.method(Date, "now", () => now);
+  Object.assign(f.env, {
+    RESEND_DAILY_LIMIT: "20",
+    RESEND_TEST_DAILY_LIMIT: "40",
+    RESEND_TEST_DAILY_LIMIT_UNTIL: new Date(expiry).toISOString(),
+  });
+  f.sql
+    .prepare("INSERT INTO streamlion_coordination_email_budget_v1 VALUES(?,20)")
+    .run(day);
+  const calls = network(t),
+    row = await job(f);
+  await notice(f, row);
+  assert.deepEqual(await emailDeliveryStatus(f.env, now), { email: true });
+  assert.equal((await dispatchNotifications(f.env, now + 1000)).sent, 1);
+  assert.equal(
+    f.sql
+      .prepare("SELECT attempts FROM streamlion_coordination_email_budget_v1")
+      .get().attempts,
+    21,
+  );
+  assert.equal(
+    (await emailDeliveryStatus(f.env, expiry)).reason,
+    "daily_limit",
+  );
+  assert.equal(
+    (
+      await emailDeliveryStatus(
+        { ...f.env, STREAMLION_PAYMENTS_MODE: "live" },
+        now,
+      )
+    ).reason,
+    "daily_limit",
+  );
+  assert.equal(
+    (
+      await emailDeliveryStatus(
+        { ...f.env, RESEND_TEST_DAILY_LIMIT: "1000" },
+        now,
+      )
+    ).reason,
+    "daily_limit",
+  );
+  await notice(f, row, "after-expiry");
+  assert.equal((await dispatchNotifications(f.env, expiry)).sent, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(
+    f.sql
+      .prepare("SELECT attempts FROM streamlion_coordination_email_budget_v1")
+      .get().attempts,
+    21,
+  );
+});
+test("unavailable email-budget state fails closed without blocking the synthetic compatibility transport", async (t) => {
+  const f = fixture(t),
+    calls = network(t);
+  const unavailable = {
+    ...f.env,
+    GOOGLE_SESSIONS: {
+      prepare() {
+        throw new Error("unavailable");
+      },
+    },
+  };
+  assert.deepEqual(await emailDeliveryStatus(unavailable), {
+    email: false,
+    reason: "unavailable",
+  });
+  assert.deepEqual(
+    await emailDeliveryStatus({
+      ...unavailable,
+      ENABLE_RESEND_EMAIL: "false",
+      COORDINATION_MAILER: { fetch() {} },
+    }),
+    { email: true },
   );
   assert.equal(calls.length, 0);
 });

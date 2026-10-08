@@ -16,6 +16,7 @@ import {
 import { grantStarter, sharedWallet } from "./shared-credits.js";
 import {
   emailReady,
+  emailDeliveryStatus,
   pushReady,
   notificationsSchema,
   notificationSettings,
@@ -83,6 +84,59 @@ export async function coordinationReady(env) {
   } catch {
     return false;
   }
+}
+// Public landing copy may be 30 seconds old. Authorization and mutations always
+// use coordinationReady directly; this probe never grants access or spends.
+const availabilityProbes = new WeakMap();
+async function publicAvailability(env) {
+  const database = env.GOOGLE_SESSIONS;
+  const key = [
+    env.ENABLE_CLIENT_COORDINATION,
+    googleConfigurationReady(env),
+    paymentMode(env),
+    env.STREAMLION_AI_CREDITS_MODE,
+    emailReady(env),
+    env.RESEND_DAILY_LIMIT,
+    env.RESEND_MONTHLY_LIMIT,
+    env.RESEND_TEST_DAILY_LIMIT,
+    env.RESEND_TEST_DAILY_LIMIT_UNTIL,
+  ].join(":");
+  const cacheable = database && typeof database === "object";
+  const cached = cacheable && availabilityProbes.get(database);
+  if (cached?.key === key && cached.expires > Date.now()) return cached.promise;
+  const record = { key, expires: Date.now() + 30000 };
+  record.promise = (async () => {
+    let timer;
+    try {
+      return await Promise.race([
+        (async () => {
+          const enabled = await coordinationReady(env);
+          const invitations = enabled && (await emailDeliveryStatus(env)).email;
+          return {
+            enabled,
+            public: invitations && paymentMode(env) === "live",
+            status: !enabled
+              ? "paused"
+              : !invitations
+                ? "delivery_paused"
+                : paymentMode(env) === "live"
+                  ? "available"
+                  : "pilot",
+          };
+        })(),
+        new Promise((resolve) => {
+          timer = setTimeout(
+            () => resolve({ enabled: false, public: false, status: "paused" }),
+            1500,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  if (cacheable) availabilityProbes.set(database, record);
+  return record.promise;
 }
 async function limited(env, key, maximum) {
   const window = Math.floor(Date.now() / 3600000);
@@ -174,12 +228,20 @@ async function client(request, env) {
     );
   return { row, connection, grantHash: await hash(token) };
 }
-async function invite(env, row) {
-  if (!emailReady(env))
+async function requireInvitationDelivery(env) {
+  const delivery = await emailDeliveryStatus(env);
+  if (!delivery.email)
     throw new CoordinationError(
-      "Email delivery is paused. Existing verified project access remains available.",
+      delivery.retryAt
+        ? "Email sign-in links are paused until " +
+            new Date(delivery.retryAt).toISOString() +
+            ". Try again then. Existing verified projects remain available."
+        : "Email delivery is paused. Existing verified project access remains available.",
       503,
     );
+}
+async function invite(env, row) {
+  await requireInvitationDelivery(env);
   const token = random(),
     tokenHash = await hash(token),
     now = Date.now();
@@ -253,6 +315,9 @@ export async function handleCoordination({ request, env, params = {} }) {
     : params.path || "";
   const unsafe = request.method !== "GET";
   try {
+    if (route === "availability" && request.method === "GET") {
+      return json(await publicAvailability(env));
+    }
     if (route === "provider/project" && request.method === "GET")
       return await projectStatus(request, env);
     if (!(await coordinationReady(env)))
@@ -271,11 +336,7 @@ export async function handleCoordination({ request, env, params = {} }) {
     if (!["GET", "POST"].includes(request.method))
       return json({ error: "Method not allowed." }, 405);
     if (route === "client/request" && request.method === "POST") {
-      if (!emailReady(env))
-        throw new CoordinationError(
-          "Email verification is temporarily unavailable. Try again later.",
-          503,
-        );
+      await requireInvitationDelivery(env);
       const body = await bodyJSON(request, 2048);
       await limited(
         env,
@@ -516,7 +577,7 @@ export async function handleCoordination({ request, env, params = {} }) {
           !connection.revoked &&
           connection.expires_at > Date.now(),
         ),
-        delivery: { email: emailReady(env), push: pushReady(env) },
+        delivery: { ...(await emailDeliveryStatus(env)), push: pushReady(env) },
         expiresAt: connection?.expires_at,
         projectMicros: policy.project_micros,
         wallet: await sharedWallet(
@@ -698,11 +759,7 @@ export async function handleCoordination({ request, env, params = {} }) {
     }
     if (route === "provider/create" && request.method === "POST") {
       // Do not create a project/challenge that its client cannot verify.
-      if (!emailReady(env))
-        throw new CoordinationError(
-          "Email delivery must be ready before inviting a new client.",
-          503,
-        );
+      await requireInvitationDelivery(env);
       if (!operationID(body.operation))
         throw new CoordinationError("Invalid operation identity.");
       const id = "job-" + body.operation;
