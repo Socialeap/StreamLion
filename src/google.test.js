@@ -401,3 +401,142 @@ test("saved folder restores from account-scoped session and a cancelled selectio
   assert.equal(googleFolderId(), "");
   disconnectGoogle();
 });
+
+test("closed coordinated field work preserves the original revision for a successful retry after reopening", async (t) => {
+  disconnectGoogle();
+  t.after(disconnectGoogle);
+  const project = makeRevision(
+    validateFields({ title: "Synthetic accepted job" }),
+    null,
+    "job-guidance",
+  );
+  const note = makeRevision(
+    {
+      projectId: project.recordId,
+      area: "Synthetic lobby",
+      text: "exactly 12 7/16 in",
+      sourceText: "exactly 12 7/16 in",
+      audioUrl: "",
+    },
+    null,
+    "note-guidance",
+  );
+  const tables = {
+    Projects: [PROJECT_HEADERS, rowFor(project, PROJECT_HEADERS)],
+    Observations: [NOTE_HEADERS],
+  };
+  let open = false;
+  const attemptedRevisionIds = [];
+  globalThis.fetch = async (path, options = {}) => {
+    if (path === "/api/google/session")
+      return Response.json({
+        enabled: true,
+        connected: true,
+        subject: "synthetic-guidance",
+        bookId: "guidance-book",
+        folderId: "",
+      });
+    const upstreamPath = new URL(path, "https://app.example").searchParams.get(
+      "path",
+    );
+    if (options.method === "POST") {
+      const values = JSON.parse(options.body).values;
+      attemptedRevisionIds.push(values[0][NOTE_HEADERS.indexOf("revisionId")]);
+      if (!open)
+        return Response.json(
+          { error: "This coordinated job is not open for field work." },
+          { status: 409 },
+        );
+      tables.Observations.push(...values);
+      return Response.json({});
+    }
+    return upstreamPath.includes("values:batchGet")
+      ? Response.json({
+          valueRanges: Object.values(tables).map((values) => ({ values })),
+        })
+      : Response.json({
+          sheets: Object.keys(tables).map((title) => ({
+            properties: { title, gridProperties: { rowCount: 1000 } },
+          })),
+        });
+  };
+  await restoreGoogleSession();
+  await assert.rejects(
+    appendRevision("guidance-book", "Observations", note, null),
+    /Client requests.*draft is kept/,
+  );
+  assert.equal(tables.Observations.length, 1);
+  open = true;
+  const after = await appendRevision(
+    "guidance-book",
+    "Observations",
+    note,
+    null,
+  );
+  assert.deepEqual(attemptedRevisionIds, [note.revisionId, note.revisionId]);
+  assert.equal(after.Observations.length, 1);
+  assert.equal(after.Observations[0].text, "exactly 12 7/16 in");
+});
+
+test("unknown or malformed coordinated conflicts keep private details out of save guidance", async (t) => {
+  disconnectGoogle();
+  t.after(disconnectGoogle);
+  let response = () =>
+    Response.json(
+      { error: "synthetic-private-provider-detail" },
+      { status: 409 },
+    );
+  globalThis.fetch = async (path, options = {}) => {
+    if (path === "/api/google/session")
+      return Response.json({
+        enabled: true,
+        connected: true,
+        subject: "synthetic-private-guidance",
+        bookId: "private-guidance-book",
+        folderId: "",
+      });
+    if (options.method === "POST") return response();
+    const upstreamPath = new URL(path, "https://app.example").searchParams.get(
+      "path",
+    );
+    return upstreamPath.includes("values:batchGet")
+      ? Response.json({
+          valueRanges: [
+            { values: [PROJECT_HEADERS] },
+            { values: [NOTE_HEADERS] },
+          ],
+        })
+      : Response.json({
+          sheets: ["Projects", "Observations"].map((title) => ({
+            properties: { title, gridProperties: { rowCount: 1000 } },
+          })),
+        });
+  };
+  await restoreGoogleSession();
+  const revision = makeRevision(
+    validateFields({ title: "Synthetic private guidance" }),
+    null,
+    "job-private-guidance",
+  );
+  for (const failure of [
+    () =>
+      Response.json(
+        { error: "synthetic-private-provider-detail" },
+        { status: 409 },
+      ),
+    () => Response.json({ error: "__proto__" }, { status: 409 }),
+    () => new Response("not-json", { status: 409 }),
+  ]) {
+    response = failure;
+    await assert.rejects(
+      appendRevision("private-guidance-book", "Projects", revision, null),
+      (error) => {
+        assert.equal(
+          error.message,
+          "Google request failed (409). Refresh before retrying a save.",
+        );
+        return true;
+      },
+    );
+  }
+});
