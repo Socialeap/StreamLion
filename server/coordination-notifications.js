@@ -6,6 +6,12 @@ import { applyResendEvents } from "./resend-events.js";
 const emailPattern = /^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/;
 const countChanges = (r) => r?.meta?.changes === 1;
 const limit = (env) => Number(env.RESEND_DAILY_LIMIT);
+const approvedResendRecipient = (env, to) =>
+  emailPattern.test(to || "") &&
+  (env.STREAMLION_PAYMENTS_MODE !== "test" ||
+    env.RESEND_TEST_RECIPIENTS?.split(",")
+      .map((x) => x.trim().toLowerCase())
+      .includes(to.toLowerCase()));
 export function resendReady(env) {
   return (
     env.ENABLE_RESEND_EMAIL === "true" &&
@@ -293,12 +299,7 @@ export async function sendResend(env, id, payload) {
   if (!resendReady(env)) throw new Error("email_not_configured");
   if (!emailPattern.test(payload.to || ""))
     throw new Error("email_recipient_unavailable");
-  if (
-    env.STREAMLION_PAYMENTS_MODE === "test" &&
-    !env.RESEND_TEST_RECIPIENTS.split(",")
-      .map((x) => x.trim().toLowerCase())
-      .includes(payload.to.toLowerCase())
-  )
+  if (!approvedResendRecipient(env, payload.to))
     throw new Error("email_recipient_not_approved");
   const url = new URL(payload.url);
   if (
@@ -380,7 +381,8 @@ export async function dispatchNotifications(
               env.STREAMLION_PAYMENTS_MODE,
             )) ||
             (payload.expiresAt && payload.expiresAt <= now) ||
-            !payload.to
+            !payload.to ||
+            (resendReady(env) && !approvedResendRecipient(env, payload.to))
           ) {
             await db
               .prepare(

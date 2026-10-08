@@ -10,6 +10,7 @@ import {
   notificationSettings,
   validateSubscription,
   resendReady,
+  sendResend,
 } from "../../server/coordination-notifications.js";
 import { handleResendWebhook } from "../../server/resend-webhook.js";
 import { coordinationPreflight } from "../../scripts/preflight-coordination.mjs";
@@ -151,6 +152,82 @@ test("expired invitations, revoked connection, refund and test-recipient restric
     await dispatchNotifications(f.env, Date.now() + 1000);
     assert.equal(calls.length, 0, reason);
   }
+});
+test("blocked recipients cannot exhaust the budget ahead of approved mail", async (t) => {
+  const f = fixture(t),
+    row = await job(f),
+    calls = network(t);
+  f.env.RESEND_DAILY_LIMIT = "1";
+  f.env.RESEND_MONTHLY_LIMIT = "1";
+  await notice(f, row, "blocked", { to: "provider@example.com" });
+  await notice(f, row, "approved");
+  f.sql.exec(
+    "UPDATE streamlion_coordination_outbox_v1 SET created_at=0 WHERE id='blocked'",
+  );
+  const now = Date.now() + 1000;
+  const result = await dispatchNotifications(f.env, now);
+  assert.equal(result.skipped, 1);
+  assert.equal(result.sent, 1);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0][1].body).to, ["client@example.com"]);
+  const blocked = f.sql
+    .prepare(
+      "SELECT * FROM streamlion_coordination_outbox_v1 WHERE id='blocked'",
+    )
+    .get();
+  assert.equal(blocked.status, "skipped");
+  assert.equal(blocked.attempts, 0);
+  assert.equal(blocked.first_attempt_at, null);
+  assert.deepEqual(await unseal(f.env, blocked.payload, "mail:blocked"), {
+    skipped: true,
+  });
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT SUM(attempts) AS n FROM streamlion_coordination_email_budget_v1",
+      )
+      .get().n,
+    1,
+  );
+  await dispatchNotifications(f.env, now + 60000);
+  assert.equal(calls.length, 1);
+  await assert.rejects(
+    sendResend(f.env, "direct-blocked", {
+      ...message,
+      to: "provider@example.com",
+    }),
+    /email_recipient_not_approved/,
+  );
+  assert.equal(calls.length, 1);
+});
+test("previously attempted blocked mail stops retrying without rewriting budget history", async (t) => {
+  const f = fixture(t),
+    row = await job(f),
+    calls = network(t);
+  await notice(f, row, "blocked", { to: "provider@example.com" });
+  const now = Date.now() + 1000;
+  f.sql.exec(
+    "UPDATE streamlion_coordination_outbox_v1 SET attempts=3,first_attempt_at=1",
+  );
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_email_budget_v1(day,attempts) VALUES(?,3)",
+    )
+    .run(Math.floor(now / 86400000));
+  assert.equal((await dispatchNotifications(f.env, now)).skipped, 1);
+  const blocked = f.sql
+    .prepare("SELECT status,attempts FROM streamlion_coordination_outbox_v1")
+    .get();
+  assert.equal(blocked.status, "skipped");
+  assert.equal(blocked.attempts, 3);
+  assert.equal(
+    f.sql
+      .prepare("SELECT attempts FROM streamlion_coordination_email_budget_v1")
+      .get().attempts,
+    3,
+  );
+  await dispatchNotifications(f.env, now + 60000);
+  assert.equal(calls.length, 0);
 });
 test("uncertain mail retries stop before Resend idempotency expires", async (t) => {
   const f = fixture(t),

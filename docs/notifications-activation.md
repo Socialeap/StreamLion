@@ -2,7 +2,7 @@
 
 StreamLion now has an integrated transactional Resend sender and optional Web Push. No Telegram or WhatsApp connector is required. Project records and revisions remain in the provider's Google workbook/Drive. This document is an activation procedure, not authorization to deploy, create credentials, send real messages, buy a plan or enable paid coordination.
 
-The owner-approved restricted email pilot is now documented in [coordination-pilot-activation.md](coordination-pilot-activation.md). Wrangler prepares coordination/email flags as true; the D1 test policy stays inactive until credentials, deployment and safe health checks pass. Push remains disabled. Use that pilot procedure for current activation; the migration steps below remain the exact schema preparation procedure.
+The owner-approved restricted email pilot is documented in [coordination-pilot-activation.md](coordination-pilot-activation.md). Its [October 7 QA receipt and guarded push preparation](coordination-pilot-qa-2026-10-07.md) records live evidence and the next activation gates. Wrangler prepares coordination/email and optional push flags as true; the D1 test policy stays inactive until credentials, deployment and safe health checks pass. Push also requires valid matching VAPID settings and explicit device opt-in. Use those pilot procedures for current activation; the migration steps below remain the exact schema preparation procedure.
 
 ## User experience
 
