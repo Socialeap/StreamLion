@@ -13,7 +13,7 @@ The terms retain the existing one-time Core prices, seven-day app guarantee, pre
 
 ## Validation
 
-- 25 existing landing behavior checks passed. App/extension production builds passed. No implementation-mirroring tests were added for text-only changes.
+- 25 existing landing behavior checks and four existing credit entitlement/checkout-recovery checks passed. The existing test-mode warning assertion now includes both live jobs and AI answers. App/extension production builds passed. No implementation-mirroring tests were added for text-only changes.
 - Native Chrome synthetic local preview displayed the shared wallet and unchanged pack amounts; the landing link reached the credit page. At 390 × 844 the document measured 375 pixels wide, with no horizontal overflow. The viewport was reset. Credit-page error/warning logs were empty.
 - Credit terms and privacy links displayed the new coordination, grant and revocation guidance. The local fixture needed pretty-URL aliases for static legal files; production routes were not changed. The preview made no Google, Stripe, email or AI calls and rejected credit mutations.
 
