@@ -24,7 +24,8 @@ Object.defineProperty(globalThis, "navigator", {
 });
 const { render, fireEvent, cleanup, waitFor, within } =
   await import("@testing-library/react");
-const { default: Portal } = await import("./CoordinationPortal.jsx");
+const { default: Portal, coordinationAPI } =
+  await import("./CoordinationPortal.jsx");
 const { coordinationDraftKey } = await import("./coordination-drafts.js");
 const { offerUpdate } = await import("./updates.js");
 const { reviseIntakeTemplate, INTAKE_PRESETS } =
@@ -53,6 +54,82 @@ function providerAPI(job) {
     throw new Error("Unexpected fixture request: " + path);
   };
 }
+test("rejected field validation keeps the draft and uses a new corrected operation instead of retrying invalid input", async (t) => {
+  t.after(cleanup);
+  let job = newClientJob({
+    id: "job-validation-ui",
+    provider: "a",
+    clientEmail: "client@example.com",
+    title: "Validation guidance",
+    now: 1,
+  });
+  const calls = [],
+    base = async (path) => providerAPI(job)(path);
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url, "/api/coordination/provider/command");
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    try {
+      job = reduceClientJob(job, body.command, { role: "provider" }, 2);
+      return Response.json({ complete: true });
+    } catch (error) {
+      return Response.json(
+        { error: error.message, code: error.code },
+        { status: error.status },
+      );
+    }
+  });
+  const ui = render(
+    <Portal
+      api={(path, body) =>
+        path === "provider/command"
+          ? coordinationAPI(path, body, "a")
+          : base(path)
+      }
+    />,
+  );
+  await ui.findByRole("heading", { name: "Invite a client" });
+  fireEvent.click(
+    await ui.findByRole("button", {
+      name: /Validation guidance.*Draft request/,
+    }),
+  );
+  const order = within(ui.getByRole("region", { name: "Work order" }));
+  fireEvent.click(order.getByRole("button", { name: "Money", exact: true }));
+  fireEvent.change(order.getByLabelText("Offered fee"), {
+    target: { value: "100" },
+  });
+  fireEvent.click(
+    order.getByRole("button", { name: "Save current information" }),
+  );
+  assert.match(
+    (await ui.findByRole("alert")).textContent,
+    /Specify the currency/,
+  );
+  assert.equal(order.getByLabelText("Offered fee").value, "100");
+  assert.equal(
+    ui.queryByRole("button", { name: "Retry original request" }),
+    null,
+  );
+  fireEvent.change(order.getByLabelText("Currency (ISO code)"), {
+    target: { value: "USD" },
+  });
+  fireEvent.click(
+    order.getByRole("button", { name: "Save current information" }),
+  );
+  await waitFor(() => assert.equal(job.fields.currency, "USD"));
+  await waitFor(() =>
+    assert.equal(
+      order.getByRole("button", { name: "Save current information" }).disabled,
+      true,
+    ),
+  );
+  assert.equal(calls.length, 2);
+  assert.notEqual(calls[0].operation, calls[1].operation);
+  assert.equal(job.fields.offeredFee, "100");
+  assert.equal(job.revision, 1);
+  assert.equal(ui.queryByRole("alert"), null);
+});
 test("archive form retries the original recovery identity and holds new inputs behind a pending writer", async (t) => {
   t.after(cleanup);
   const calls = [];

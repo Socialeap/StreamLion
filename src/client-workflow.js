@@ -1,4 +1,8 @@
-import { validateFields, FIELD_KEYS } from "./project-schema.js";
+import {
+  validateFields,
+  ProjectFieldValidationError,
+  FIELD_KEYS,
+} from "./project-schema.js";
 
 export const COORDINATION_VERSION = 1;
 export const PROJECT_CREDITS = 240;
@@ -24,6 +28,16 @@ export {
   REQUIRED_FIELDS,
 } from "./client-permissions.js";
 export { CoordinationError, stableJSON } from "./coordination-contract.js";
+function validateBriefFields(input, options) {
+  try {
+    return validateFields(input, options);
+  } catch (error) {
+    if (!(error instanceof ProjectFieldValidationError)) throw error;
+    throw Object.assign(new CoordinationError(error.message), {
+      code: "invalid_project_fields",
+    });
+  }
+}
 export function isMaterialField(job, key) {
   return (
     MATERIAL_FIELDS.has(key) ||
@@ -85,7 +99,7 @@ export function newClientJob({
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)
   )
     throw new CoordinationError("Provide a valid client email.");
-  const fields = validateFields(
+  const fields = validateBriefFields(
     {
       ...(intakeTemplate?.config.defaults || {}),
       title,
@@ -173,7 +187,7 @@ export function reduceClientJob(previous, command, actor, now) {
           "Propose a scope revision instead of changing agreed terms.",
           409,
         );
-      const fields = validateFields(
+      const fields = validateBriefFields(
         { ...job.fields, ...patch },
         { requireTitle: false },
       );
@@ -188,7 +202,7 @@ export function reduceClientJob(previous, command, actor, now) {
           ...Object.fromEntries(Object.keys(patch).map((k) => [k, fields[k]])),
         };
         if (job.proposal) {
-          job.proposal.fields = validateFields({
+          job.proposal.fields = validateBriefFields({
             ...job.proposal.fields,
             ...Object.fromEntries(
               Object.keys(patch).map((k) => [k, fields[k]]),
@@ -293,7 +307,7 @@ export function reduceClientJob(previous, command, actor, now) {
       if (!job.accepted)
         throw new CoordinationError("There is no accepted scope yet.", 409);
       const patch = validatePatch(command.fields, actor.role);
-      const proposedFields = validateFields({ ...job.accepted, ...patch });
+      const proposedFields = validateBriefFields({ ...job.accepted, ...patch });
       validateIntakeAnswers(job, proposedFields);
       job.proposal = {
         id: command.id,

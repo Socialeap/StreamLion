@@ -237,7 +237,14 @@ const handler = async (req, res, next) => {
     res.end(JSON.stringify(result));
   } catch (error) {
     res.statusCode = error.status || 400;
-    res.end(JSON.stringify({ error: error.message }));
+    res.end(
+      JSON.stringify({
+        error: error.message,
+        ...(error.code === "invalid_project_fields"
+          ? { code: error.code }
+          : {}),
+      }),
+    );
   }
 };
 const server = await createServer({
