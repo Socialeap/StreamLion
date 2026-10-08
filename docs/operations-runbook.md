@@ -8,6 +8,8 @@ A safe baseline is one health check every five minutes plus daily release/cleanu
 
 Application failure entries contain generated ID, fixed route class, status and elapsed milliseconds only; at most 60/minute/isolate. Do not enable full request/response, invocation URL, token, query or exception-body logging. Restrict access and use the existing platform retention; do not create exports or third-party telemetry. Cleanup emits aggregate deletion counts with no customer identifiers. Its committed log configuration needs Worker redeployment. A configured logger is not an installed alert or recovery receipt.
 
+Use the [private operations report](private-operations-report.md) for a bounded manual view of queue age, grants, deadlines, delivery outcomes, internal request/credit budgets and an explicit cost allocation. It returns aggregate metadata only and cannot mutate or activate a service. Keep actual reports outside the repository in protected operator storage; incomplete coverage, stale receipts and unknown costs cannot clear a launch gate.
+
 Alert on repeated health failure, sustained Google/Stripe 429/5xx, missed daily cleanup, D1 hard-limit approach, or save/restore failures. Review current allowances and per-customer recurring hosting/support cost before growing sales. Keep payment webhooks processing existing customers during a checkout incident.
 
 ## Incident response
