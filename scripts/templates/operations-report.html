@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; form-action 'none'; base-uri 'none'"
+    />
+    <title>StreamLion · Private operations</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        color: #18342b;
+        background: #f5f7f5;
+        font-size: 16px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        max-width: 1100px;
+        margin: auto;
+        padding: 32px 24px 60px;
+      }
+      header {
+        border-bottom: 1px solid #cdd9d1;
+        padding-bottom: 24px;
+      }
+      h1 {
+        font-size: clamp(1.7rem, 5vw, 2.6rem);
+        margin: 8px 0;
+      }
+      h2 {
+        font-size: 1.3rem;
+        margin-top: 32px;
+      }
+      h3 {
+        margin-top: 0;
+        font-size: 1rem;
+      }
+      p {
+        line-height: 1.55;
+      }
+      .tag {
+        font-size: 0.75rem;
+        letter-spacing: 0.12em;
+        font-weight: 700;
+      }
+      .hold {
+        background: #fff1d1;
+        border: 1px solid #c69538;
+        padding: 16px;
+        border-radius: 8px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: white;
+        border: 1px solid #d4ddd7;
+        border-radius: 10px;
+        padding: 20px;
+      }
+      .value {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 8px 0;
+      }
+      .hint,
+      small {
+        color: #496157;
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      .tabs {
+        display: flex;
+        gap: 12px;
+        margin: 24px 0;
+      }
+      button {
+        font: inherit;
+        border: 1px solid #879c91;
+        border-radius: 7px;
+        padding: 10px 20px;
+        background: white;
+        color: #18342b;
+        cursor: pointer;
+      }
+      button[aria-pressed="true"] {
+        color: white;
+        background: #245b43;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px;
+        border-bottom: 1px solid #e1e7e3;
+      }
+      th {
+        font-size: 0.8rem;
+        color: #496157;
+      }
+      input,
+      select {
+        font: inherit;
+        max-width: 100%;
+        border: 1px solid #879c91;
+        border-radius: 6px;
+        padding: 10px;
+        width: 100%;
+        background: white;
+        color: #18342b;
+      }
+      label {
+        display: block;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        margin-bottom: 12px;
+      }
+      label span {
+        display: block;
+        margin-bottom: 6px;
+      }
+      .cost-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .result {
+        margin-top: 16px;
+        padding: 16px;
+        background: #edf4ee;
+        border: 1px solid #8daf98;
+        border-radius: 8px;
+      }
+      ul {
+        padding-left: 22px;
+        line-height: 1.6;
+      }
+      summary {
+        cursor: pointer;
+        padding: 12px 0;
+        font-weight: 600;
+      }
+      .warning {
+        color: #784600;
+      }
+      code {
+        word-break: break-word;
+      }
+      .fresh {
+        margin-top: 12px;
+      }
+      @media (max-width: 650px) {
+        main {
+          padding: 20px 16px 40px;
+        }
+        .grid,
+        .cost-grid {
+          grid-template-columns: 1fr;
+        }
+        td,
+        th {
+          padding: 9px;
+          font-size: 0.85rem;
+        }
+        .tabs button {
+          flex: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="tag">PRIVATE · MANUAL SNAPSHOT</span>
+        <h1>StreamLion operations</h1>
+        <p>
+          Review waiting work, delivery receipts and the cost of serving a
+          customer. This file contains aggregate counts. Keep it in private
+          operator storage.
+        </p>
+        <div class="hold">
+          <strong>Paid launch and scale: HOLD</strong><br />Deployment, physical
+          devices, commercial approval, measured cost and representative staging
+          acceptance are separate gates.
+        </div>
+        <p id="as-of"></p>
+        <p class="fresh warning" id="freshness" role="status"></p>
+      </header>
+      <nav class="tabs" aria-label="Payment mode">
+        <button data-mode="test" aria-pressed="true">Test</button
+        ><button data-mode="live" aria-pressed="false">Live</button>
+      </nav>
+      <section aria-label="Operational counters">
+        <div class="grid" id="cards"></div>
+      </section>
+      <h2>Needs review</h2>
+      <ul id="findings"></ul>
+      <p class="hint">
+        An uncertain write or delivery needs readback with its original
+        identity. Do not reset counters, create a new operation or retry
+        blindly. A cleanup deadline is scheduling metadata; it does not prove a
+        cron invocation completed.
+      </p>
+      <h2>Usage and allowance</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Counter</th>
+              <th>Recorded usage</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody id="budgets"></tbody>
+        </table>
+      </div>
+      <p class="hint">
+        Current Cloudflare, Google, Resend and model-provider account plans,
+        shared usage, invoices and remaining allowances must be checked in their
+        account dashboards. Database policy values are internal ceilings. They
+        do not limit a provider invoice. This report does not change any
+        allowance or approval.
+      </p>
+      <h2>Allocate the complete cost</h2>
+      <p>
+        Choose one service and one billing period. Enter costs allocated to that
+        service for the entire period, including abandoned enquiries, free
+        credits, failed attempts and retained records. Divide by paid units
+        only. Blank means unknown; enter zero only after confirming no allocated
+        cost.
+      </p>
+      <div class="cost-grid">
+        <label
+          ><span>Service</span
+          ><select id="service">
+            <option>Client coordination · per paid job</option>
+            <option>AI · per paid answer</option>
+            <option>Core · per paid customer</option>
+          </select></label
+        ><label
+          ><span>Billing period (your reference)</span
+          ><input
+            id="period"
+            placeholder="e.g. October 2026"
+            maxlength="40" /></label
+        ><label
+          ><span>Paid units in that period</span
+          ><input id="paid-units" type="number" min="1" max="1000000" step="1"
+        /></label>
+      </div>
+      <div class="cost-grid" id="cost-inputs"></div>
+      <div class="result" id="cost-result" aria-live="polite"></div>
+      <p class="hint">
+        The proposed 30% is markup on the allocated cost, not a guaranteed
+        margin. This local scenario cannot approve pricing, live payments or AI
+        spending. Values remain in this open page; they are not sent, saved or
+        applied to production.
+      </p>
+      <details>
+        <summary>Full aggregate snapshot</summary>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Mode</th>
+                <th>Metric</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody id="all-metrics"></tbody>
+          </table>
+        </div>
+      </details>
+      <footer>
+        <p class="hint" id="receipt"></p>
+        <p class="hint">
+          Source: read-only D1 query receipt. Payment amounts are recorded
+          ledger values, not bank settlement. Resend acceptance is separate from
+          delivery. Push acceptance is separate from device display. Counts
+          cover retained metadata; expired cleanup records are not lifetime
+          history.
+        </p>
+      </footer>
+    </main>
+    <script>
+      const report=/*REPORT_DATA*/;
+      /*COST_FUNCTION*/
+      const $=id=>document.getElementById(id);
+      const fmt=n=>new Intl.NumberFormat('en-US').format(n);
+      let mode='test';
+      const m=(section,key,selected=mode)=>report.metrics[section][selected][key];
+      const clipped=section=>(report.metrics[section].all?.sample_rows||0)>report.sampleLimit;
+      const descriptions={stale_snapshot:'Snapshot is older than five minutes. Collect a fresh read-only receipt before making a current decision.',truncated:'Sampling limit reached. Counts are incomplete; retain the snapshot and review indexed diagnostics before querying more.',unknown_binding:'Metadata has an unknown account binding. Review schema and identities privately.',policy_missing:'A required policy or maintenance row is missing. Fail closed and review the committed schema.',pending_write:'Unresolved workbook writes hold the writer lock. Verify or recover the original operation.',pending_ai:'A reserved AI turn is unfinished and may block another turn for its account. Reconcile the original request before retrying; pilot reservations remain separate from commercial credits.',reconnect:'A pending operation has no active Google grant. Provider reconnection is required.',archive_due:'Client access deadline passed; archive verification remains outstanding.',uncertain_mail:'Email delivery outcome is uncertain. Reconcile the existing provider receipt.',delivery_review:'Bounced, complained or failed mail needs review. Retained counts are not current inbox proof.',push_review:'Push retries exhausted. Check grant and subscription state; device display remains separate.',cleanup_due:'Cleanup scheduling is overdue. Check the signed relay and platform receipt.'};
+      function row(parent,values){const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=value;tr.append(td)}parent.append(tr)}
+      function render(){
+        $('cards').replaceChildren();
+        const cards=[['Active workspaces','connections','active','Current, unrevoked Google grants.'],['Open requests','jobs','open','Closed and archived requests are counted separately.'],['Pending writes','operations','pending',`Oldest: ${Math.ceil(m('operations','pending_oldest_ms')/60000)} min. Keep the original operation identity.`],['Queued email','mail','queued',`Oldest waiting: ${Math.ceil(m('mail','waiting_oldest_ms')/60000)} min. Queued does not mean accepted or delivered.`],['Delivered email','mail','delivered','Signed provider delivery status for retained records.'],['Archive overdue','jobs','archive_overdue','Access expiry still applies if packaging is delayed.']];
+        for(const [title,section,key,hint] of cards){const card=document.createElement('article');card.className='card';const h=document.createElement('h3');h.textContent=title;const value=document.createElement('p');value.className='value';value.textContent=fmt(m(section,key))+(clipped(section)?' · partial':'');const p=document.createElement('p');p.className='hint';p.textContent=hint;card.append(h,value,p);$('cards').append(card)}
+        $('findings').replaceChildren();const findings=report.findings.filter(x=>x.mode===mode||x.mode==='all');for(const finding of findings){const li=document.createElement('li');li.textContent=`${finding.section}: ${descriptions[finding.code]}`;$('findings').append(li)}if(!findings.length){const li=document.createElement('li');li.textContent='No listed exception in this snapshot. This is not launch approval or an installed alert.';$('findings').append(li)}
+        $('budgets').replaceChildren();
+        row($('budgets'),['Email attempts today',fmt(m('email_budget','daily_attempts','all')),'Shared UTC-day attempts, including retries.']);
+        row($('budgets'),['Email attempts this month',fmt(m('email_budget','monthly_attempts','all')),'Shared UTC-month attempts; remaining plan allowance is unverified.']);
+        for(const kind of ['read','write'])row($('budgets'),[`Google ${kind}s this minute`,fmt(m('google_budget',`${kind}_this_minute`,'all')),'Project request counter; external Google clients are excluded.']);
+        row($('budgets'),['AI reservations today',`$${(m('credit_turns','reserved_today_micros')/1000000).toFixed(6)}${clipped('credit_turns')?' · partial':''}`,'Commercial ledger reservation, including failed turns. Not measured provider spend.']);
+        row($('budgets'),['AI daily internal budget',`$${(m('credit_policy','daily_budget_micros')/1000000).toFixed(6)}`,'Stored policy only; runtime live-cost approval is not inspected.']);
+        row($('budgets'),['Pilot reservations today',`$${(m('pilot_turns','reserved_today_micros','pilot')/1000000).toFixed(6)}${clipped('pilot_turns')?' · partial':''}`,'Internal supervised pilot; never customer cash.']);
+      }
+      $('as-of').textContent=`As of ${report.asOf} · UTC · ${report.status.replaceAll('_',' ')}`;
+      function freshness(){const age=Date.now()-Date.parse(report.asOf);$('freshness').textContent=age< -60000?'Snapshot clock is ahead. Check the clock and collect a new receipt.':age>300000?'Snapshot is older than five minutes. Collect a new read-only receipt for a current decision.':'Snapshot is recent. It does not refresh automatically.'}freshness();setInterval(freshness,30000);
+      for(const button of document.querySelectorAll('[data-mode]'))button.addEventListener('click',()=>{mode=button.dataset.mode;for(const b of document.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b===button));render()});
+      for(const [section,modes] of Object.entries(report.metrics))for(const [selected,metrics] of Object.entries(modes))for(const [key,value] of Object.entries(metrics))row($('all-metrics'),[section,selected,key,fmt(value)]);
+      $('receipt').textContent=`${fmt(report.queryReceipt.rowsRead)} D1 rows read · ${report.queryReceipt.rowsWritten} rows written · ${report.queryReceipt.durationMs.toFixed(1)} ms recorded query duration · sample cap ${fmt(report.sampleLimit)} rows per section.`;
+      const costLabels={provider:'Model and speech provider (USD)',hosting:'Workers / D1 allocated usage (USD)',storage:'Retained storage and backups (USD)',email:'Email and push transport (USD)',payments:'Payment processing allocation (USD)',failures:'Other failed / retry work (USD)',promotions:'Other free / abandoned work (USD)',support:'Support labour allocation (USD)',fixed:'Other fixed operating allocation (USD)'};
+      for(const [key,label] of Object.entries(costLabels)){const wrapper=document.createElement('label');const span=document.createElement('span');span.textContent=label;const input=document.createElement('input');input.type='number';input.min='0';input.max='10000000';input.step='0.000001';input.id=`cost-${key}`;wrapper.append(span,input);$('cost-inputs').append(wrapper)}
+      function costs(){const count=Number($('paid-units').value);const values=Object.fromEntries(COST_KEYS.map(k=>[k,$(`cost-${k}`).value===''?null:Number($(`cost-${k}`).value)]));const result=allocateCost(count,values);if(result.status==='incomplete'){$('cost-result').textContent='Allocation incomplete. Paid units and every cost category need an explicit value.';return}if(result.status==='invalid'){$('cost-result').textContent='Correct the invalid cost or paid-unit value.';return}$('cost-result').textContent=`Scenario only · Allocated period cost $${(result.periodMicros/1000000).toFixed(6)} · Cost per paid unit $${(result.unitMicros/1000000).toFixed(6)} · Cost plus 30% markup $${(result.markupPriceMicros/1000000).toFixed(6)}. Approval remains required.`}
+      for(const input of document.querySelectorAll('input,select'))input.addEventListener('input',costs);render();costs();
+    </script>
+  </body>
+</html>
