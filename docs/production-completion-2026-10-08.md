@@ -2,6 +2,8 @@
 
 Base production release: `9e90df8274883e6cd8243258b5915d75a62175e0` (PR #62). This receipt covers the completion branch, restricted activation and checks below. Review, merge, deployment and owner/device acceptance are separate.
 
+**Release receipt:** PR #63 was explicitly approved, passed required CI, and merged on October 8 at 06:40:11 UTC. Production serves merged main `a51041a3b9fa52af57101a996b2cfc16cd5bc1e4`, Cloudflare deployment `835b1a8b-307d-49dc-9ebb-959436124c76`. The public release artifact matches that SHA and health reports ready. The approved temporary test email ceiling is deployed. The candidate notes below record the pre-release evidence; subsequent real acceptance, cleanup and the separately reviewed client-link fixes are in [production-acceptance-2026-10-08.md](production-acceptance-2026-10-08.md).
+
 ## What changed
 
 - Providers see loading, paused-service, sign-in, Core-required and connectivity states with appropriate actions. Paused service no longer suggests Google sign-in will activate it. The fixed OAuth return allowlist includes `/api/client-requests`; arbitrary destinations stay rejected.

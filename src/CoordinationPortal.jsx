@@ -145,7 +145,7 @@ export default function CoordinationPortal({
               : "core_required",
       );
     } else if (!e.status && !status && !verified) setAccess("offline");
-    if (!client || e.status !== 401) setError(e.message);
+    if (!client || e.status !== 401 || e.projectMismatch) setError(e.message);
   }
   async function retryAccess() {
     setError("");
@@ -183,6 +183,17 @@ export default function CoordinationPortal({
       if (data.unchanged) {
         rememberRefresh(data);
         return data;
+      }
+      const requestedJob = new URLSearchParams(window.location.search).get(
+        "job",
+      );
+      if (requestedJob && data.job.id !== requestedJob) {
+        const wrongProject = new Error(
+          "Verify your email for this project. Your existing session belongs to a different project.",
+        );
+        wrongProject.status = 401;
+        wrongProject.projectMismatch = true;
+        throw wrongProject;
       }
       rememberRefresh(data);
       setSynthetic(Boolean(data.synthetic));
@@ -231,6 +242,16 @@ export default function CoordinationPortal({
     return () => link.remove();
   }, [client, verified]);
   useEffect(() => {
+    let active = true;
+    const newClientLink = () => {
+      if (new URLSearchParams(window.location.hash.slice(1)).get("verify"))
+        window.location.reload();
+    };
+    if (client) window.addEventListener("hashchange", newClientLink);
+    const cleanup = () => {
+      active = false;
+      if (client) window.removeEventListener("hashchange", newClientLink);
+    };
     if (client) {
       const token = new URLSearchParams(window.location.hash.slice(1)).get(
         "verify",
@@ -243,16 +264,13 @@ export default function CoordinationPortal({
           "",
           window.location.pathname + window.location.search,
         );
-        return;
+        return cleanup;
       }
     }
-    let active = true;
     load().catch((e) => {
       if (active) reportAccessError(e);
     });
-    return () => {
-      active = false;
-    };
+    return cleanup;
   }, []);
   useEffect(() => {
     if (busy || !(client ? verified : status?.connected)) return;
@@ -342,8 +360,15 @@ export default function CoordinationPortal({
       <main>
         {updateAvailable && (
           <p className="coord-notice">
-            An app update is ready. Save any edits first.{" "}
-            <button onClick={applyUpdate}>Update StreamLion</button>
+            {verification
+              ? "An app update is ready. Finish opening your private link first."
+              : "An app update is ready. Save any edits first."}{" "}
+            <button
+              disabled={busy || Boolean(verification)}
+              onClick={applyUpdate}
+            >
+              Update StreamLion
+            </button>
           </p>
         )}
         {synthetic && (
