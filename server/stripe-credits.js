@@ -308,7 +308,7 @@ async function checkout(env, stripe, identity, config, packId) {
         },
         submit: {
           message:
-            "Optional AI Project Assistant credits. One payment, no subscription or automatic recharge. Credits stay with the Google account selected before checkout.",
+            "Prepaid credits for confirmed client jobs and optional AI Project Assistant answers. One payment, no subscription or automatic recharge. Credits stay with the Google account selected before checkout.",
         },
       },
     },

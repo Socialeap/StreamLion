@@ -96,7 +96,7 @@ export default function Credits() {
       });
       if (result.licenseRequired)
         setError(
-          "Purchase StreamLion with this Google account before adding AI credits.",
+          "Purchase StreamLion with this Google account before adding credits.",
         );
       else if (result.pendingAmount)
         setMessage(
@@ -126,15 +126,16 @@ export default function Credits() {
         <img src="/lion-mint.png" alt="" width="36" height="36" />
         StreamLion
       </a>
-      <h1 id="credits-title">AI help, on your terms.</h1>
+      <h1 id="credits-title">Credits for client work and AI</h1>
       <p>
-        Optional voice-first AI Project Assistant. Add credits when you need
-        them. No subscription or automatic recharge.
+        One prepaid wallet for confirmed client jobs and the optional AI Project
+        Assistant. Add credits when you need them. No subscription or automatic
+        recharge.
       </p>
       {(config?.mode || account?.mode) === "test" && (
         <p className="purchase-test" role="note">
           Stripe test checkout. Test credits have no monetary value and cannot
-          pay for live AI answers.
+          pay for live jobs or AI answers.
         </p>
       )}
       {account?.connected && (
@@ -178,7 +179,7 @@ export default function Credits() {
             </a>
           </p>
         ) : (
-          <div className="credit-packs" aria-label="AI credit packs">
+          <div className="credit-packs" aria-label="Prepaid credit packs">
             {config.packs.map((pack) => (
               <button
                 key={pack.id}
@@ -199,12 +200,29 @@ export default function Credits() {
         ))}
       {config?.enabled && (
         <p>
-          Credits stay with this Google account across devices and do not
-          expire. The credit charge appears before each answer; incomplete
-          answers return their reserved credits. AI credits are separate from
-          your one-time app purchase.
+          Purchased credits stay with this Google account across devices and do
+          not expire. Credits are separate from your one-time app purchase.
+          Promotional starter credits follow the eligibility shown in client
+          requests.
         </p>
       )}
+      <section aria-labelledby="credit-uses-title">
+        <h2 id="credit-uses-title">What uses credits?</h2>
+        <p>
+          When client coordination is available, creating a request uses no
+          project credits. The provider sees and authorizes the job charge
+          before agreement. That charge applies once, after both sides approve
+          the current brief. Clients use their invited portal free. Reopening or
+          recovering the same job does not add a second job charge.{" "}
+          <a href="/api/client-requests">Open client requests</a>.
+        </p>
+        <p>
+          Optional AI answers show their credit charge before you ask.
+          Incomplete text answers return reserved credits; a completed text
+          answer uses the quoted credits even if spoken playback is unavailable.
+          Saved-detail lookup remains included in Core.
+        </p>
+      </section>
       {message && <p role="status">{message}</p>}
       {error && <p role="alert">{error}</p>}
       <button disabled={busy} onClick={load}>
