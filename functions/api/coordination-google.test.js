@@ -16,6 +16,7 @@ const connection = {
   google_subject: "a",
   workbook_id: "book",
   folder_id: "folder",
+  mode: "test",
 };
 const job = () => ({
   ...newClientJob({
@@ -180,7 +181,10 @@ test("private folder checks reject public or delegated access", async () => {
   await assert.rejects(() => google.privateFolder(), /private provider/);
 });
 test("archive retries reuse a reserved Drive identity and verify bytes and index before success", async () => {
-  const google = new CoordinationGoogle({}, connection),
+  const google = new CoordinationGoogle(
+      { GOOGLE_TOKEN_ENCRYPTION_KEY: "synthetic-signing-key" },
+      connection,
+    ),
     j = job(),
     files = new Map(),
     index = [ARCHIVE_HEADERS];
@@ -189,7 +193,21 @@ test("archive retries reuse a reserved Drive identity and verify bytes and index
     uploads = 0;
   google.privateFolder = async () => {};
   google.snapshot = async () => ({
-    events: new Map(),
+    events: new Map([
+      [
+        "created",
+        {
+          id: "created",
+          jobId: j.id,
+          revision: 0,
+          parent: -1,
+          at: j.updatedAt,
+          actor: "provider",
+          action: "create",
+          job: j,
+        },
+      ],
+    ]),
     projects: { revisions: [] },
     notes: { revisions: [] },
     rows: [[], [], [], index],

@@ -144,7 +144,9 @@ export function reduceClientJob(previous, command, actor, now) {
   };
   if (
     ["closed", "archived", "cancelled"].includes(job.state) &&
-    !["reopen", "extend", "archive", "restore"].includes(command.action)
+    !["reopen", "extend", "archive", "archive_early", "restore"].includes(
+      command.action,
+    )
   )
     throw new CoordinationError("This job is read-only.", 409);
   if (
@@ -409,6 +411,23 @@ export function reduceClientJob(previous, command, actor, now) {
       if (actor.role !== "system" || !job.closedAt || job.archiveAt > now)
         throw new CoordinationError("Archive deadline has not elapsed.", 409);
       job.state = "archived";
+      break;
+    case "archive_early":
+      onlyProvider();
+      if (
+        !job.closedAt ||
+        !["closed", "cancelled"].includes(job.state) ||
+        typeof command.reason !== "string" ||
+        !command.reason.trim() ||
+        command.reason.length > 2000
+      )
+        throw new CoordinationError(
+          "Archive a closed job only after recording why client access is ending now.",
+          409,
+        );
+      job.archiveAt = now;
+      job.state = "archived";
+      job.archivalReason = command.reason.trim();
       break;
     case "restore":
       onlyProvider();

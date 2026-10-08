@@ -735,8 +735,14 @@ export async function handleCoordination({ request, env, params = {} }) {
       if (read.unchanged)
         return json({ unchanged: true, refresh: read.refresh });
       const snapshot = await engine.google.snapshot();
+      const enrolled = await env.GOOGLE_SESSIONS.prepare(
+        "SELECT id FROM streamlion_coordination_jobs_v1 WHERE connection_id=?",
+      )
+        .bind(connection.id)
+        .all();
+      const enrolledIDs = new Set(enrolled.results.map((r) => r.id));
       const view = {
-        jobs: [...snapshot.heads.values()],
+        jobs: [...snapshot.heads.values()].filter((j) => enrolledIDs.has(j.id)),
         templates: [...(snapshot.templates?.values() || [])],
         activity: activityFor(snapshot),
         archives: snapshot.rows[3]
@@ -768,6 +774,8 @@ export async function handleCoordination({ request, env, params = {} }) {
         }),
       );
     }
+    if (route === "provider/archive-restore" && request.method === "POST")
+      return json(await engine.restoreArchive(body.operation, body.fileId));
     if (route === "provider/create" && request.method === "POST") {
       // Do not create a project/challenge that its client cannot verify.
       await requireInvitationDelivery(env);

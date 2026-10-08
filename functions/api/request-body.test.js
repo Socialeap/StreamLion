@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { boundedText } from "../../server/request-body.js";
+import { boundedText, boundedBytes } from "../../server/request-body.js";
 import { handleExtensionAuth } from "../../server/extension-auth.js";
 import { extensionFixture } from "../../test/extension-fixture.js";
 
@@ -82,4 +82,20 @@ test("UTF-8 limits count bytes and decoding preserves characters split across ch
   await assert.rejects(() => boundedText(invalid.request, 12000), {
     status: 400,
   });
+});
+test("bounded binary verification preserves exact bytes and cancels oversized streams", async () => {
+  const binary = streamed([new Uint8Array([0, 255]), new Uint8Array([128, 1])]);
+  assert.deepEqual(
+    await boundedBytes(binary.request, 4),
+    new Uint8Array([0, 255, 128, 1]),
+  );
+  const tooLarge = streamed([
+    new Uint8Array(3),
+    new Uint8Array(3),
+    new Uint8Array(3),
+  ]);
+  await assert.rejects(() => boundedBytes(tooLarge.request, 5), {
+    status: 413,
+  });
+  assert.deepEqual(tooLarge.counts(), { reads: 2, cancelled: true });
 });

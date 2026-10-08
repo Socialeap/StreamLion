@@ -24,6 +24,7 @@ import {
   reviseIntakeTemplate,
   isIntakeTemplate,
 } from "../src/intake-templates.js";
+import { archiveFileID, sha256Hex } from "./coordination-archive.js";
 export const operationID = (value) =>
   typeof value === "string" && /^[\w-]{1,80}$/.test(value);
 const eventFor = (id, job, actor, action) => ({
@@ -175,6 +176,205 @@ export class CoordinationEngine {
       template: eventFor(id, record, "provider", "template-save"),
     });
   }
+  async restoreArchive(id, value) {
+    if (!operationID(id))
+      throw new CoordinationError("Invalid recovery identity.");
+    const fileId = archiveFileID(value),
+      command = { action: "archive-import", fileId };
+    const fingerprint = await hash(stableJSON(command)),
+      prior = await this.operation(id);
+    if (prior) {
+      if (prior.actor !== "provider" || prior.fingerprint !== fingerprint)
+        throw new CoordinationError("Recovery identity changed.", 409);
+      return this.run(id);
+    }
+    const archive = await this.google.loadArchive(fileId);
+    const source = await this.db
+      .prepare(
+        "SELECT * FROM streamlion_coordination_connections_v1 WHERE workbook_id=? AND google_subject=? AND mode=?",
+      )
+      .bind(
+        archive.source.workbookId,
+        this.connection.google_subject,
+        this.connection.mode,
+      )
+      .first();
+    if (
+      !source ||
+      source.id === this.connection.id ||
+      source.folder_id !== this.connection.folder_id
+    )
+      throw new CoordinationError(
+        "Select a different compatible workbook with the archive's original private Drive folder.",
+        409,
+      );
+    const row = await this.db
+      .prepare(
+        "SELECT * FROM streamlion_coordination_jobs_v1 WHERE id=? AND connection_id=? AND archived=1 AND closed_at=? AND archive_at=?",
+      )
+      .bind(
+        archive.job.id,
+        source.id,
+        archive.job.closedAt,
+        archive.job.archiveAt,
+      )
+      .first();
+    if (!row || archive.job.archiveAt > Date.now())
+      throw new CoordinationError(
+        "This archive is stale or the original job is still active. Preserve both versions for review.",
+        409,
+      );
+    const guard = "cold-" + (await hash(id)),
+      at = Date.now();
+    const plan = {
+      archiveImport: {
+        archive,
+        fileId,
+        at,
+        sourceConnection: source.id,
+        guard,
+      },
+    };
+    const insert = (operation, connection, payload) =>
+      this.db
+        .prepare(
+          "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES(?,?,?,'provider',?,?,?)",
+        )
+        .bind(operation, connection, archive.job.id, fingerprint, payload, at);
+    try {
+      // Both workbook gates are acquired together. No partial lock survives a
+      // failed acquisition; pending recovery blocks every managed writer.
+      await this.db.batch([
+        insert(
+          guard,
+          source.id,
+          await seal(
+            this.env,
+            {
+              archiveDelegate: {
+                operation: id,
+                connection: this.connection.id,
+              },
+            },
+            "operation:" + guard,
+          ),
+        ),
+        insert(
+          id,
+          this.connection.id,
+          await seal(this.env, plan, "operation:" + id),
+        ),
+      ]);
+    } catch {
+      const existing = await this.operation(id);
+      if (
+        !existing ||
+        existing.fingerprint !== fingerprint ||
+        existing.actor !== "provider"
+      )
+        throw new CoordinationError(
+          "Another save is being recovered in the source or destination workbook. Recover it before restoring this archive.",
+          409,
+        );
+    }
+    return this.run(id);
+  }
+  async runArchiveImport(operation, plan) {
+    const p = plan.archiveImport,
+      archived = p.archive.job;
+    const source = await this.db
+      .prepare(
+        "SELECT * FROM streamlion_coordination_connections_v1 WHERE id=?",
+      )
+      .bind(p.sourceConnection)
+      .first();
+    const guard = await this.db
+      .prepare(
+        "SELECT * FROM streamlion_coordination_operations_v1 WHERE id=? AND connection_id=? AND state='pending'",
+      )
+      .bind(p.guard, p.sourceConnection)
+      .first();
+    const row = await this.db
+      .prepare("SELECT * FROM streamlion_coordination_jobs_v1 WHERE id=?")
+      .bind(archived.id)
+      .first();
+    if (
+      !source ||
+      source.google_subject !== this.connection.google_subject ||
+      source.mode !== this.connection.mode ||
+      source.workbook_id !== p.archive.source.workbookId ||
+      source.folder_id !== this.connection.folder_id ||
+      !guard ||
+      guard.actor !== "provider" ||
+      guard.job_id !== archived.id ||
+      guard.fingerprint !== operation.fingerprint ||
+      !row ||
+      row.connection_id !== source.id ||
+      !row.archived ||
+      row.closed_at !== archived.closedAt ||
+      row.archive_at !== archived.archiveAt
+    )
+      throw new CoordinationError(
+        "Archive source changed during recovery. Preserve both workbooks for review.",
+        409,
+      );
+    await this.google.importArchive(p, operation.id);
+    const targetJob =
+      "EXISTS(SELECT 1 FROM streamlion_coordination_jobs_v1 WHERE id=? AND connection_id=? AND archived=1 AND closed_at=? AND archive_at=?)";
+    const match = [
+      archived.id,
+      this.connection.id,
+      archived.closedAt,
+      archived.archiveAt,
+    ];
+    await this.db.batch([
+      this.db
+        .prepare(
+          "UPDATE streamlion_coordination_jobs_v1 SET connection_id=? WHERE id=? AND connection_id=? AND archived=1 AND closed_at=? AND archive_at=?",
+        )
+        .bind(
+          this.connection.id,
+          archived.id,
+          source.id,
+          archived.closedAt,
+          archived.archiveAt,
+        ),
+      this.db
+        .prepare(
+          "UPDATE streamlion_coordination_sessions_v1 SET revoked=1 WHERE job_id=? AND " +
+            targetJob,
+        )
+        .bind(archived.id, ...match),
+      this.db
+        .prepare(
+          "UPDATE streamlion_coordination_challenges_v1 SET consumed=1 WHERE job_id=? AND " +
+            targetJob,
+        )
+        .bind(archived.id, ...match),
+      this.db
+        .prepare(
+          "UPDATE streamlion_coordination_operations_v1 SET state='complete',completed_at=? WHERE id=? AND connection_id=? AND state='pending' AND " +
+            targetJob,
+        )
+        .bind(Date.now(), operation.id, this.connection.id, ...match),
+      this.db
+        .prepare(
+          "UPDATE streamlion_coordination_operations_v1 SET state='complete',completed_at=? WHERE id=? AND connection_id=? AND state='pending' AND EXISTS(SELECT 1 FROM streamlion_coordination_operations_v1 WHERE id=? AND state='complete')",
+        )
+        .bind(Date.now(), p.guard, source.id, operation.id),
+    ]);
+    if ((await this.operation(operation.id))?.state !== "complete")
+      throw new CoordinationError(
+        "Recovery records could not be finalized. Retry the original operation.",
+        503,
+      );
+    return {
+      operation: operation.id,
+      complete: true,
+      jobId: archived.id,
+      archived: true,
+    };
+  }
   async command(id, jobId, command, actor) {
     if (!operationID(id))
       throw new CoordinationError("Invalid operation identity.");
@@ -206,11 +406,14 @@ export class CoordinationEngine {
         409,
       );
     const plan = { events: [eventFor(id, next, actor.role, command.action)] };
-    plan.revokeSessions = Boolean(
-      job.archiveAt &&
-      job.archiveAt <= Date.now() &&
-      ["extend", "restore", "reopen"].includes(command.action),
-    );
+    const archiving = ["archive", "archive_early"].includes(command.action);
+    plan.revokeSessions =
+      archiving ||
+      Boolean(
+        job.archiveAt &&
+        job.archiveAt <= Date.now() &&
+        ["extend", "restore", "reopen"].includes(command.action),
+      );
     if (command.action === "approve" && actor.role === "provider") {
       const policy = await this.db
         .prepare(
@@ -256,9 +459,7 @@ export class CoordinationEngine {
         parentRevisionId: plan.projection.revisionId,
       };
     }
-    if (command.action === "archive")
-      plan.archive = await this.google.archivePlan(job, snapshot);
-    if (command.action === "archive" && next.accepted) {
+    if (archiving && next.accepted) {
       plan.projection = {
         ...next.accepted,
         recordId: next.id,
@@ -269,6 +470,21 @@ export class CoordinationEngine {
         updatedAt: new Date(next.updatedAt).toISOString(),
         reviewState: "archived",
       };
+    }
+    if (archiving) {
+      // Package the exact planned final archive event/projection. Its source
+      // job is eligible for recovery only after this journal is completed.
+      plan.archive = await this.google.archivePlan(next, {
+        ...snapshot,
+        events: new Map([...snapshot.events, [id, plan.events[0]]]),
+        projects: {
+          ...snapshot.projects,
+          revisions: [
+            ...snapshot.projects.revisions,
+            ...(plan.projection ? [plan.projection] : []),
+          ],
+        },
+      });
     }
     return this.store(id, jobId, actor.role, command, plan);
   }
@@ -385,6 +601,7 @@ export class CoordinationEngine {
       type: data.type,
       bytes: bytes.length,
       driveId: generated.ids[0],
+      sha256: await sha256Hex(bytes),
       visibility:
         actor.role === "client" || data.visibility !== "provider"
           ? "client"
@@ -408,12 +625,63 @@ export class CoordinationEngine {
       throw new CoordinationError("Operation unavailable.", 409);
     const plan = await unseal(this.env, operation.payload, "operation:" + id);
     if (operation.state === "complete")
-      return { operation: id, complete: true };
+      return {
+        operation: id,
+        complete: true,
+        ...(plan.archiveImport
+          ? { jobId: plan.archiveImport.archive.job.id, archived: true }
+          : {}),
+      };
     if (this.connection.revoked || this.connection.expires_at <= Date.now())
       throw new CoordinationError(
         "Provider Google connection needs renewal.",
         409,
       );
+    if (plan.archiveDelegate) {
+      const target = await this.db
+        .prepare(
+          "SELECT * FROM streamlion_coordination_connections_v1 WHERE id=?",
+        )
+        .bind(plan.archiveDelegate.connection)
+        .first();
+      if (
+        !target ||
+        target.id === this.connection.id ||
+        target.google_subject !== this.connection.google_subject ||
+        target.mode !== this.connection.mode
+      )
+        throw new CoordinationError(
+          "Archive recovery ownership changed. Stop for review.",
+          409,
+        );
+      const engine = new CoordinationEngine(this.env, target);
+      const primary = await engine.operation(plan.archiveDelegate.operation);
+      if (
+        !primary ||
+        primary.actor !== "provider" ||
+        primary.fingerprint !== operation.fingerprint ||
+        primary.job_id !== operation.job_id
+      )
+        throw new CoordinationError(
+          "Archive recovery journal needs review.",
+          409,
+        );
+      const primaryPlan = await unseal(
+        this.env,
+        primary.payload,
+        "operation:" + primary.id,
+      );
+      if (
+        primaryPlan.archiveImport?.sourceConnection !== this.connection.id ||
+        primaryPlan.archiveImport?.guard !== id
+      )
+        throw new CoordinationError(
+          "Archive recovery journal needs review.",
+          409,
+        );
+      return engine.run(primary.id);
+    }
+    if (plan.archiveImport) return this.runArchiveImport(operation, plan);
     if (plan.template) {
       // Templates share the workbook writer gate, but never a job's charge,
       // invitation, projection or client-grant lifecycle.
@@ -499,12 +767,18 @@ export class CoordinationEngine {
         await this.google.projection(plan.finalProjection);
       }
       if (plan.revokeSessions)
-        await this.db
-          .prepare(
-            "UPDATE streamlion_coordination_sessions_v1 SET revoked=1 WHERE job_id=?",
-          )
-          .bind(last.jobId)
-          .run();
+        await this.db.batch([
+          this.db
+            .prepare(
+              "UPDATE streamlion_coordination_sessions_v1 SET revoked=1 WHERE job_id=?",
+            )
+            .bind(last.jobId),
+          this.db
+            .prepare(
+              "UPDATE streamlion_coordination_challenges_v1 SET consumed=1 WHERE job_id=?",
+            )
+            .bind(last.jobId),
+        ]);
       await this.db
         .prepare(
           "UPDATE streamlion_coordination_jobs_v1 SET closed_at=?,archive_at=?,archived=?,reminder_at=CASE WHEN archive_at IS NOT ? THEN NULL ELSE reminder_at END WHERE id=? AND connection_id=?",

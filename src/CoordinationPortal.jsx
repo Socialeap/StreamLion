@@ -7,6 +7,7 @@ import React, {
 import { PROJECT_FIELDS } from "./project-schema.js";
 import NotificationSettings from "./NotificationSettings.jsx";
 import IntakeTemplateSettings from "./IntakeTemplateSettings.jsx";
+import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
 import { activeIntakeQuestions } from "./intake-templates.js";
 import { startCoordinationRefresh } from "./coordination-refresh.js";
 import { subscribeUpdate, updateReady, applyUpdate } from "./updates.js";
@@ -649,6 +650,22 @@ export default function CoordinationPortal({
                 })
               }
             />
+            <ArchiveRecoverySettings
+              busy={busy}
+              recovering={pending.length > 0}
+              capacity={capacity}
+              restore={async (body) => {
+                const result = await perform("provider/archive-restore", body);
+                if (result?.complete) {
+                  setSelected(result.jobId);
+                  setShowClosed(true);
+                  setMessage(
+                    "Archive recovery verified. The job remains archived and client access remains expired.",
+                  );
+                }
+                return result;
+              }}
+            />
             <div className="coord-layout">
               <aside>
                 <section className="coord-card">
@@ -727,7 +744,12 @@ export default function CoordinationPortal({
                   <p className="coord-small">
                     Creating a request uses no project credits.
                   </p>
-                  {selectedJob && <ProjectInvitation jobId={selectedJob.id} />}
+                  {selectedJob &&
+                    selectedJob.state !== "archived" &&
+                    (!selectedJob.archiveAt ||
+                      selectedJob.archiveAt > Date.now()) && (
+                      <ProjectInvitation jobId={selectedJob.id} />
+                    )}
                 </section>
                 <section className="coord-card">
                   <h2>Your projects</h2>
@@ -1154,8 +1176,10 @@ function JobPanel({
       </div>
       {closed && (
         <p className="coord-notice">
-          Client access ends {date(job.archiveAt)}. The provider keeps the
-          project record.
+          {job.archiveAt <= Date.now()
+            ? "Client access has ended"
+            : "Client access ends " + date(job.archiveAt)}
+          . The provider keeps the project record.
         </p>
       )}
       <nav className="coord-tabs" aria-label="Project sections">
@@ -1697,7 +1721,7 @@ function JobPanel({
                     Cancel job
                   </button>
                 )}
-                {closed && job.state !== "archived" && (
+                {closed && (
                   <button
                     disabled={busy || !reason.trim()}
                     onClick={() => command(job, "reopen", { reason })}
@@ -1717,15 +1741,30 @@ function JobPanel({
                     Extend client access 90 days
                   </button>
                 )}
-                {job.state === "archived" && (
+                {closed && job.state !== "archived" && (
                   <button
-                    disabled={busy}
-                    onClick={() => command(job, "restore")}
+                    disabled={busy || !reason.trim()}
+                    onClick={() => command(job, "archive_early", { reason })}
                   >
-                    Restore provider view
+                    Archive now · end client access
                   </button>
                 )}
+                {job.state === "archived" && (
+                  <p>
+                    This archived history is available to the provider. To
+                    resume corrections, enter a reason and reopen the job; send
+                    a fresh client sign-in link when ready.
+                  </p>
+                )}
               </div>
+              {closed && job.state !== "archived" && (
+                <p>
+                  Archiving now ends client access immediately, retains the
+                  original records and files, and verifies an archive in your
+                  private Drive folder. Record a reason before choosing this
+                  action.
+                </p>
+              )}
               {invite && !closed && (
                 <button disabled={busy || !inviteAvailable} onClick={invite}>
                   Send a fresh client sign-in link

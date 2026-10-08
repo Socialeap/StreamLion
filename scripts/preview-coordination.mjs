@@ -10,6 +10,17 @@ import {
   reviseIntakeTemplate,
   selectedIntakeTemplate,
 } from "../src/intake-templates.js";
+import { archiveImportRecords } from "../server/coordination-archive.js";
+import {
+  archiveFixture,
+  archiveEnv,
+  archiveSource,
+} from "../test/archive-fixture.js";
+const sampleArchive = await archiveFixture(archiveEnv, {
+  ...archiveSource,
+  google_subject: "synthetic-provider",
+});
+const recovered = new Map();
 const templates = new Map(),
   templateEvents = new Map();
 let templateRevision = 0;
@@ -130,6 +141,23 @@ const handler = async (req, res, next) => {
       });
       templateRevision++;
       result = { complete: true };
+    } else if (path === "provider/archive-restore") {
+      const data = JSON.parse(body);
+      if (data.fileId !== "synthetic-archive")
+        throw new Error("Use synthetic-archive for this local preview.");
+      if (!recovered.has(data.operation)) {
+        job = archiveImportRecords(
+          sampleArchive,
+          data.operation,
+          Date.now(),
+        ).job;
+        recovered.set(data.operation, {
+          complete: true,
+          jobId: job.id,
+          archived: true,
+        });
+      }
+      result = recovered.get(data.operation);
     } else if (path === "provider/create") {
       const data = JSON.parse(body);
       job = newClientJob({
