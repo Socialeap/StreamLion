@@ -1,6 +1,7 @@
 // Private operator tooling only. No browser endpoint, provider call or mutation.
 export const SAMPLE_LIMIT = 5000;
 export const MAX_INPUT_BYTES = 2 * 1024 * 1024;
+export const MAX_ROWS_READ = 250000;
 const DAY = 86400000;
 const MARKERS = {
   auth: ["streamlion_auth_schema_v1", 1],
@@ -36,14 +37,19 @@ export function operationsQueries(asOf) {
     const expected = modes.flatMap((mode) =>
       Object.keys(metrics).map((metric) => ({ section, mode, metric })),
     );
-    const sql = modes
-      .flatMap((mode) =>
-        Object.entries(metrics).map(
-          ([metric, value]) =>
-            `SELECT '${section}' AS section,'${mode}' AS mode,'${metric}' AS metric,${value.replaceAll("$MODE", `'${mode}'`)} AS value,${now} AS as_of_ms`,
-        ),
+    // D1 rejects compound SELECTs that ordinary local SQLite accepts. Expand
+    // fixed metric names with VALUES and CASE instead of a UNION per counter.
+    const names = Object.keys(metrics);
+    const sql = `WITH modes(mode) AS (VALUES ${modes.map((mode) => `('${mode}')`).join(",")}), metrics(metric) AS (VALUES ${names.map((name) => `('${name}')`).join(",")}), t AS (SELECT modes.mode,${Object.entries(
+      metrics,
+    )
+      .map(
+        ([name, value]) =>
+          `${value.replaceAll("$MODE", "modes.mode")} AS ${name}`,
       )
-      .join(" UNION ALL ");
+      .join(
+        ",",
+      )} FROM modes) SELECT '${section}' AS section,t.mode,metrics.metric,CASE metrics.metric ${names.map((name) => `WHEN '${name}' THEN t.${name}`).join(" ")} END AS value,${now} AS as_of_ms FROM t CROSS JOIN metrics`;
     queries.push({ section, expected, sql });
   }
   function sampled(section, source, metrics, modes = ["test", "live"]) {
@@ -55,14 +61,15 @@ export function operationsQueries(asOf) {
         names.map((metric) => ({ section, mode, metric })),
       ),
     ];
-    const global = `SELECT '${section}' AS section,'all' AS mode,'sample_rows' AS metric,COUNT(*) AS value,${now} AS as_of_ms FROM b UNION ALL SELECT '${section}','all','unknown_mode_rows',COALESCE(SUM(CASE WHEN mode NOT IN (${modes.map((x) => `'${x}'`).join(",")}) OR mode IS NULL THEN 1 ELSE 0 END),0),${now} FROM b`;
+    const globalNames = ["sample_rows", "unknown_mode_rows"];
+    const allNames = [...globalNames, ...names];
     const sql = `WITH b AS (${source} LIMIT ${SAMPLE_LIMIT + 1}), modes(mode) AS (VALUES ${modes.map((x) => `('${x}')`).join(",")}), t AS (SELECT modes.mode,${Object.entries(
       metrics,
     )
       .map(([name, expr]) => `${expr} AS ${name}`)
       .join(
         ",",
-      )} FROM modes LEFT JOIN b ON b.mode=modes.mode GROUP BY modes.mode) ${global} ${names.map((name) => `UNION ALL SELECT '${section}',mode,'${name}',${name},${now} FROM t`).join(" ")}`;
+      )} FROM modes LEFT JOIN b ON b.mode=modes.mode GROUP BY modes.mode), summary AS (SELECT COUNT(*) AS sample_rows,COALESCE(SUM(CASE WHEN mode NOT IN (${modes.map((mode) => `'${mode}'`).join(",")}) OR mode IS NULL THEN 1 ELSE 0 END),0) AS unknown_mode_rows FROM b), output_modes(mode) AS (VALUES ('all'),${modes.map((mode) => `('${mode}')`).join(",")}), metrics(metric) AS (VALUES ${allNames.map((name) => `('${name}')`).join(",")}) SELECT '${section}' AS section,output_modes.mode,metrics.metric,CASE WHEN output_modes.mode='all' THEN CASE metrics.metric ${globalNames.map((name) => `WHEN '${name}' THEN summary.${name}`).join(" ")} END ELSE CASE metrics.metric ${names.map((name) => `WHEN '${name}' THEN t.${name}`).join(" ")} END END AS value,${now} AS as_of_ms FROM output_modes CROSS JOIN metrics CROSS JOIN summary LEFT JOIN t ON t.mode=output_modes.mode WHERE (output_modes.mode='all' AND metrics.metric IN (${globalNames.map((name) => `'${name}'`).join(",")})) OR (output_modes.mode<>'all' AND metrics.metric IN (${names.map((name) => `'${name}'`).join(",")}))`;
     queries.push({ section, expected, sql });
   }
   const count = (condition) =>
@@ -328,7 +335,11 @@ export function parseOperations(input, now = Date.now()) {
       metrics[row.section][row.mode][row.metric] = row.value;
     }
   }
-  if (seen.size !== allowed.size || !integer(rowsRead) || rowsRead > 250000)
+  if (
+    seen.size !== allowed.size ||
+    !integer(rowsRead) ||
+    rowsRead > MAX_ROWS_READ
+  )
     fail("operations_incomplete");
   if (Object.values(metrics.schema.all).some((value) => value !== 1))
     fail("operations_schema");
