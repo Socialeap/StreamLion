@@ -5,89 +5,49 @@ export const PROJECT_CREDITS = 240;
 export const STARTER_CREDITS = 600;
 export const CREDIT_UNIT = 12500;
 export const DAY = 86400000;
-export const CLIENT_FIELDS = new Set([
-  "title",
-  "companyName",
-  "propertySizeSqFt",
-  "address",
-  "address2",
-  "city",
-  "region",
-  "postal",
-  "country",
-  "requesterName",
-  "contact1Name",
-  "contact1Phone",
-  "contact2Name",
-  "contact2Phone",
-  "scope",
-  "exclusions",
-  "accessInstructions",
-  "deliverables",
-  "deliveryDeadline",
-  "deliveryDestination",
-  "notes",
-  "proposedTimes",
-  "reference1Name",
-  "reference1Url",
-  "reference2Name",
-  "reference2Url",
-  "document1Name",
-  "document1Url",
-  "document2Name",
-  "document2Url",
-  "otherDocuments",
-]);
-export const MATERIAL_FIELDS = new Set([
-  "scope",
-  "exclusions",
-  "deliverables",
-  "deliveryDeadline",
-  "deliveryDestination",
-  "agreedFee",
-  "currency",
-  "paymentTerms",
-  "startLocal",
-  "endLocal",
-  "timeZone",
-  "appointmentStatus",
-  "address",
-  "address2",
-  "city",
-  "region",
-  "postal",
-  "country",
-]);
-export const OPERATIONAL_FIELDS = new Set([
-  "accessInstructions",
-  "contact1Name",
-  "contact1Phone",
-  "contact2Name",
-  "contact2Phone",
-]);
-export const REQUIRED_FIELDS = [
-  "title",
-  "address",
-  "scope",
-  "deliverables",
-  "accessInstructions",
-];
-export class CoordinationError extends Error {
-  constructor(message, status = 400) {
-    super(message);
-    this.status = status;
-  }
-}
-export const stableJSON = (v) =>
-  JSON.stringify(v, (_, value) =>
-    value && typeof value === "object" && !Array.isArray(value)
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((k) => [k, value[k]]),
-        )
-      : value,
+import {
+  CLIENT_FIELDS,
+  MATERIAL_FIELDS,
+  OPERATIONAL_FIELDS,
+  REQUIRED_FIELDS,
+} from "./client-permissions.js";
+import { CoordinationError, stableJSON } from "./coordination-contract.js";
+import {
+  activeIntakeQuestions,
+  validateIntakeAnswers,
+  pinIntakeTemplate,
+} from "./intake-templates.js";
+export {
+  CLIENT_FIELDS,
+  MATERIAL_FIELDS,
+  OPERATIONAL_FIELDS,
+  REQUIRED_FIELDS,
+} from "./client-permissions.js";
+export { CoordinationError, stableJSON } from "./coordination-contract.js";
+export function isMaterialField(job, key) {
+  return (
+    MATERIAL_FIELDS.has(key) ||
+    (!OPERATIONAL_FIELDS.has(key) &&
+      (job.intake?.questions || []).some(
+        (q) => q.field === key || q.when?.field === key,
+      ))
   );
+}
+export function missingRequiredFields(
+  job,
+  fields = job.accepted || job.fields,
+) {
+  const required = new Map(REQUIRED_FIELDS.map((field) => [field, undefined]));
+  for (const q of activeIntakeQuestions(job, fields))
+    if (q.required) required.set(q.field, q.label);
+  return [...required]
+    .filter(([field]) => !fields[field]?.trim())
+    .map(([field, label]) => ({
+      kind: "missing",
+      field,
+      ...(label ? { label } : {}),
+    }));
+}
 export function validatePatch(patch, role) {
   if (!patch || typeof patch !== "object" || Array.isArray(patch))
     throw new CoordinationError("Provide project fields.");
@@ -106,14 +66,31 @@ export function validatePatch(patch, role) {
     throw new CoordinationError("A field is invalid or too long.");
   return patch;
 }
-export function newClientJob({ id, provider, clientEmail, title, now }) {
+export function newClientJob({
+  id,
+  provider,
+  clientEmail,
+  title,
+  now,
+  intakeTemplate = null,
+}) {
+  if (intakeTemplate && intakeTemplate.provider !== provider)
+    throw new CoordinationError(
+      "This service template belongs to another provider.",
+      403,
+    );
+  const intake = intakeTemplate ? pinIntakeTemplate(intakeTemplate) : null;
   if (
     !/^[\w-]{1,100}$/.test(id) ||
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)
   )
     throw new CoordinationError("Provide a valid client email.");
   const fields = validateFields(
-    { title, requesterEmail: clientEmail },
+    {
+      ...(intakeTemplate?.config.defaults || {}),
+      title,
+      requesterEmail: clientEmail,
+    },
     { requireTitle: false },
   );
   return {
@@ -123,6 +100,7 @@ export function newClientJob({ id, provider, clientEmail, title, now }) {
     state: "draft",
     revision: 0,
     fields,
+    ...(intake ? { intake } : {}),
     accepted: null,
     proposal: null,
     questions: [],
@@ -140,10 +118,7 @@ export function newClientJob({ id, provider, clientEmail, title, now }) {
 export function readiness(job) {
   const fields = job.accepted || job.fields;
   return [
-    ...REQUIRED_FIELDS.filter((k) => !fields[k]?.trim()).map((k) => ({
-      kind: "missing",
-      field: k,
-    })),
+    ...missingRequiredFields(job, fields),
     ...job.questions
       .filter((q) => !q.answer)
       .map((q) => ({ kind: "question", id: q.id })),
@@ -169,7 +144,9 @@ export function reduceClientJob(previous, command, actor, now) {
   };
   if (
     ["closed", "archived", "cancelled"].includes(job.state) &&
-    !["reopen", "extend", "archive", "restore"].includes(command.action)
+    !["reopen", "extend", "archive", "archive_early", "restore"].includes(
+      command.action,
+    )
   )
     throw new CoordinationError("This job is read-only.", 409);
   if (
@@ -191,7 +168,7 @@ export function reduceClientJob(previous, command, actor, now) {
       const changed = Object.keys(patch).filter(
         (k) => patch[k] !== job.fields[k],
       );
-      if (job.accepted && changed.some((k) => MATERIAL_FIELDS.has(k)))
+      if (job.accepted && changed.some((k) => isMaterialField(job, k)))
         throw new CoordinationError(
           "Propose a scope revision instead of changing agreed terms.",
           409,
@@ -200,6 +177,7 @@ export function reduceClientJob(previous, command, actor, now) {
         { ...job.fields, ...patch },
         { requireTitle: false },
       );
+      validateIntakeAnswers(job, fields);
       job.fields = fields;
       if (!job.accepted) {
         job.providerApproved = false;
@@ -315,9 +293,11 @@ export function reduceClientJob(previous, command, actor, now) {
       if (!job.accepted)
         throw new CoordinationError("There is no accepted scope yet.", 409);
       const patch = validatePatch(command.fields, actor.role);
+      const proposedFields = validateFields({ ...job.accepted, ...patch });
+      validateIntakeAnswers(job, proposedFields);
       job.proposal = {
         id: command.id,
-        fields: validateFields({ ...job.accepted, ...patch }),
+        fields: proposedFields,
         author: actor.role,
         at: now,
         providerApproved: provider,
@@ -332,11 +312,12 @@ export function reduceClientJob(previous, command, actor, now) {
           409,
         );
       if (
+        missingRequiredFields(job, job.proposal.fields).length ||
         job.questions.some((q) => !q.answer) ||
         job.updates.some((u) => !u.acknowledged)
       )
         throw new CoordinationError(
-          "Resolve questions and operational updates before accepting the revision.",
+          "Resolve required information, questions and operational updates before accepting the revision.",
           409,
         );
       if (provider) job.proposal.providerApproved = true;
@@ -419,17 +400,41 @@ export function reduceClientJob(previous, command, actor, now) {
       break;
     case "reopen":
       onlyProvider();
-      if (!job.closedAt || !command.reason?.trim())
+      if (
+        !job.closedAt ||
+        typeof command.reason !== "string" ||
+        !command.reason.trim() ||
+        command.reason.length > 2000
+      )
         throw new CoordinationError("Record the correction reason.");
       job.state = job.accepted ? "in_progress" : "draft";
       job.closedAt = null;
       job.archiveAt = null;
       job.deliveryAccepted = false;
+      job.reopenReason = command.reason.trim();
+      job.reopenedAt = now;
       break;
     case "archive":
       if (actor.role !== "system" || !job.closedAt || job.archiveAt > now)
         throw new CoordinationError("Archive deadline has not elapsed.", 409);
       job.state = "archived";
+      break;
+    case "archive_early":
+      onlyProvider();
+      if (
+        !job.closedAt ||
+        !["closed", "cancelled"].includes(job.state) ||
+        typeof command.reason !== "string" ||
+        !command.reason.trim() ||
+        command.reason.length > 2000
+      )
+        throw new CoordinationError(
+          "Archive a closed job only after recording why client access is ending now.",
+          409,
+        );
+      job.archiveAt = now;
+      job.state = "archived";
+      job.archivalReason = command.reason.trim();
       break;
     case "restore":
       onlyProvider();

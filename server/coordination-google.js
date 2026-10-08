@@ -1,6 +1,18 @@
 import { googleFetch, seal, unseal } from "./google-auth.js";
 import { reserveGoogleRequest } from "./google-limits.js";
-import { boundedText } from "./request-body.js";
+import { boundedText, boundedBytes } from "./request-body.js";
+import {
+  ARCHIVE_KIND,
+  ARCHIVE_MAX_BYTES,
+  ARCHIVE_MAX_FILE_BYTES,
+  ARCHIVE_MAX_TOTAL_BYTES,
+  archiveID,
+  archiveReferences,
+  archiveReports,
+  validateArchive,
+  archiveImportRecords,
+  sha256Hex,
+} from "./coordination-archive.js";
 import {
   PROJECT_HEADERS,
   NOTE_HEADERS,
@@ -9,6 +21,10 @@ import {
 } from "../src/workbook.js";
 import { stableJSON, CoordinationError } from "../src/client-workflow.js";
 import { coordinationMetric } from "./coordination-runtime.js";
+import {
+  isIntakeTemplate,
+  validateIntakeRecord,
+} from "../src/intake-templates.js";
 export const EVENT_HEADERS = [
   "eventId",
   "jobId",
@@ -141,20 +157,7 @@ export class CoordinationGoogle {
         "Coordination signing configuration is unavailable.",
         503,
       );
-    const file = await this.json(
-      "https://www.googleapis.com/drive/v3/files/" +
-        this.connection.workbook_id +
-        "?fields=ownedByMe,permissions(type,role)",
-    );
-    if (
-      !file.ownedByMe ||
-      !file.permissions?.length ||
-      file.permissions.some((p) => p.type !== "user" || p.role !== "owner")
-    )
-      throw new CoordinationError(
-        "Use a private provider-owned workbook for coordination.",
-        409,
-      );
+    await this.privateWorkbook();
     const book = await this.json(this.sheet("?fields=sheets.properties"));
     const names = book.sheets.map((s) => s.properties.title);
     if (!names.includes("Projects") || !names.includes("Observations"))
@@ -197,6 +200,22 @@ export class CoordinationGoogle {
       });
     }
     await this.snapshot();
+  }
+  async privateWorkbook() {
+    const file = await this.json(
+      "https://www.googleapis.com/drive/v3/files/" +
+        this.connection.workbook_id +
+        "?fields=ownedByMe,permissions(type,role)",
+    );
+    if (
+      !file.ownedByMe ||
+      !file.permissions?.length ||
+      file.permissions.some((p) => p.type !== "user" || p.role !== "owner")
+    )
+      throw new CoordinationError(
+        "Use a private provider-owned workbook for coordination.",
+        409,
+      );
   }
   async snapshot() {
     const started = Date.now();
@@ -280,6 +299,15 @@ export class CoordinationGoogle {
           "Invalid coordination history. Preserve the workbook for review.",
           409,
         );
+      if (event.job.kind !== undefined) {
+        if (
+          !isIntakeTemplate(event.job) ||
+          event.actor !== "provider" ||
+          event.action !== "template-save"
+        )
+          throw new CoordinationError("Invalid service template history.", 409);
+        validateIntakeRecord(event.job);
+      }
       if (
         events.has(event.id) &&
         stableJSON(events.get(event.id)) !== stableJSON(event)
@@ -292,7 +320,14 @@ export class CoordinationGoogle {
       const chain = [...events.values()]
         .filter((e) => e.jobId === id)
         .sort((a, b) => a.revision - b.revision);
-      if (chain.some((e, i) => e.revision !== i || e.parent !== i - 1))
+      if (
+        chain.some(
+          (e, i) =>
+            e.revision !== i ||
+            e.parent !== i - 1 ||
+            e.job.kind !== chain[0].job.kind,
+        )
+      )
         throw new CoordinationError(
           "Concurrent or incomplete client revisions require review.",
           409,
@@ -308,7 +343,11 @@ export class CoordinationGoogle {
         "This workbook contains another provider's coordination records. Stop for review.",
         409,
       );
-    return { rows, projects, notes, events, heads };
+    const templates = new Map(
+      [...heads].filter(([, record]) => isIntakeTemplate(record)),
+    );
+    for (const id of templates.keys()) heads.delete(id);
+    return { rows, projects, notes, events, heads, templates };
   }
   async append(tab, values) {
     await this.json(
@@ -328,7 +367,10 @@ export class CoordinationGoogle {
         throw new CoordinationError("Event identity changed.", 409);
       return;
     }
-    if ((snapshot.heads.get(event.jobId)?.revision ?? -1) !== event.parent)
+    if (
+      ((snapshot.heads.get(event.jobId) || snapshot.templates.get(event.jobId))
+        ?.revision ?? -1) !== event.parent
+    )
       throw new CoordinationError(
         "This job changed before saving. Review its history.",
         409,
@@ -398,6 +440,11 @@ export class CoordinationGoogle {
       );
   }
   async signature(event, signature) {
+    if (!this.env.GOOGLE_TOKEN_ENCRYPTION_KEY)
+      throw new CoordinationError(
+        "Coordination signing configuration is unavailable.",
+        503,
+      );
     this.signingKey ||= crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(this.env.GOOGLE_TOKEN_ENCRYPTION_KEY),
@@ -466,62 +513,44 @@ export class CoordinationGoogle {
     const notes = snapshot.notes.revisions.filter(
       (r) => r.projectId === job.id,
     );
-    const attachments = [];
-    for (const attachment of job.attachments) {
-      if (!validID(attachment.driveId))
-        throw new CoordinationError(
-          "Attachment archive needs reviewed recovery.",
-          409,
-        );
-      const file = await this.json(
-        "https://www.googleapis.com/drive/v3/files/" +
-          attachment.driveId +
-          "?fields=id,name,size,md5Checksum,parents,trashed,ownedByMe,permissions(type,role)",
-      );
-      if (
-        file.trashed ||
-        !file.ownedByMe ||
-        !file.parents?.includes(this.connection.folder_id) ||
-        !file.permissions?.length ||
-        file.permissions.some((p) => p.type !== "user" || p.role !== "owner")
-      )
-        throw new CoordinationError(
-          "An original attachment is missing or shared. Originals retained for review.",
-          409,
-        );
-      attachments.push(file);
-    }
-    const report =
-      "# " +
-      job.fields.title +
-      "\n\n" +
-      Object.entries(job.accepted || job.fields)
-        .filter(([, v]) => v)
-        .map(([k, v]) => k + ": " + v)
-        .join("\n\n") +
-      "\n\n## Field observations\n\n" +
-      notes
-        .map(
-          (n) =>
-            n.area +
-            ": " +
-            n.text +
-            (n.audioUrl ? "\nOriginal audio reference: " + n.audioUrl : ""),
-        )
-        .join("\n\n");
-    const body = stableJSON({
-      kind: "streamlion.client.archive",
-      version: 1,
-      report,
+    const refs = archiveReferences(job, notes),
+      originals = [],
+      budget = { bytes: 0 };
+    for (const [id, references] of refs.files)
+      originals.push(await this.originalFile(id, references, job, budget));
+    const payload = {
+      kind: ARCHIVE_KIND,
+      version: 2,
+      source: {
+        workbookId: this.connection.workbook_id,
+        folderId: this.connection.folder_id,
+        provider: this.connection.google_subject,
+        mode: this.connection.mode,
+      },
+      reports: archiveReports(job, notes, this.connection.client_brand),
       job,
-      history,
+      history: history.sort((a, b) => a.revision - b.revision),
       projects: records,
       observations: notes,
-      attachments,
+      originals,
+      externalReferences: refs.external,
       retention:
-        "Original Google records and attachment files retained; no compaction performed.",
+        "Original Google records and Drive files retained; no compaction performed. External links are references only.",
+    };
+    validateArchive(payload);
+    const digest = await sha256Hex(stableJSON(payload));
+    const body = stableJSON({
+      ...payload,
+      integrity: {
+        digest,
+        signature: await this.signature({
+          kind: ARCHIVE_KIND,
+          version: 2,
+          digest,
+        }),
+      },
     });
-    if (new TextEncoder().encode(body).length > 700000)
+    if (new TextEncoder().encode(body).length > ARCHIVE_MAX_BYTES)
       throw new CoordinationError(
         "Archive exceeds the safe package size. Preserve Google history for reviewed export.",
         413,
@@ -529,6 +558,8 @@ export class CoordinationGoogle {
     const generated = await this.json(
       "https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive&type=files",
     );
+    if (!validID(generated.ids?.[0]))
+      throw new CoordinationError("Invalid archive file identity.", 503);
     return { body, fileId: generated.ids[0] };
   }
   async archive(job, operation, plan) {
@@ -536,13 +567,12 @@ export class CoordinationGoogle {
     const snapshot = await this.snapshot();
     const { body, fileId: id } = plan;
     if (!validID(id)) throw new CoordinationError("Invalid archive file.", 409);
-    const checksum = [
-      ...new Uint8Array(
-        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)),
-      ),
-    ]
-      .map((x) => x.toString(16).padStart(2, "0"))
-      .join("");
+    // Preserve recovery of already-journaled v1 archives without treating their
+    // unsigned contents as authorization to import into another workbook.
+    const version = JSON.parse(body).version;
+    if (![1, 2].includes(version))
+      throw new CoordinationError("Unsupported archive version.", 409);
+    const checksum = await sha256Hex(body);
     const metadataResponse = await this.callMetadata(id);
     if (!metadataResponse) {
       const boundary = "streamlion-" + crypto.randomUUID();
@@ -578,14 +608,14 @@ export class CoordinationGoogle {
     const response = await this.call(
       "https://www.googleapis.com/drive/v3/files/" + id + "?alt=media",
     );
-    const saved = await boundedText(response, 8 * 1024 * 1024);
+    const saved = await boundedText(response, ARCHIVE_MAX_BYTES);
     if (saved !== body)
       throw new CoordinationError(
         "Archive integrity could not be verified. Originals retained.",
         409,
       );
     if (!snapshot.rows[3].some((r) => r[0] === job.id && r[2] === id))
-      await this.append("ArchiveIndex", [job.id, job.closedAt, id, 1]);
+      await this.append("ArchiveIndex", [job.id, job.closedAt, id, version]);
     const verifiedIndex = await this.snapshot();
     if (
       !verifiedIndex.rows[3].some(
@@ -593,7 +623,7 @@ export class CoordinationGoogle {
           r[0] === job.id &&
           String(r[1]) === String(job.closedAt) &&
           r[2] === id &&
-          String(r[3]) === "1",
+          String(r[3]) === String(version),
       )
     )
       throw new CoordinationError(
@@ -601,6 +631,327 @@ export class CoordinationGoogle {
         503,
       );
     return id;
+  }
+  async originalMetadata(id) {
+    if (!archiveID(id))
+      throw new CoordinationError("Invalid original file identity.", 409);
+    const file = await this.json(
+      "https://www.googleapis.com/drive/v3/files/" +
+        id +
+        "?fields=id,name,mimeType,size,parents,trashed,ownedByMe,appProperties,permissions(type,role)",
+    );
+    if (
+      file.id !== id ||
+      file.trashed ||
+      !file.ownedByMe ||
+      !file.permissions?.length ||
+      file.permissions.some((p) => p.type !== "user" || p.role !== "owner")
+    )
+      throw new CoordinationError(
+        "An original file is missing or shared. Original records retained for review.",
+        409,
+      );
+    return file;
+  }
+  async originalFile(id, references, job, budget, expected) {
+    const file = await this.originalMetadata(id);
+    let parent = file.parents?.length === 1 ? file.parents[0] : "";
+    for (
+      let depth = 0;
+      parent && parent !== this.connection.folder_id && depth < 3;
+      depth++
+    ) {
+      const folder = await this.originalMetadata(parent);
+      if (folder.mimeType !== "application/vnd.google-apps.folder") break;
+      parent = folder.parents?.length === 1 ? folder.parents[0] : "";
+    }
+    const bytes = Number(file.size);
+    if (
+      parent !== this.connection.folder_id ||
+      !Number.isSafeInteger(bytes) ||
+      bytes <= 0 ||
+      bytes > ARCHIVE_MAX_FILE_BYTES ||
+      budget.bytes + bytes > ARCHIVE_MAX_TOTAL_BYTES
+    )
+      throw new CoordinationError(
+        "Original file location or verification capacity needs review. Original records retained.",
+        409,
+      );
+    for (const ref of references) {
+      if (ref.kind === "attachment") {
+        const a = job.attachments.find(
+          (a) => a.id === ref.id && a.driveId === id,
+        );
+        if (
+          !a ||
+          bytes !== a.bytes ||
+          file.mimeType !== a.type ||
+          file.parents?.[0] !== this.connection.folder_id ||
+          (file.appProperties?.streamlionUpload !== undefined
+            ? file.appProperties.streamlionUpload !== a.id
+            : file.name !== a.name)
+        )
+          throw new CoordinationError(
+            "Original attachment identity changed. Original records retained.",
+            409,
+          );
+      } else if (
+        ref.kind !== "field" ||
+        file.appProperties?.streamlionNote !== ref.id ||
+        file.appProperties?.streamlionProject !== job.id ||
+        !archiveID(file.appProperties?.streamlionBook)
+      )
+        throw new CoordinationError(
+          "Original field file identity needs review. Original records retained.",
+          409,
+        );
+    }
+    budget.bytes += bytes;
+    const content = await boundedBytes(
+      await this.call(
+        "https://www.googleapis.com/drive/v3/files/" + id + "?alt=media",
+      ),
+      ARCHIVE_MAX_FILE_BYTES,
+    );
+    const digest = await sha256Hex(content);
+    if (
+      content.length !== bytes ||
+      (references.some((r) => r.kind === "field") &&
+        file.appProperties?.sha256 !== digest) ||
+      job.attachments.some(
+        (a) => a.driveId === id && a.sha256 && a.sha256 !== digest,
+      ) ||
+      (file.appProperties?.sha256 && file.appProperties.sha256 !== digest)
+    )
+      throw new CoordinationError(
+        "Original file bytes changed. Original records retained for review.",
+        409,
+      );
+    const result = {
+      id,
+      name: file.name,
+      type: file.mimeType,
+      bytes,
+      sha256: digest,
+      references,
+    };
+    if (expected && stableJSON(expected) !== stableJSON(result))
+      throw new CoordinationError(
+        "An archived original changed or is unavailable. Original records retained for review.",
+        409,
+      );
+    return result;
+  }
+  async verifyArchive(archive) {
+    if (archive?.kind !== ARCHIVE_KIND || archive.version !== 2)
+      throw new CoordinationError(
+        "Legacy archive recovery requires review of the original workbook.",
+        409,
+      );
+    const { integrity, ...payload } = archive;
+    if (
+      !archiveID(payload.source?.workbookId) ||
+      payload.source?.provider !== this.connection.google_subject ||
+      payload.source?.mode !== this.connection.mode ||
+      payload.source?.folderId !== this.connection.folder_id ||
+      !/^[a-f0-9]{64}$/.test(integrity?.digest || "") ||
+      integrity.digest !== (await sha256Hex(stableJSON(payload)))
+    )
+      throw new CoordinationError(
+        "Archive ownership or integrity could not be verified. Original records retained.",
+        409,
+      );
+    const signer = new CoordinationGoogle(this.env, {
+      ...this.connection,
+      workbook_id: payload.source.workbookId,
+    });
+    if (
+      !(await signer.signature(
+        { kind: ARCHIVE_KIND, version: 2, digest: integrity.digest },
+        integrity.signature,
+      ))
+    )
+      throw new CoordinationError(
+        "Archive signature could not be verified. Original records retained.",
+        409,
+      );
+    validateArchive(archive);
+    return archive;
+  }
+  async loadArchive(id) {
+    await this.privateFolder();
+    const metadata = await this.originalMetadata(id);
+    if (
+      metadata.mimeType !== "application/json" ||
+      !metadata.parents?.includes(this.connection.folder_id) ||
+      !Number.isSafeInteger(Number(metadata.size)) ||
+      Number(metadata.size) > ARCHIVE_MAX_BYTES ||
+      !archiveID(metadata.appProperties?.streamlionArchive)
+    )
+      throw new CoordinationError(
+        "Choose a private StreamLion archive in this workspace's original Drive folder.",
+        409,
+      );
+    const body = await boundedText(
+      await this.call(
+        "https://www.googleapis.com/drive/v3/files/" + id + "?alt=media",
+      ),
+      ARCHIVE_MAX_BYTES,
+    );
+    if (
+      new TextEncoder().encode(body).length !== Number(metadata.size) ||
+      metadata.appProperties?.checksum !== (await sha256Hex(body))
+    )
+      throw new CoordinationError(
+        "Archive checksum could not be verified. Original records retained.",
+        409,
+      );
+    let archive;
+    try {
+      archive = JSON.parse(body);
+    } catch {
+      throw new CoordinationError("Invalid archive package.", 409);
+    }
+    return this.verifyArchive(archive);
+  }
+  async importArchive(plan, operation) {
+    const { archive, fileId, at } = plan;
+    await this.verifyArchive(archive);
+    await this.privateFolder();
+    await this.privateWorkbook();
+    const budget = { bytes: 0 };
+    for (const f of archive.originals)
+      await this.originalFile(f.id, f.references, archive.job, budget, f);
+    const imported = archiveImportRecords(archive, operation, at);
+    const values = [
+      imported.projects.map((r) => rowFor(r, PROJECT_HEADERS)),
+      imported.notes.map((r) => rowFor(r, NOTE_HEADERS)),
+      await Promise.all(
+        imported.events.map(async (e) => [
+          e.id,
+          e.jobId,
+          e.revision,
+          e.parent,
+          e.at,
+          e.actor,
+          e.action,
+          stableJSON(e.job),
+          await this.signature(e),
+        ]),
+      ),
+      [[archive.job.id, archive.job.closedAt, fileId, 2]],
+    ];
+    const check = (snapshot) => {
+      const noteIDs = new Set(imported.notes.map((r) => r.recordId));
+      const relevant = snapshot.rows.map((rows, i) =>
+        rows
+          .slice(1)
+          .filter((r) =>
+            i === 0
+              ? r[0] === archive.job.id || values[0].some((v) => v[1] === r[1])
+              : i === 1
+                ? noteIDs.has(r[0]) ||
+                  r[5] === archive.job.id ||
+                  values[1].some((v) => v[1] === r[1])
+                : i === 2
+                  ? r[1] === archive.job.id ||
+                    values[2].some((v) => v[0] === r[0])
+                  : r[0] === archive.job.id,
+          ),
+      );
+      if (!relevant.some((r) => r.length)) return false;
+      const headers = [
+        PROJECT_HEADERS,
+        NOTE_HEADERS,
+        EVENT_HEADERS,
+        ARCHIVE_HEADERS,
+      ];
+      const strings = (rows, tab) =>
+        stableJSON(
+          rows
+            .map((r) => {
+              if (
+                r.slice(headers[tab].length).some((v) => v !== "" && v != null)
+              )
+                throw new CoordinationError(
+                  "Archive recovery has unexpected columns. Preserve the workbook for review.",
+                  409,
+                );
+              // Sheets values reads omit trailing empty cells. Compare every
+              // declared column so omitted blanks do not resemble a partial write.
+              return headers[tab].map((_, i) => String(r[i] ?? ""));
+            })
+            .sort((a, b) => stableJSON(a).localeCompare(stableJSON(b))),
+        );
+      if (
+        relevant.some((rows, i) => strings(rows, i) !== strings(values[i], i))
+      )
+        throw new CoordinationError(
+          "Archive restore is partial or conflicts with existing records. Preserve the workbook for review.",
+          409,
+        );
+      return true;
+    };
+    const before = await this.snapshot();
+    if (check(before)) return imported.job;
+    const merged = before.rows.map((rows, i) => [...rows, ...values[i]]);
+    if (
+      merged.some((rows) => rows.length > 10000) ||
+      new TextEncoder().encode(
+        stableJSON({ valueRanges: merged.map((values) => ({ values })) }),
+      ).length >
+        7 * 1024 * 1024
+    )
+      throw new CoordinationError(
+        "This workbook has insufficient recovery capacity. Choose a new compatible workbook; originals are retained.",
+        409,
+      );
+    const book = await this.json(this.sheet("?fields=sheets.properties"));
+    const names = [
+      "Projects",
+      "Observations",
+      "CoordinationEvents",
+      "ArchiveIndex",
+    ];
+    const ids = names.map(
+      (name) =>
+        book.sheets?.find((s) => s.properties.title === name)?.properties
+          .sheetId,
+    );
+    if (ids.some((id) => !Number.isSafeInteger(id)) || new Set(ids).size !== 4)
+      throw new CoordinationError(
+        "Workbook recovery tabs changed. Stop for review.",
+        409,
+      );
+    // One atomic append batch. Explicit ranges could overwrite a manual append.
+    await this.json(this.sheet(":batchUpdate"), {
+      method: "POST",
+      body: JSON.stringify({
+        requests: values.flatMap((rows, i) =>
+          rows.length
+            ? [
+                {
+                  appendCells: {
+                    sheetId: ids[i],
+                    fields: "userEnteredValue",
+                    rows: rows.map((r) => ({
+                      values: r.map((v) => ({
+                        userEnteredValue: { stringValue: String(v ?? "") },
+                      })),
+                    })),
+                  },
+                },
+              ]
+            : [],
+        ),
+      }),
+    });
+    if (!check(await this.snapshot()))
+      throw new CoordinationError(
+        "Archive restore is unverified. Retry the original operation.",
+        503,
+      );
+    return imported.job;
   }
   async callMetadata(id) {
     const capacity = await reserveGoogleRequest(
@@ -652,6 +1003,11 @@ export class CoordinationGoogle {
             name: a.name,
             mimeType: a.type,
             parents: [this.connection.folder_id],
+            appProperties: {
+              streamlionUpload: a.id,
+              streamlionBook: this.connection.workbook_id,
+              sha256: await sha256Hex(bytes),
+            },
           }) +
           "\r\n--" +
           boundary +

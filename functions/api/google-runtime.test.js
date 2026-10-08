@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { googleFetch } from "../../server/google-auth.js";
-import { boundedText, RequestBodyError } from "../../server/request-body.js";
+import {
+  boundedText,
+  boundedBytes,
+  RequestBodyError,
+} from "../../server/request-body.js";
 
 test("Google fetch works in workerd and rejects redirects without forwarding credentials", async () => {
   // Execute the production helper with Workers' actual Request and AbortSignal.
@@ -56,7 +60,7 @@ test("bounded streaming reads cancel early in the actual Workers runtime", async
       modules: true,
       compatibilityDate: "2026-09-23",
       compatibilityFlags: ["nodejs_compat"],
-      script: `${RequestBodyError.toString()}\n${boundedText.toString()}\nexport default { async fetch() {
+      script: `${RequestBodyError.toString()}\n${boundedBytes.toString()}\n${boundedText.toString()}\nexport default { async fetch() {
       let reads = 0, cancelled = false;
       const body = new ReadableStream({ pull(c) { reads++; c.enqueue(new Uint8Array(4096)); }, cancel() { cancelled = true; } }, { highWaterMark: 0 });
       let status;

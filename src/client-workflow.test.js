@@ -71,6 +71,48 @@ test("agreed scope cannot be silently overwritten; proposal needs both sides", (
   assert.equal(proposal.accepted.scope, "Only one room");
   assert.equal(proposal.proposal, null);
 });
+test("an accepted offered fee changes only through a mutually approved proposal", () => {
+  let job = change(initial(), "edit", "provider", {
+    fields: { offeredFee: "100.00", currency: "USD" },
+  });
+  job = change(job, "edit", "client", {
+    fields: {
+      address: "1 Main St",
+      scope: "All three rooms",
+      deliverables: "3D tour",
+      accessInstructions: "Call on arrival",
+    },
+  });
+  job = change(job, "submit", "client");
+  job = change(job, "approve");
+  job = change(job, "approve", "client");
+  job = change(job, "activate", "system");
+  const original = job.accepted.offeredFee;
+  assert.throws(
+    () => change(job, "edit", "provider", { fields: { offeredFee: "999.00" } }),
+    /Propose/,
+  );
+  assert.throws(
+    () => change(job, "edit", "client", { fields: { offeredFee: "999.00" } }),
+    { status: 403 },
+  );
+  let proposed = change(job, "propose", "provider", {
+    fields: { offeredFee: "999.00" },
+  });
+  assert.equal(proposed.accepted.offeredFee, original);
+  assert.equal(proposed.fields.offeredFee, original);
+  proposed = change(proposed, "accept_proposal", "provider", {
+    proposalId: proposed.proposal.id,
+  });
+  assert.equal(proposed.accepted.offeredFee, original);
+  proposed = change(proposed, "accept_proposal", "client", {
+    proposalId: proposed.proposal.id,
+  });
+  assert.equal(proposed.accepted.offeredFee, "999.00");
+  assert.equal(proposed.fields.offeredFee, "999.00");
+  assert.equal(proposed.id, job.id);
+  assert.equal(proposed.state, "confirmed");
+});
 test("client operational changes block close until acknowledged", () => {
   let job = change(confirmed(), "edit", "client", {
     fields: { accessInstructions: "Use side entrance" },

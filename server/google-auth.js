@@ -8,11 +8,17 @@ const SCOPE = "openid email https://www.googleapis.com/auth/drive.file";
 const MAX_AGE = 90 * 86400;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const b64 = (bytes) =>
-  btoa(String.fromCharCode(...bytes))
+const b64 = (bytes) => {
+  // Journaled uploads and archives exceed the engine's function-argument
+  // limit. Encode bounded chunks without changing the stored ciphertext format.
+  const chunks = [];
+  for (let offset = 0; offset < bytes.length; offset += 8192)
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 8192)));
+  return btoa(chunks.join(""))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
+};
 const unb64 = (text) =>
   Uint8Array.from(atob(text.replaceAll("-", "+").replaceAll("_", "/")), (c) =>
     c.charCodeAt(0),

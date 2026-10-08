@@ -6,6 +6,9 @@ import React, {
 } from "react";
 import { PROJECT_FIELDS } from "./project-schema.js";
 import NotificationSettings from "./NotificationSettings.jsx";
+import IntakeTemplateSettings from "./IntakeTemplateSettings.jsx";
+import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
+import { activeIntakeQuestions } from "./intake-templates.js";
 import { startCoordinationRefresh } from "./coordination-refresh.js";
 import { subscribeUpdate, updateReady, applyUpdate } from "./updates.js";
 import { downloadClientWorkOrder } from "./client-work-order.js";
@@ -18,7 +21,7 @@ import {
 } from "./coordination-drafts.js";
 import {
   CLIENT_FIELDS,
-  MATERIAL_FIELDS,
+  isMaterialField,
   REQUIRED_FIELDS,
   readiness,
   CREDIT_UNIT,
@@ -93,6 +96,8 @@ export default function CoordinationPortal({
     [jobs, setJobs] = useState([]),
     [pending, setPending] = useState([]),
     [archives, setArchives] = useState([]);
+  const [templates, setTemplates] = useState([]),
+    [selectedTemplate, setSelectedTemplate] = useState("");
   const [selected, setSelected] = useState(() =>
       typeof window === "undefined"
         ? null
@@ -128,6 +133,8 @@ export default function CoordinationPortal({
       setJobs([]);
       setPending([]);
       setArchives([]);
+      setTemplates([]);
+      setSelectedTemplate("");
       setMail(null);
       setCapacity(null);
       setRefreshStatus(null);
@@ -145,7 +152,7 @@ export default function CoordinationPortal({
               : "core_required",
       );
     } else if (!e.status && !status && !verified) setAccess("offline");
-    if (!client || e.status !== 401) setError(e.message);
+    if (!client || e.status !== 401 || e.projectMismatch) setError(e.message);
   }
   async function retryAccess() {
     setError("");
@@ -184,6 +191,17 @@ export default function CoordinationPortal({
         rememberRefresh(data);
         return data;
       }
+      const requestedJob = new URLSearchParams(window.location.search).get(
+        "job",
+      );
+      if (requestedJob && data.job.id !== requestedJob) {
+        const wrongProject = new Error(
+          "Verify your email for this project. Your existing session belongs to a different project.",
+        );
+        wrongProject.status = 401;
+        wrongProject.projectMismatch = true;
+        throw wrongProject;
+      }
       rememberRefresh(data);
       setSynthetic(Boolean(data.synthetic));
       setJobs([data.job]);
@@ -191,6 +209,9 @@ export default function CoordinationPortal({
       setBrand(data.brand);
       setActivity(data.activity || []);
       setVerified(true);
+      setVerification("");
+      if (requestRef.current?.path === "client/verify")
+        requestRef.current = null;
       setAccess("ready");
       return { jobs: [data.job] };
     } else {
@@ -211,6 +232,10 @@ export default function CoordinationPortal({
         rememberRefresh(result);
         setCapacity(result.capacity || null);
         setJobs(result.jobs);
+        setTemplates(result.templates || []);
+        setSelectedTemplate((value) =>
+          (result.templates || []).some((t) => t.id === value) ? value : "",
+        );
         setPending(result.pending);
         setArchives(result.archives || []);
         setMail(result.mail);
@@ -219,6 +244,8 @@ export default function CoordinationPortal({
       }
       refreshRef.current = null;
       setJobs([]);
+      setTemplates([]);
+      setSelectedTemplate("");
       return { jobs: [] };
     }
   }
@@ -231,6 +258,16 @@ export default function CoordinationPortal({
     return () => link.remove();
   }, [client, verified]);
   useEffect(() => {
+    let active = true;
+    const newClientLink = () => {
+      if (new URLSearchParams(window.location.hash.slice(1)).get("verify"))
+        window.location.reload();
+    };
+    if (client) window.addEventListener("hashchange", newClientLink);
+    const cleanup = () => {
+      active = false;
+      if (client) window.removeEventListener("hashchange", newClientLink);
+    };
     if (client) {
       const token = new URLSearchParams(window.location.hash.slice(1)).get(
         "verify",
@@ -243,16 +280,13 @@ export default function CoordinationPortal({
           "",
           window.location.pathname + window.location.search,
         );
-        return;
+        return cleanup;
       }
     }
-    let active = true;
     load().catch((e) => {
       if (active) reportAccessError(e);
     });
-    return () => {
-      active = false;
-    };
+    return cleanup;
   }, []);
   useEffect(() => {
     if (busy || !(client ? verified : status?.connected)) return;
@@ -270,10 +304,16 @@ export default function CoordinationPortal({
     setError("");
     setMessage("");
     requestRef.current = { path, body };
+    let verificationAcknowledged = false;
     try {
       const result = await api(path, body, status?.subject);
-      requestRef.current = null;
+      if (path === "client/verify") {
+        verificationAcknowledged = true;
+        setVerification("");
+        requestRef.current = null;
+      }
       const loaded = path !== "client/logout" ? await load() : null;
+      requestRef.current = null;
       return {
         ...result,
         latestJob:
@@ -282,6 +322,25 @@ export default function CoordinationPortal({
       };
     } catch (e) {
       reportAccessError(e);
+      if (path === "client/verify") {
+        if (
+          !verificationAcknowledged &&
+          !e.serviceUnavailable &&
+          [401, 403].includes(e.status)
+        ) {
+          setVerification("");
+          requestRef.current = null;
+          setMessage(
+            "This private link is expired or already used. Request a new private link below.",
+          );
+        } else if (
+          verificationAcknowledged &&
+          !e.serviceUnavailable &&
+          ![401, 403].includes(e.status)
+        ) {
+          setAccess("offline");
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -342,8 +401,15 @@ export default function CoordinationPortal({
       <main>
         {updateAvailable && (
           <p className="coord-notice">
-            An app update is ready. Save any edits first.{" "}
-            <button onClick={applyUpdate}>Update StreamLion</button>
+            {verification
+              ? "An app update is ready. Finish opening your private link first."
+              : "An app update is ready. Save any edits first."}{" "}
+            <button
+              disabled={busy || Boolean(verification)}
+              onClick={applyUpdate}
+            >
+              Update StreamLion
+            </button>
           </p>
         )}
         {synthetic && (
@@ -451,12 +517,9 @@ export default function CoordinationPortal({
                 <p>Continue to this project. Your link can be used once.</p>
                 <button
                   disabled={busy}
-                  onClick={async () => {
-                    const result = await perform("client/verify", {
-                      token: verification,
-                    });
-                    if (result) setVerification("");
-                  }}
+                  onClick={() =>
+                    perform("client/verify", { token: verification })
+                  }
                 >
                   Verify and open project
                 </button>
@@ -601,6 +664,33 @@ export default function CoordinationPortal({
                 ))}
               </section>
             )}
+            <IntakeTemplateSettings
+              templates={templates}
+              busy={busy}
+              recovering={pending.length > 0}
+              save={(body) =>
+                perform("provider/template", {
+                  ...body,
+                  operation: operation(),
+                })
+              }
+            />
+            <ArchiveRecoverySettings
+              busy={busy}
+              recovering={pending.length > 0}
+              capacity={capacity}
+              restore={async (body) => {
+                const result = await perform("provider/archive-restore", body);
+                if (result?.complete) {
+                  setSelected(result.jobId);
+                  setShowClosed(true);
+                  setMessage(
+                    "Archive recovery verified. The job remains archived and client access remains expired.",
+                  );
+                }
+                return result;
+              }}
+            />
             <div className="coord-layout">
               <aside>
                 <section className="coord-card">
@@ -616,6 +706,17 @@ export default function CoordinationPortal({
                         operation: operation(),
                         email,
                         title,
+                        ...(selectedTemplate
+                          ? {
+                              template: {
+                                id: selectedTemplate,
+                                version:
+                                  templates.find(
+                                    (t) => t.id === selectedTemplate,
+                                  ).revision + 1,
+                              },
+                            }
+                          : {}),
                       });
                       if (result) {
                         setSelected(result.jobId);
@@ -628,6 +729,21 @@ export default function CoordinationPortal({
                       }
                     }}
                   >
+                    <label>
+                      Service & intake
+                      <select
+                        value={selectedTemplate}
+                        disabled={busy}
+                        onChange={(e) => setSelectedTemplate(e.target.value)}
+                      >
+                        <option value="">Standard work order</option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.config.name} · version {t.revision + 1}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <label>
                       Project name
                       <input
@@ -653,7 +769,12 @@ export default function CoordinationPortal({
                   <p className="coord-small">
                     Creating a request uses no project credits.
                   </p>
-                  {selectedJob && <ProjectInvitation jobId={selectedJob.id} />}
+                  {selectedJob &&
+                    selectedJob.state !== "archived" &&
+                    (!selectedJob.archiveAt ||
+                      selectedJob.archiveAt > Date.now()) && (
+                      <ProjectInvitation jobId={selectedJob.id} />
+                    )}
                 </section>
                 <section className="coord-card">
                   <h2>Your projects</h2>
@@ -873,6 +994,12 @@ function JobPanel({
   brand,
 }) {
   const role = client ? "client" : "provider";
+  const termLabels = {
+    ...labels,
+    ...Object.fromEntries(
+      (job.intake?.questions || []).map((q) => [q.field, q.label]),
+    ),
+  };
   const fields = PROJECT_FIELDS.filter(
     (f) => !privateFields.has(f.key) && (!client || CLIENT_FIELDS.has(f.key)),
   );
@@ -913,6 +1040,12 @@ function JobPanel({
     issues = readiness(job);
   const canEdit = !closed && job.state !== "activation_pending";
   useEffect(() => {
+    // Initial state already uses this revision. Its passive effect must not
+    // replace wording entered immediately after the first form commit.
+    if (job.revision === draftRevision) {
+      setAuthorized(false);
+      return;
+    }
     const normalized = Object.fromEntries(
       Object.entries(draft).map(([k, v]) => [
         k,
@@ -956,7 +1089,7 @@ function JobPanel({
       .map((f) => [f.key, draft[f.key] || ""]),
   );
   const needsProposal = Boolean(
-    job.accepted && Object.keys(changed).some((k) => MATERIAL_FIELDS.has(k)),
+    job.accepted && Object.keys(changed).some((k) => isMaterialField(job, k)),
   );
   async function save(e) {
     e.preventDefault();
@@ -973,15 +1106,45 @@ function JobPanel({
       }
     }
   }
-  const fieldNodes = fields
+  const activeQuestions = activeIntakeQuestions(job, draft);
+  const questionFields = new Set(
+    (job.intake?.questions || []).map((q) => q.field),
+  );
+  const visibleFields = fields.filter(
+    (f) =>
+      !questionFields.has(f.key) ||
+      activeQuestions.some((q) => q.field === f.key),
+  );
+  const fieldNodes = visibleFields
     .filter((f) => f.group === group)
     .map((f) => (
       <label key={f.key}>
-        {f.label}
-        {REQUIRED_FIELDS.includes(f.key) && (
+        {activeQuestions.find((q) => q.field === f.key)?.label || f.label}
+        {(REQUIRED_FIELDS.includes(f.key) ||
+          activeQuestions.some((q) => q.field === f.key && q.required)) && (
           <span className="coord-required"> · required</span>
         )}
-        {f.type === "textarea" ? (
+        {activeQuestions.find((q) => q.field === f.key)?.help && (
+          <span className="coord-field-help">
+            {activeQuestions.find((q) => q.field === f.key).help}
+          </span>
+        )}
+        {activeQuestions.find((q) => q.field === f.key)?.options?.length ? (
+          <select
+            value={draft[f.key] || ""}
+            disabled={!canEdit || busy}
+            onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+          >
+            <option value="">Not known yet</option>
+            {activeQuestions
+              .find((q) => q.field === f.key)
+              .options.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+          </select>
+        ) : f.type === "textarea" ? (
           <textarea
             rows={3}
             value={draft[f.key] || ""}
@@ -1018,7 +1181,7 @@ function JobPanel({
       </label>
     ));
   return (
-    <section className="coord-card coord-detail">
+    <section className="coord-card coord-detail" aria-label="Work order">
       {newer && (
         <p className="coord-alert">
           A newer brief arrived. Your unsaved wording is preserved. Review the
@@ -1042,10 +1205,18 @@ function JobPanel({
           Version {job.revision} · updated {date(job.updatedAt)}
         </span>
       </div>
+      {job.reopenReason && (
+        <p className="coord-notice">
+          Provider reopened for correction {date(job.reopenedAt)}:{" "}
+          {job.reopenReason}
+        </p>
+      )}
       {closed && (
         <p className="coord-notice">
-          Client access ends {date(job.archiveAt)}. The provider keeps the
-          project record.
+          {job.archiveAt <= Date.now()
+            ? "Client access has ended"
+            : "Client access ends " + date(job.archiveAt)}
+          . The provider keeps the project record.
         </p>
       )}
       <nav className="coord-tabs" aria-label="Project sections">
@@ -1078,6 +1249,19 @@ function JobPanel({
               </strong>
             </div>
           </div>
+          {job.intake && (
+            <section className="coord-notice" aria-label="Service intake">
+              <h3>
+                {job.intake.name} · intake version {job.intake.version}
+              </h3>
+              <p>{job.intake.description}</p>
+              <p className="coord-small">
+                Leave an answer blank if it is not known yet. Missing required
+                answers stay on the action list and must be resolved before
+                agreement.
+              </p>
+            </section>
+          )}
           <form onSubmit={save}>
             <div
               className="coord-groups"
@@ -1085,7 +1269,7 @@ function JobPanel({
               aria-label="Brief fields"
             >
               {groups
-                .filter((g) => fields.some((f) => f.group === g))
+                .filter((g) => visibleFields.some((f) => f.group === g))
                 .map((g) => (
                   <button
                     type="button"
@@ -1148,14 +1332,31 @@ function JobPanel({
               "deliveryDeadline",
               "startLocal",
               "timeZone",
+              "offeredFee",
               "agreedFee",
               "currency",
               "paymentTerms",
+              ...(job.intake?.questions || [])
+                .map((q) => q.field)
+                .filter(
+                  (k) =>
+                    ![
+                      "scope",
+                      "exclusions",
+                      "deliverables",
+                      "deliveryDeadline",
+                      "startLocal",
+                      "timeZone",
+                      "agreedFee",
+                      "currency",
+                      "paymentTerms",
+                    ].includes(k),
+                ),
             ]
               .filter((k) => job.fields[k])
               .map((k) => (
                 <React.Fragment key={k}>
-                  <dt>{labels[k]}</dt>
+                  <dt>{termLabels[k]}</dt>
                   <dd>{(job.accepted || job.fields)[k]}</dd>
                 </React.Fragment>
               ))}
@@ -1176,7 +1377,7 @@ function JobPanel({
                   )
                   .map((k) => (
                     <React.Fragment key={k}>
-                      <dt>{labels[k]}</dt>
+                      <dt>{termLabels[k]}</dt>
                       <dd>{job.proposal.fields[k] || "Removed"}</dd>
                     </React.Fragment>
                   ))}
@@ -1289,7 +1490,7 @@ function JobPanel({
           {issues
             .filter((i) => i.kind === "missing")
             .map((i) => (
-              <p key={i.field}>{labels[i.field]} is required.</p>
+              <p key={i.field}>{i.label || labels[i.field]} is required.</p>
             ))}
           {job.questions.map((q) => (
             <div className="coord-thread" key={q.id}>
@@ -1557,7 +1758,7 @@ function JobPanel({
                     Cancel job
                   </button>
                 )}
-                {closed && job.state !== "archived" && (
+                {closed && (
                   <button
                     disabled={busy || !reason.trim()}
                     onClick={() => command(job, "reopen", { reason })}
@@ -1577,15 +1778,30 @@ function JobPanel({
                     Extend client access 90 days
                   </button>
                 )}
-                {job.state === "archived" && (
+                {closed && job.state !== "archived" && (
                   <button
-                    disabled={busy}
-                    onClick={() => command(job, "restore")}
+                    disabled={busy || !reason.trim()}
+                    onClick={() => command(job, "archive_early", { reason })}
                   >
-                    Restore provider view
+                    Archive now · end client access
                   </button>
                 )}
+                {job.state === "archived" && (
+                  <p>
+                    This archived history is available to the provider. To
+                    resume corrections, enter a reason and reopen the job; send
+                    a fresh client sign-in link when ready.
+                  </p>
+                )}
               </div>
+              {closed && job.state !== "archived" && (
+                <p>
+                  Archiving now ends client access immediately, retains the
+                  original records and files, and verifies an archive in your
+                  private Drive folder. Record a reason before choosing this
+                  action.
+                </p>
+              )}
               {invite && !closed && (
                 <button disabled={busy || !inviteAvailable} onClick={invite}>
                   Send a fresh client sign-in link

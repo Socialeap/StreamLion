@@ -34,6 +34,7 @@ import {
   beginRead,
   finishRead,
 } from "./coordination-runtime.js";
+import { selectedIntakeTemplate } from "../src/intake-templates.js";
 const COOKIE = "__Host-streamlion-client";
 const random = () =>
   btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
@@ -734,8 +735,15 @@ export async function handleCoordination({ request, env, params = {} }) {
       if (read.unchanged)
         return json({ unchanged: true, refresh: read.refresh });
       const snapshot = await engine.google.snapshot();
+      const enrolled = await env.GOOGLE_SESSIONS.prepare(
+        "SELECT id FROM streamlion_coordination_jobs_v1 WHERE connection_id=?",
+      )
+        .bind(connection.id)
+        .all();
+      const enrolledIDs = new Set(enrolled.results.map((r) => r.id));
       const view = {
-        jobs: [...snapshot.heads.values()],
+        jobs: [...snapshot.heads.values()].filter((j) => enrolledIDs.has(j.id)),
+        templates: [...(snapshot.templates?.values() || [])],
         activity: activityFor(snapshot),
         archives: snapshot.rows[3]
           .slice(1)
@@ -757,6 +765,17 @@ export async function handleCoordination({ request, env, params = {} }) {
         capacity,
       });
     }
+    if (route === "provider/template" && request.method === "POST") {
+      return json(
+        await engine.saveTemplate(body.operation, {
+          id: body.templateId,
+          expectedVersion: body.expectedVersion,
+          config: body.config,
+        }),
+      );
+    }
+    if (route === "provider/archive-restore" && request.method === "POST")
+      return json(await engine.restoreArchive(body.operation, body.fileId));
     if (route === "provider/create" && request.method === "POST") {
       // Do not create a project/challenge that its client cannot verify.
       await requireInvitationDelivery(env);
@@ -780,6 +799,13 @@ export async function handleCoordination({ request, env, params = {} }) {
         clientEmail: email,
         title: body.title || "",
         now,
+        intakeTemplate: body.template
+          ? selectedIntakeTemplate(
+              await engine.google.snapshot(),
+              body.template,
+              connection.google_subject,
+            )
+          : null,
       });
       const active = await env.GOOGLE_SESSIONS.prepare(
         "SELECT COUNT(*) AS count FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL",
