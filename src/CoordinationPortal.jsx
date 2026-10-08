@@ -8,6 +8,14 @@ import { PROJECT_FIELDS } from "./project-schema.js";
 import NotificationSettings from "./NotificationSettings.jsx";
 import { startCoordinationRefresh } from "./coordination-refresh.js";
 import { subscribeUpdate, updateReady, applyUpdate } from "./updates.js";
+import { downloadClientWorkOrder } from "./client-work-order.js";
+import {
+  coordinationDraftKey,
+  readCoordinationDraft,
+  writeCoordinationDraft,
+  clearCoordinationDraft,
+  clearCoordinationDrafts,
+} from "./coordination-drafts.js";
 import {
   CLIENT_FIELDS,
   MATERIAL_FIELDS,
@@ -72,6 +80,7 @@ export async function coordinationAPI(path, body, subject) {
   if (!response.ok) {
     const error = new Error(data.error || "Please try again.");
     error.status = response.status;
+    error.serviceUnavailable = data.enabled === false;
     throw error;
   }
   return data;
@@ -99,6 +108,7 @@ export default function CoordinationPortal({
   const [verified, setVerified] = useState(false),
     [showClosed, setShowClosed] = useState(false),
     [verification, setVerification] = useState("");
+  const [access, setAccess] = useState("loading");
   const requestRef = useRef(null);
   const [synthetic, setSynthetic] = useState(false);
   const [mail, setMail] = useState(null);
@@ -112,6 +122,40 @@ export default function CoordinationPortal({
     typeof window === "undefined"
       ? ""
       : new URLSearchParams(window.location.search).get("job") || "";
+  function reportAccessError(e) {
+    if (e.serviceUnavailable || [401, 403].includes(e.status)) {
+      setStatus(null);
+      setJobs([]);
+      setPending([]);
+      setArchives([]);
+      setMail(null);
+      setCapacity(null);
+      setRefreshStatus(null);
+      setBrand("");
+      setActivity([]);
+      setVerified(false);
+      refreshRef.current = null;
+      setAccess(
+        e.serviceUnavailable
+          ? "unavailable"
+          : client
+            ? "verification"
+            : e.status === 401
+              ? "sign_in"
+              : "core_required",
+      );
+    } else if (!e.status && !status && !verified) setAccess("offline");
+    if (!client || e.status !== 401) setError(e.message);
+  }
+  async function retryAccess() {
+    setError("");
+    setAccess("loading");
+    try {
+      await load();
+    } catch (e) {
+      reportAccessError(e);
+    }
+  }
   async function load({ conditional = false } = {}) {
     while (loadRef.current) {
       if (conditional) return loadRef.current;
@@ -147,6 +191,7 @@ export default function CoordinationPortal({
       setBrand(data.brand);
       setActivity(data.activity || []);
       setVerified(true);
+      setAccess("ready");
       return { jobs: [data.job] };
     } else {
       let result;
@@ -160,6 +205,7 @@ export default function CoordinationPortal({
       const data = await api("provider/status");
       setSynthetic(Boolean(data.synthetic));
       setStatus(data);
+      setAccess("ready");
       if (data.connected) {
         result ||= await api("provider/jobs");
         rememberRefresh(result);
@@ -191,6 +237,7 @@ export default function CoordinationPortal({
       );
       if (token) {
         setVerification(token);
+        setAccess("verification");
         window.history.replaceState(
           null,
           "",
@@ -201,7 +248,7 @@ export default function CoordinationPortal({
     }
     let active = true;
     load().catch((e) => {
-      if (active && (!client || e.status !== 401)) setError(e.message);
+      if (active) reportAccessError(e);
     });
     return () => {
       active = false;
@@ -213,14 +260,7 @@ export default function CoordinationPortal({
       refresh: load,
       pollMs: () => refreshRef.current?.pollAfterMs || 15000,
       onError: (e) => {
-        setError(e.message);
-        if ([401, 403].includes(e.status)) {
-          setJobs([]);
-          setActivity([]);
-          if (client) setVerified(false);
-          else setStatus(null);
-          refreshRef.current = null;
-        }
+        reportAccessError(e);
       },
     });
   }, [client, verified, status?.connected, busy]);
@@ -241,7 +281,7 @@ export default function CoordinationPortal({
           (client ? loaded?.jobs?.[0] : null),
       };
     } catch (e) {
-      setError(e.message);
+      reportAccessError(e);
     } finally {
       setBusy(false);
     }
@@ -269,9 +309,30 @@ export default function CoordinationPortal({
         {client && verified && (
           <button
             onClick={async () => {
-              await perform("client/logout", {});
+              const result = await perform("client/logout", {});
+              if (!result) return;
+              let draftsCleared = true;
+              try {
+                clearCoordinationDrafts(
+                  "client",
+                  "client",
+                  window.localStorage,
+                );
+              } catch {
+                draftsCleared = false;
+              }
               setVerified(false);
               setJobs([]);
+              setActivity([]);
+              setRefreshStatus(null);
+              refreshRef.current = null;
+              setBrand("");
+              setAccess("verification");
+              setMessage(
+                draftsCleared
+                  ? "Signed out. Client drafts were removed from this browser."
+                  : "Signed out. This browser could not clear client drafts. Clear StreamLion site data before sharing this device.",
+              );
             }}
           >
             Sign out
@@ -298,8 +359,9 @@ export default function CoordinationPortal({
         )}
         {!client && status?.delivery?.email === false && (
           <p className="coord-notice" role="status">
-            Email delivery is paused. Existing verified projects remain
-            available; new invitations must wait.
+            {status.delivery.retryAt
+              ? `Email send limit reached. New invitations can resume after ${date(status.delivery.retryAt)}. Existing verified projects remain available.`
+              : "Email delivery is paused. Existing verified projects remain available; new invitations must wait."}
           </p>
         )}
         {!client && capacity?.capacityWarning && (
@@ -381,7 +443,7 @@ export default function CoordinationPortal({
             </button>
           </div>
         )}
-        {client && !verified && (
+        {client && !verified && access === "verification" && (
           <section className="coord-card coord-signin">
             {verification ? (
               <>
@@ -443,18 +505,12 @@ export default function CoordinationPortal({
             )}
           </section>
         )}
-        {!client && !status && !error && (
-          <p role="status">Loading your provider workspace…</p>
-        )}
-        {!client && !status && error && (
-          <section className="coord-card">
-            <h2>Provider access</h2>
-            <p>
-              This workflow requires StreamLion Core and an activated client
-              coordination service.
-            </p>
-            <a href="/api/google/start">Sign in with Google</a>
-          </section>
+        {access !== "ready" && !(client && access === "verification") && (
+          <CoordinationAccess
+            access={access}
+            client={client}
+            retry={retryAccess}
+          />
         )}
         {!client && status && !status.connected && (
           <section className="coord-card">
@@ -502,6 +558,10 @@ export default function CoordinationPortal({
         )}
         {!client && status?.connected && (
           <>
+            <details className="coord-card coord-guide">
+              <summary>How client requests work</summary>
+              <RequestGuide />
+            </details>
             {mail?.stalled > 0 && (
               <p className="coord-alert">
                 {mail.stalled} notification(s) need review. Keep the client’s
@@ -545,6 +605,10 @@ export default function CoordinationPortal({
               <aside>
                 <section className="coord-card">
                   <h2>Invite a client</h2>
+                  <p>
+                    Name the project and enter your client’s email. They receive
+                    a private link to complete the work order in their browser.
+                  </p>
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault();
@@ -589,6 +653,7 @@ export default function CoordinationPortal({
                   <p className="coord-small">
                     Creating a request uses no project credits.
                   </p>
+                  {selectedJob && <ProjectInvitation jobId={selectedJob.id} />}
                 </section>
                 <section className="coord-card">
                   <h2>Your projects</h2>
@@ -641,6 +706,7 @@ export default function CoordinationPortal({
                     invite={() =>
                       perform("provider/invite", { jobId: selectedJob.id })
                     }
+                    inviteAvailable={status.delivery?.email !== false}
                     price={status.projectMicros}
                   />
                 ) : (
@@ -672,6 +738,7 @@ export default function CoordinationPortal({
             key={selectedJob.id}
             job={selectedJob}
             activity={activity.filter((e) => e.jobId === selectedJob.id)}
+            brand={brand}
             client
             busy={busy}
             command={command}
@@ -680,7 +747,115 @@ export default function CoordinationPortal({
             }
           />
         )}
+        <footer className="coord-footer">
+          <a href="/api/privacy">Privacy</a>
+          <a href="/api/terms">Terms</a>
+          <a href="mailto:info@transcendencemedia.com">Support</a>
+        </footer>
       </main>
+    </div>
+  );
+}
+function RequestGuide() {
+  return (
+    <ol className="coord-request-guide">
+      <li>
+        <strong>Invite your client.</strong> Create a named request and share
+        its private project link.
+      </li>
+      <li>
+        <strong>Build the work order.</strong> Your client verifies their email,
+        adds site details, scope, access instructions and reference files.
+      </li>
+      <li>
+        <strong>Agree before starting.</strong> Review missing details, clarify
+        the brief and approve the scope together. The displayed job charge
+        applies after both sides approve.
+      </li>
+      <li>
+        <strong>Work, deliver and close.</strong> Follow changes and
+        acknowledgments, record progress, share delivery and retain the record
+        in your Google workspace.
+      </li>
+    </ol>
+  );
+}
+function CoordinationAccess({ access, client, retry }) {
+  if (access === "loading")
+    return <p role="status">Checking client coordination…</p>;
+  const unavailable = access === "unavailable";
+  return (
+    <section className="coord-card coord-guide">
+      <h2>
+        {unavailable
+          ? "Client coordination is unavailable"
+          : access === "offline"
+            ? "We couldn’t check your access"
+            : access === "core_required"
+              ? "StreamLion Core is required"
+              : "Sign in to manage client requests"}
+      </h2>
+      <p>
+        {unavailable
+          ? "Invitations and client updates are paused. Signing in with Google does not activate this service. You can continue using your field workspace."
+          : access === "offline"
+            ? "Check your connection and try again. Your existing work is preserved."
+            : access === "core_required"
+              ? "Use the Google account that purchased Core, or restore your purchase before setting up client coordination."
+              : "Use your purchased Core account, choose your Google workbook and private Drive folder, then enable the client workspace."}
+      </p>
+      {(unavailable || access === "offline") && (
+        <button onClick={retry}>Check availability again</button>
+      )}
+      {access === "sign_in" && (
+        <a href="/api/google/start?returnTo=%2Fapi%2Fclient-requests">
+          Sign in with Google
+        </a>
+      )}
+      {access === "core_required" && (
+        <a href="/api/purchase">Purchase or restore Core</a>
+      )}
+      {!client && (
+        <>
+          <h3>From invitation to completed work</h3>
+          <RequestGuide />
+          <a href="/">Open field workspace</a>
+        </>
+      )}
+    </section>
+  );
+}
+function ProjectInvitation({ jobId }) {
+  const [notice, setNotice] = useState("");
+  const url = new URL("/api/client-portal", window.location.origin);
+  url.searchParams.set("job", jobId);
+  useEffect(() => setNotice(""), [jobId]);
+  return (
+    <div className="coord-project-link">
+      <label>
+        Private project link
+        <input readOnly value={url.href} onFocus={(e) => e.target.select()} />
+      </label>
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(url.href);
+            setNotice("Project link copied.");
+          } catch {
+            setNotice(
+              "Select the project link above and copy it. Your client must verify their invited email.",
+            );
+          }
+        }}
+      >
+        Copy client link
+      </button>
+      <p className="coord-small">
+        Only the invited client can open the work order after verifying their
+        email.
+      </p>
+      {notice && <p role="status">{notice}</p>}
     </div>
   );
 }
@@ -692,23 +867,51 @@ function JobPanel({
   command,
   upload,
   invite,
+  inviteAvailable = true,
   price,
   archive,
+  brand,
 }) {
+  const role = client ? "client" : "provider";
+  const fields = PROJECT_FIELDS.filter(
+    (f) => !privateFields.has(f.key) && (!client || CLIENT_FIELDS.has(f.key)),
+  );
+  const draftKey = coordinationDraftKey(
+    role,
+    client ? "client" : job.provider,
+    job.id,
+  );
+  const [restored] = useState(() => {
+    try {
+      return readCoordinationDraft(
+        draftKey,
+        job,
+        fields.map((f) => f.key),
+        window.localStorage,
+      );
+    } catch {
+      return null;
+    }
+  });
   const [tab, setTab] = useState("Brief"),
     [group, setGroup] = useState("Scope"),
-    [draft, setDraft] = useState(job.fields),
+    [draft, setDraft] = useState(restored?.fields || job.fields),
     [text, setText] = useState(""),
     [reason, setReason] = useState("");
   const [authorized, setAuthorized] = useState(false),
     [fileError, setFileError] = useState("");
-  const [baseFields, setBaseFields] = useState(job.fields),
-    [draftRevision, setDraftRevision] = useState(job.revision),
+  const [baseFields, setBaseFields] = useState(
+      restored?.baseFields || job.fields,
+    ),
+    [draftRevision, setDraftRevision] = useState(
+      restored?.revision ?? job.revision,
+    ),
     [newer, setNewer] = useState(false);
+  const [draftStorageError, setDraftStorageError] = useState(false);
+  const [downloadNotice, setDownloadNotice] = useState("");
   const closed = Boolean(job.closedAt),
     issues = readiness(job);
   const canEdit = !closed && job.state !== "activation_pending";
-  const role = client ? "client" : "provider";
   useEffect(() => {
     const normalized = Object.fromEntries(
       Object.entries(draft).map(([k, v]) => [
@@ -724,12 +927,29 @@ function JobPanel({
       setBaseFields(job.fields);
       setDraftRevision(job.revision);
       setNewer(false);
-    } else setNewer(true);
+    } else setNewer(job.revision !== draftRevision);
     setAuthorized(false);
   }, [job.revision]);
-  const fields = PROJECT_FIELDS.filter(
-    (f) => !privateFields.has(f.key) && (!client || CLIENT_FIELDS.has(f.key)),
-  );
+  const dirty = stableJSON(draft) !== stableJSON(baseFields);
+  useEffect(() => {
+    try {
+      if (!dirty || closed)
+        clearCoordinationDraft(draftKey, window.localStorage);
+      else
+        writeCoordinationDraft(
+          draftKey,
+          job,
+          fields.map((f) => f.key),
+          draft,
+          baseFields,
+          draftRevision,
+          window.localStorage,
+        );
+      setDraftStorageError(false);
+    } catch {
+      setDraftStorageError(true);
+    }
+  }, [draftKey, draft, baseFields, draftRevision, closed]);
   const changed = Object.fromEntries(
     fields
       .filter((f) => draft[f.key] !== baseFields[f.key])
@@ -878,6 +1098,17 @@ function JobPanel({
                 ))}
             </div>
             <div className="coord-fields">{fieldNodes}</div>
+            <p role="status" className="coord-draft-status">
+              {busy
+                ? "Saving — waiting for verified readback…"
+                : dirty
+                  ? closed
+                    ? "This work order is closed. Unsaved wording remains in this page only."
+                    : draftStorageError
+                      ? "Unsaved changes. Device storage is unavailable; keep this page open until you save."
+                      : "Draft saved on this device. Save current information to share it with the other party."
+                  : "Current information is saved in the shared work order."}
+            </p>
             {canEdit && (
               <button disabled={busy || !Object.keys(changed).length}>
                 {needsProposal
@@ -1228,6 +1459,27 @@ function JobPanel({
         <>
           <h2>Project status</h2>
           <p>{states[job.state]}</p>
+          {client && (
+            <div className="coord-notice">
+              <button
+                onClick={() => {
+                  try {
+                    downloadClientWorkOrder(job, { brand });
+                    setDownloadNotice(
+                      "Work order download started. Check Downloads or your file manager; shared attachments are downloaded separately from Files.",
+                    );
+                  } catch {
+                    setDownloadNotice(
+                      "The download could not start. Keep this page open and try again.",
+                    );
+                  }
+                }}
+              >
+                Download work order
+              </button>
+              {downloadNotice && <p role="status">{downloadNotice}</p>}
+            </div>
+          )}
           <div className="coord-payment">
             <strong>Provider-reported payment</strong>
             <p>
@@ -1335,7 +1587,7 @@ function JobPanel({
                 )}
               </div>
               {invite && !closed && (
-                <button disabled={busy} onClick={invite}>
+                <button disabled={busy || !inviteAvailable} onClick={invite}>
                   Send a fresh client sign-in link
                 </button>
               )}

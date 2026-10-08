@@ -143,6 +143,105 @@ function googleFixture() {
     },
   };
 }
+test("public availability exposes only readiness and never treats the restricted pilot as public", async (t) => {
+  const { env, sql } = fixture(t);
+  const originalClock = Date.now;
+  let now = originalClock();
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = originalClock;
+  });
+  const read = () =>
+    handleCoordination({
+      request: new Request("https://app.example/api/coordination/availability"),
+      env,
+      params: { path: ["availability"] },
+    });
+  const response = await read();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("Cache-Control"), /no-store/);
+  assert.deepEqual(await response.json(), {
+    enabled: true,
+    public: false,
+    status: "pilot",
+  });
+  delete env.COORDINATION_MAILER;
+  assert.deepEqual(await (await read()).json(), {
+    enabled: true,
+    public: false,
+    status: "delivery_paused",
+  });
+  env.STREAMLION_PAYMENTS_MODE = "live";
+  env.STREAMLION_AI_CREDITS_MODE = "live";
+  sql.exec(
+    "UPDATE streamlion_coordination_policy_v1 SET active=1 WHERE mode='live'",
+  );
+  assert.deepEqual(await (await read()).json(), {
+    enabled: true,
+    public: false,
+    status: "delivery_paused",
+  });
+  Object.assign(env, {
+    ENABLE_RESEND_EMAIL: "true",
+    RESEND_API_KEY: "synthetic",
+    RESEND_FROM_EMAIL: "provider@example.com",
+    RESEND_DAILY_LIMIT: "10",
+    RESEND_MONTHLY_LIMIT: "100",
+  });
+  assert.deepEqual(await (await read()).json(), {
+    enabled: true,
+    public: true,
+    status: "available",
+  });
+  env.STREAMLION_PAYMENTS_MODE = "test";
+  env.STREAMLION_AI_CREDITS_MODE = "test";
+  sql.exec(
+    "UPDATE streamlion_coordination_policy_v1 SET active=0 WHERE mode='test'",
+  );
+  now += 30001;
+  assert.deepEqual(await (await read()).json(), {
+    enabled: false,
+    public: false,
+    status: "paused",
+  });
+});
+test("public readiness coalesces visitors but never caches a private authorization decision", async (t) => {
+  const { env, sql, db } = fixture(t);
+  let queries = 0;
+  env.GOOGLE_SESSIONS = {
+    prepare(query) {
+      queries++;
+      return db.prepare(query);
+    },
+  };
+  const read = (path = "availability") =>
+    handleCoordination({
+      request: new Request("https://app.example/api/coordination/" + path),
+      env,
+      params: { path: [path] },
+    });
+  const responses = await Promise.all(Array.from({ length: 20 }, () => read()));
+  assert.equal(queries, 4);
+  for (const response of responses)
+    assert.equal((await response.json()).status, "pilot");
+  sql.exec(
+    "UPDATE streamlion_coordination_policy_v1 SET active=0 WHERE mode='test'",
+  );
+  assert.equal((await (await read()).json()).status, "pilot");
+  assert.equal((await read("provider/status")).status, 503);
+  env.GOOGLE_SESSIONS = {
+    prepare: () => ({
+      first: async () => {
+        throw new Error("unavailable");
+      },
+    }),
+  };
+  assert.deepEqual(await (await read()).json(), {
+    enabled: false,
+    public: false,
+    status: "paused",
+  });
+});
 async function authorizedClient(f, jobId = "job-a") {
   const token = "x".repeat(43),
     now = Date.now();
@@ -553,6 +652,60 @@ test("provider conditional reads remain account-scoped and email outage blocks c
       .get().n,
     0,
   );
+  Object.assign(f.env, {
+    ENABLE_RESEND_EMAIL: "true",
+    RESEND_API_KEY: "synthetic",
+    RESEND_FROM_EMAIL: "projects@example.com",
+    RESEND_DAILY_LIMIT: "20",
+    RESEND_MONTHLY_LIMIT: "500",
+    RESEND_TEST_RECIPIENTS: "client@example.com",
+  });
+  f.sql
+    .prepare("INSERT INTO streamlion_coordination_email_budget_v1 VALUES(?,20)")
+    .run(Math.floor(now / 86400000));
+  const quotaStatus = await (await call("provider/status")).json();
+  assert.equal(quotaStatus.delivery.reason, "daily_limit");
+  assert.equal(quotaStatus.delivery.email, false);
+  for (const [route, body] of [
+    [
+      "provider/create",
+      {
+        operation: "quota-blocked",
+        email: "client@example.com",
+        title: "Office",
+      },
+    ],
+    ["client/request", { jobId: "unknown", email: "client@example.com" }],
+  ]) {
+    const blocked = await call(route, body);
+    assert.equal(blocked.status, 503);
+    assert.match((await blocked.json()).error, /paused until/);
+  }
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_coordination_challenges_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_coordination_jobs_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT SUM(attempts) n FROM streamlion_coordination_email_budget_v1",
+      )
+      .get().n,
+    20,
+  );
+  assert.deepEqual(await (await call("availability")).json(), {
+    enabled: true,
+    public: false,
+    status: "delivery_paused",
+  });
   f.sql.exec("UPDATE streamlion_google_sessions_v1 SET google_subject='b'");
   assert.equal((await call("provider/jobs", null, query)).status, 409);
   assert.equal(reads, 1);

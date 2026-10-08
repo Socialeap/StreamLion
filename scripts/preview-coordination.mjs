@@ -54,7 +54,9 @@ const handler = async (req, res, next) => {
   const path = url.pathname.slice("/api/coordination/".length);
   try {
     let result;
-    if (path.endsWith("/notifications"))
+    if (path === "availability")
+      result = { enabled: true, public: false, status: "pilot" };
+    else if (path.endsWith("/notifications"))
       result = { enabled: false, devices: [] };
     else if (path === "provider/status")
       result = {

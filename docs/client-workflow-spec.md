@@ -10,17 +10,17 @@ This specification authorizes planning, not production activation. It introduces
 
 ## 1. Product decisions and commercial defaults
 
-| Subject          | Specification                                                                                                                                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Client interface | StreamLion's own responsive web interface. Jotform 262396366448167 is a reference for questions and flow only; no Jotform runtime, account, connector, or submission dependency.                                 |
-| Primary audience | Independent spatial-capture providers and their direct clients, including one-time clients. Agency dispatch and organization roles are a later increment.                                                        |
-| Ownership        | Google Sheets/Drive remain authoritative for project information, agreements, evidence, and archives. Cloudflare holds authorization, operational metadata, recoverable operations, and credit accounting.       |
-| Core purchase    | Preserve the documented $39.95 one-time Core offer and existing launch offer. Included app improvements remain distinct from optional hosted coordination usage.                                                 |
-| Client price     | Free. The provider pays for coordination; the client never needs a credit wallet or model subscription.                                                                                                          |
-| Project charge   | Pilot default: 240 existing credits, equivalent to $3, once per activated work order. A $2 alternative is 160 credits. No percentage commission or fee per edit, visit, acknowledgment, or status check.         |
-| Starter grant    | 600 non-expiring promotional credits once per eligible purchased provider account, usable for provider AI assistance or coordination. Existing experimental AI-pilot grants remain separate.                     |
-| Included service | Ordinary intake, clarification, approval, revisions, status, handover, closure, and 90 days of read-only client access after closure. AI answers continue to use their separately quoted credit charge.          |
-| Archival         | At closure plus 90 days, end client portal access and complete a verified provider-owned archive, unless a provider-approved extension or unresolved-work hold applies. Reminder at 14 days before the deadline. |
+| Subject          | Specification                                                                                                                                                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client interface | StreamLion's own responsive web interface. Jotform 232567126292155 (StreamLion for TM) is the work-order reference for questions and flow only; no Jotform runtime, account, connector, or submission dependency. |
+| Primary audience | Independent spatial-capture providers and their direct clients, including one-time clients. Agency dispatch and organization roles are a later increment.                                                         |
+| Ownership        | Google Sheets/Drive remain authoritative for project information, agreements, evidence, and archives. Cloudflare holds authorization, operational metadata, recoverable operations, and credit accounting.        |
+| Core purchase    | Preserve the documented $39.95 one-time Core offer and existing launch offer. Included app improvements remain distinct from optional hosted coordination usage.                                                  |
+| Client price     | Free. The provider pays for coordination; the client never needs a credit wallet or model subscription.                                                                                                           |
+| Project charge   | Pilot default: 240 existing credits, equivalent to $3, once per activated work order. A $2 alternative is 160 credits. No percentage commission or fee per edit, visit, acknowledgment, or status check.          |
+| Starter grant    | 600 non-expiring promotional credits once per eligible purchased provider account, usable for provider AI assistance or coordination. Existing experimental AI-pilot grants remain separate.                      |
+| Included service | Ordinary intake, clarification, approval, revisions, status, handover, closure, and 90 days of read-only client access after closure. AI answers continue to use their separately quoted credit charge.           |
+| Archival         | At closure plus 90 days, end client portal access and complete a verified provider-owned archive, unless a provider-approved extension or unresolved-work hold applies. Reminder at 14 days before the deadline.  |
 
 Amounts are the development defaults carried forward from the discussion, not live catalog changes. Final commercial terms, cancellation treatment, and activation need owner approval. Credit purchasing value is not the company's cost to serve a project.
 

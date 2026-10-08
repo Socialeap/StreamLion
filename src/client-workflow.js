@@ -30,6 +30,12 @@ export const CLIENT_FIELDS = new Set([
   "proposedTimes",
   "reference1Name",
   "reference1Url",
+  "reference2Name",
+  "reference2Url",
+  "document1Name",
+  "document1Url",
+  "document2Name",
+  "document2Url",
   "otherDocuments",
 ]);
 export const MATERIAL_FIELDS = new Set([
