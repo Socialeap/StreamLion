@@ -214,12 +214,18 @@ export const PROJECT_FIELDS = [
 ];
 export const GROUPS = [...new Set(PROJECT_FIELDS.map((f) => f.group))];
 export const FIELD_KEYS = PROJECT_FIELDS.map((f) => f.key);
+export class ProjectFieldValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ProjectFieldValidationError";
+  }
+}
 export function validateFields(input, { requireTitle = true } = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new Error("Project fields must be an object.");
+    throw new ProjectFieldValidationError("Project fields must be an object.");
   for (const key of Object.keys(input))
     if (!FIELD_KEYS.includes(key))
-      throw new Error(`Unknown project field: ${key}`);
+      throw new ProjectFieldValidationError(`Unknown project field: ${key}`);
   const result = {};
   for (const f of PROJECT_FIELDS) {
     const raw = input[f.key] ?? "";
@@ -227,36 +233,40 @@ export function validateFields(input, { requireTitle = true } = {}) {
       typeof raw !== "string" &&
       !(typeof raw === "number" && Number.isFinite(raw))
     )
-      throw new Error(`${f.label} must be text or a finite number.`);
+      throw new ProjectFieldValidationError(
+        `${f.label} must be text or a finite number.`,
+      );
     const value = String(raw).trim();
     if (value.length > (f.type === "textarea" ? 12000 : 1000))
-      throw new Error(`${f.label} is too long.`);
+      throw new ProjectFieldValidationError(`${f.label} is too long.`);
     if (
       value &&
       (f.type === "money" || f.type === "number") &&
       !/^\d{1,9}(\.\d{1,4})?$/.test(value)
     )
-      throw new Error(
+      throw new ProjectFieldValidationError(
         `${f.label}: use a positive number without units or currency symbols.`,
       );
     if (value && f.type === "money" && !/^\d{1,9}(\.\d{1,2})?$/.test(value))
-      throw new Error(`${f.label}: use at most two decimal places.`);
+      throw new ProjectFieldValidationError(
+        `${f.label}: use at most two decimal places.`,
+      );
     if (value && f.type === "url") {
       let u;
       try {
         u = new URL(value);
       } catch {
-        throw new Error(`${f.label} is not a valid URL.`);
+        throw new ProjectFieldValidationError(`${f.label} is not a valid URL.`);
       }
       if (u.protocol !== "https:")
-        throw new Error(`${f.label} must use HTTPS.`);
+        throw new ProjectFieldValidationError(`${f.label} must use HTTPS.`);
     }
     if (
       value &&
       f.type === "email" &&
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
     )
-      throw new Error(`${f.label} is not a valid email.`);
+      throw new ProjectFieldValidationError(`${f.label} is not a valid email.`);
     if (value && ["date", "datetime-local"].includes(f.type)) {
       const pattern =
         f.type === "date"
@@ -270,37 +280,50 @@ export function validateFields(input, { requireTitle = true } = {}) {
         (f.type === "datetime-local" &&
           (+value.slice(11, 13) > 23 || +value.slice(14, 16) > 59))
       )
-        throw new Error(`${f.label} is not a valid date/time.`);
+        throw new ProjectFieldValidationError(
+          `${f.label} is not a valid date/time.`,
+        );
     }
     result[f.key] = value;
   }
-  if (requireTitle && !result.title) throw new Error("Enter a project name.");
+  if (requireTitle && !result.title)
+    throw new ProjectFieldValidationError("Enter a project name.");
   if (result.currency && !/^[A-Z]{3}$/.test(result.currency))
-    throw new Error("Use a three-letter uppercase currency code.");
+    throw new ProjectFieldValidationError(
+      "Use a three-letter uppercase currency code.",
+    );
   if (
     PROJECT_FIELDS.some((f) => f.type === "money" && result[f.key]) &&
     !result.currency
   )
-    throw new Error("Specify the currency for monetary amounts.");
+    throw new ProjectFieldValidationError(
+      "Specify the currency for monetary amounts.",
+    );
   if (result.timeZone) {
     try {
       new Intl.DateTimeFormat("en", { timeZone: result.timeZone });
     } catch {
-      throw new Error("Use a valid IANA time zone.");
+      throw new ProjectFieldValidationError("Use a valid IANA time zone.");
     }
   }
   if ((result.startLocal || result.endLocal) && !result.timeZone)
-    throw new Error("A scheduled time needs an explicit time zone.");
+    throw new ProjectFieldValidationError(
+      "A scheduled time needs an explicit time zone.",
+    );
   if (
     result.endLocal &&
     (!result.startLocal || result.endLocal < result.startLocal)
   )
-    throw new Error("Confirmed end must follow the start.");
+    throw new ProjectFieldValidationError(
+      "Confirmed end must follow the start.",
+    );
   if (
     result.appointmentStatus &&
     !["proposed", "confirmed"].includes(result.appointmentStatus)
   )
-    throw new Error("Appointment status must be proposed or confirmed.");
+    throw new ProjectFieldValidationError(
+      "Appointment status must be proposed or confirmed.",
+    );
   return result;
 }
 export function parseIntake(text) {

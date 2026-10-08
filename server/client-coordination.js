@@ -896,6 +896,10 @@ export async function handleCoordination({ request, env, params = {} }) {
           error instanceof CoordinationError
             ? error.message
             : "Coordination is temporarily unavailable. Your original operation is preserved.",
+        ...(error instanceof CoordinationError &&
+        error.code === "invalid_project_fields"
+          ? { code: error.code }
+          : {}),
       },
       error instanceof CoordinationError ? error.status : 503,
     );

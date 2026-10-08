@@ -83,6 +83,7 @@ export async function coordinationAPI(path, body, subject) {
   if (!response.ok) {
     const error = new Error(data.error || "Please try again.");
     error.status = response.status;
+    error.code = data.code;
     error.serviceUnavailable = data.enabled === false;
     throw error;
   }
@@ -304,9 +305,11 @@ export default function CoordinationPortal({
     setError("");
     setMessage("");
     requestRef.current = { path, body };
-    let verificationAcknowledged = false;
+    let verificationAcknowledged = false,
+      writeAcknowledged = false;
     try {
       const result = await api(path, body, status?.subject);
+      writeAcknowledged = true;
       if (path === "client/verify") {
         verificationAcknowledged = true;
         setVerification("");
@@ -321,6 +324,12 @@ export default function CoordinationPortal({
           (client ? loaded?.jobs?.[0] : null),
       };
     } catch (e) {
+      if (
+        !writeAcknowledged &&
+        e.status === 400 &&
+        e.code === "invalid_project_fields"
+      )
+        requestRef.current = null;
       reportAccessError(e);
       if (path === "client/verify") {
         if (
