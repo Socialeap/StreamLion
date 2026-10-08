@@ -9,6 +9,16 @@ import {
 import { folderAdapter } from "./drive-folders.js";
 import { fetchRead } from "./network.js";
 const SCOPE = "https://www.googleapis.com/auth/drive.file";
+const COORDINATED_SAVE_GUIDANCE = new Map([
+  [
+    "This coordinated job is not open for field work.",
+    "This client job is closed or not yet accepted. Review it in Client requests before retrying this field record. Your draft is kept.",
+  ],
+  [
+    "Edit this coordinated project's brief and payment status in Client requests.",
+    "Update this client's brief and payment status in Client requests. Your project draft is kept on this device.",
+  ],
+]);
 let token = "",
   expiresAt = 0,
   session = 0;
@@ -326,7 +336,19 @@ async function request(path, options = {}) {
     disconnectGoogle();
     throw new Error("Google session expired. Reconnect.");
   }
-  if (!response.ok)
+  if (!response.ok) {
+    if (
+      persistentSession &&
+      response.status === 409 &&
+      options.method === "POST" &&
+      path.includes(":append?")
+    ) {
+      const failure = await response.json().catch(() => null);
+      if (generation !== session)
+        throw new Error("Google account changed during this request.");
+      const guidance = COORDINATED_SAVE_GUIDANCE.get(failure?.error);
+      if (guidance) throw new Error(guidance);
+    }
     throw new Error(
       response.status === 403
         ? "Google denied workbook access. Select the workbook through the Google picker or check permissions."
@@ -334,6 +356,7 @@ async function request(path, options = {}) {
           ? "Google is busy. Your draft is kept. Wait a moment, then retry."
           : `Google request failed (${response.status}). Refresh before retrying a save.`,
     );
+  }
   return response.json();
 }
 export async function pickWorkbook({ apiKey, appId }, folder = false) {

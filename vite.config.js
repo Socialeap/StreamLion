@@ -81,6 +81,11 @@ export default defineConfig({
           "coordination/index.html",
           "api/client-portal.html",
           "api/client-requests.html",
+          // Public copy and consent policies must reach their current routes.
+          "api/welcome.html",
+          "api/terms.html",
+          "api/privacy.html",
+          "privacy.html",
         ],
         // Sign-in redirects and standalone policy/release pages must reach their
         // actual routes rather than receiving the offline workspace shell.
