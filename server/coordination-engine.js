@@ -194,6 +194,34 @@ export class CoordinationEngine {
       { events: [eventFor(id, job, "provider", "create")] },
     );
   }
+  async submitPublicRequest(id, job) {
+    if (
+      !operationID(id) ||
+      job.source !== "public-form" ||
+      job.state !== "submitted" ||
+      job.provider !== this.connection.google_subject ||
+      job.accepted ||
+      job.providerApproved ||
+      job.clientApproved
+    )
+      throw new CoordinationError("Invalid public request.", 403);
+    const command = { action: "submit_public_request", job },
+      prior = await this.operation(id);
+    if (prior) {
+      if (
+        prior.actor !== "system" ||
+        prior.job_id !== job.id ||
+        prior.fingerprint !== (await hash(stableJSON(command)))
+      )
+        throw new CoordinationError("Request identity changed.", 409);
+      return this.run(id);
+    }
+    if ((await this.google.snapshot()).heads.has(job.id))
+      throw new CoordinationError("This request already exists.", 409);
+    return this.store(id, job.id, "system", command, {
+      events: [eventFor(id, job, "system", "submit_public_request")],
+    });
+  }
   async saveTemplate(id, input) {
     if (!operationID(id))
       throw new CoordinationError("Invalid operation identity.");
@@ -457,6 +485,8 @@ export class CoordinationEngine {
         409,
       );
     const plan = { events: [eventFor(id, next, actor.role, command.action)] };
+    if (command.action === "decline")
+      plan.notifyDecline = command.notify === true;
     const archiving = ["archive", "archive_early"].includes(command.action);
     plan.revokeSessions =
       archiving ||
@@ -855,6 +885,34 @@ export class CoordinationEngine {
         )
         .bind(last.jobId, this.connection.id)
         .first();
+      if (last.job.source === "public-form") {
+        if (first.action === "reopen" && !last.job.accepted)
+          await this.db
+            .prepare(
+              "UPDATE streamlion_public_submissions_v1 SET expires_at=? WHERE job_id=? AND state='complete'",
+            )
+            .bind(last.job.requestExpiresAt, last.jobId)
+            .run();
+        if (last.job.accepted)
+          await this.db
+            .prepare(
+              "UPDATE streamlion_public_submissions_v1 SET expires_at=0 WHERE job_id=? AND state='complete'",
+            )
+            .bind(last.jobId)
+            .run();
+        if (last.job.accepted || last.job.closedAt || first.action === "reopen")
+          await this.db
+            .prepare(
+              "UPDATE streamlion_coordination_sessions_v1 SET expires_at=? WHERE job_id=? AND revoked=0",
+            )
+            .bind(
+              last.job.archiveAt ||
+                (!last.job.accepted && last.job.requestExpiresAt) ||
+                Date.now() + 90 * 86400000,
+              last.jobId,
+            )
+            .run();
+      }
       if (
         row &&
         first.action !== "create" &&
@@ -867,14 +925,31 @@ export class CoordinationEngine {
           operation.actor === "system"
             ? ["client", "provider"]
             : [operation.actor === "client" ? "provider" : "client"];
-        for (const role of recipients)
+        for (const role of recipients) {
+          if (
+            role === "client" &&
+            ((first.action === "decline" && !plan.notifyDecline) ||
+              (last.job.source === "public-form" &&
+                !last.job.emailVerified &&
+                !(first.action === "decline" && plan.notifyDecline)) ||
+              !last.job.fields.requesterEmail)
+          )
+            continue;
           await queueNotice(
             this.env,
             row,
             "notice-" + id + "-" + role,
             {
-              subject: "Your StreamLion project was updated",
-              text: "The project has an update. Review the current brief, outstanding actions and status in StreamLion.",
+              subject:
+                first.action === "decline"
+                  ? "Your work-order request was declined"
+                  : "Your StreamLion project was updated",
+              text:
+                first.action === "decline"
+                  ? (last.job.declineMessage ||
+                      "The provider is unable to accept this request.") +
+                    " Your request status page remains available for 30 days."
+                  : "The project has an update. Review the current brief, outstanding actions and status in StreamLion.",
               kind:
                 ["edit", "attach"].includes(first.action) &&
                 !last.job.updates.some((u) => u.id === id || !u.acknowledged)
@@ -889,6 +964,7 @@ export class CoordinationEngine {
             },
             role,
           );
+        }
       }
     }
     await this.db

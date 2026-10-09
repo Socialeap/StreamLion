@@ -62,6 +62,8 @@ const states = {
   delivered: "Delivered",
   closed: "Closed · read-only",
   cancelled: "Cancelled · read-only",
+  declined: "Request declined · read-only",
+  expired: "Request expired · read-only",
   archived: "Archived",
 };
 const date = (value) => (value ? new Date(value).toLocaleString() : "");
@@ -118,7 +120,9 @@ export default function CoordinationPortal({
     [title, setTitle] = useState(""),
     [contactName, setContactName] = useState(""),
     [companyName, setCompanyName] = useState("");
-  const [links, setLinks] = useState([]),
+  const [forms, setForms] = useState([]),
+    [verificationRequired, setVerificationRequired] = useState(false),
+    [links, setLinks] = useState([]),
     [shareLink, setShareLink] = useState(true),
     [createdInvitation, setCreatedInvitation] = useState(null),
     [prepareBrief, setPrepareBrief] = useState(false),
@@ -258,6 +262,7 @@ export default function CoordinationPortal({
         setMail(result.mail);
         setActivity(result.activity || []);
         setLinks(result.links || []);
+        setForms(result.forms || []);
         return result;
       }
       refreshRef.current = null;
@@ -278,7 +283,11 @@ export default function CoordinationPortal({
   useEffect(() => {
     let active = true;
     const newClientLink = () => {
-      if (new URLSearchParams(window.location.hash.slice(1)).get("verify"))
+      if (
+        ["verify", "form", "access"].some((key) =>
+          new URLSearchParams(window.location.hash.slice(1)).get(key),
+        )
+      )
         window.location.reload();
     };
     if (client) window.addEventListener("hashchange", newClientLink);
@@ -287,6 +296,39 @@ export default function CoordinationPortal({
       if (client) window.removeEventListener("hashchange", newClientLink);
     };
     if (client) {
+      const fragments = new URLSearchParams(window.location.hash.slice(1));
+      const formToken = fragments.get("form"),
+        statusToken = fragments.get("access");
+      if (formToken) {
+        setProspectToken(formToken);
+        api("public/open", { token: formToken })
+          .then((data) => {
+            if (active) {
+              setProspect(data);
+              setBrand(data.brand);
+              setAccess("prospect");
+            }
+          })
+          .catch((e) => {
+            if (active) reportAccessError(e);
+          });
+        return cleanup;
+      }
+      if (statusToken) {
+        api("client/access", { token: statusToken, jobId })
+          .then(() => {
+            window.history.replaceState(
+              null,
+              "",
+              window.location.pathname + window.location.search,
+            );
+            return load();
+          })
+          .catch((e) => {
+            if (active) reportAccessError(e);
+          });
+        return cleanup;
+      }
       const invitation = new URLSearchParams(window.location.hash.slice(1)).get(
         "invite",
       );
@@ -498,8 +540,8 @@ export default function CoordinationPortal({
         {!client && status?.delivery?.email === false && (
           <p className="coord-notice" role="status">
             {status.delivery.retryAt
-              ? `Email send limit reached. New invitations can resume after ${date(status.delivery.retryAt)}. Existing verified projects remain available.`
-              : "Email delivery is paused. Existing verified projects remain available; new invitations must wait."}
+              ? `Email send limit reached. Email invitations and confirmations can resume after ${date(status.delivery.retryAt)}. Public forms without confirmation remain available.`
+              : "Email delivery is paused. Public forms without email confirmation remain available."}
           </p>
         )}
         {!client && capacity?.capacityWarning && (
@@ -746,20 +788,25 @@ export default function CoordinationPortal({
                 <section className="coord-card">
                   <h2>Invite a client</h2>
                   <p>
-                    Share an estimate and request form by link or QR. Project
-                    name, contact and company can wait. Add a client email only
-                    if you want the link restricted to that address.
+                    Share a reusable public estimate and work-order form by link
+                    or QR on your website, social media, ads, messages or
+                    business cards. No prospect email is needed. You can
+                    optionally choose a private email invitation.
                   </p>
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault();
                       const result = await perform("provider/create", {
                         operation: operation(),
-                        email,
+                        email: shareLink && status.publicForms ? "" : email,
                         title,
                         contactName,
                         companyName,
-                        ...(status.shareLinks ? { shareLink } : {}),
+                        ...(status.publicForms && shareLink
+                          ? { publicForm: true, verificationRequired }
+                          : status.shareLinks
+                            ? { shareLink }
+                            : {}),
                         ...(selectedTemplate === "preset:tm-spatial"
                           ? { preset: "tm-spatial" }
                           : selectedTemplate
@@ -774,7 +821,13 @@ export default function CoordinationPortal({
                               }
                             : {}),
                       });
-                      if (result) {
+                      if (result?.form) {
+                        setCreatedInvitation(result);
+                        selectRequest(null);
+                        setMessage(
+                          "Public form ready. Share this reusable link anywhere; each submission creates a separate request.",
+                        );
+                      } else if (result) {
                         selectRequest(result.jobId);
                         setCreatedInvitation({
                           ...result,
@@ -792,7 +845,8 @@ export default function CoordinationPortal({
                       }
                     }}
                   >
-                    {status.shareLinks && (
+                    {(status.shareLinks ||
+                      status.publicForms !== undefined) && (
                       <label>
                         Invitation method
                         <select
@@ -803,7 +857,7 @@ export default function CoordinationPortal({
                           }
                         >
                           <option value="share">
-                            Share a request link or QR
+                            Public form · share link or QR
                           </option>
                           <option value="email">Invite a known email</option>
                         </select>
@@ -843,58 +897,84 @@ export default function CoordinationPortal({
                           ))}
                       </select>
                     </label>
-                    <label>
-                      Project name
-                      <input
-                        value={title}
-                        disabled={Boolean(createdInvitation)}
-                        maxLength={1000}
-                        onChange={(e) => setTitle(e.target.value)}
-                      />
-                    </label>
-                    <p className="coord-small">
-                      Project name can wait until agreement. In share-link mode,
-                      client email can also be left blank.
-                    </p>
-                    <label>
-                      Client email
-                      <input
-                        type="email"
-                        required={!status.shareLinks || !shareLink}
-                        disabled={Boolean(createdInvitation)}
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Contact name · optional
-                      <input
-                        maxLength={1000}
-                        value={contactName}
-                        disabled={Boolean(createdInvitation)}
-                        onChange={(e) => setContactName(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Company · optional
-                      <input
-                        maxLength={1000}
-                        value={companyName}
-                        disabled={Boolean(createdInvitation)}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                      />
-                    </label>
+                    {shareLink && status.publicForms && (
+                      <label className="coord-check">
+                        <input
+                          type="checkbox"
+                          checked={verificationRequired}
+                          disabled={busy || Boolean(createdInvitation)}
+                          onChange={(e) =>
+                            setVerificationRequired(e.target.checked)
+                          }
+                        />
+                        Require email confirmation before submission
+                      </label>
+                    )}
+                    {status.publicForms === false && shareLink && (
+                      <p role="status">
+                        Public forms await deployment activation. Your prospect
+                        email is not required to share a public form.
+                      </p>
+                    )}
+                    {(!shareLink || status.publicForms === undefined) && (
+                      <>
+                        <label>
+                          Project name
+                          <input
+                            value={title}
+                            disabled={Boolean(createdInvitation)}
+                            maxLength={1000}
+                            onChange={(e) => setTitle(e.target.value)}
+                          />
+                        </label>
+                        <p className="coord-small">
+                          Project name can wait until agreement. In share-link
+                          mode, client email can also be left blank.
+                        </p>
+                        <label>
+                          Client email
+                          <input
+                            type="email"
+                            required={!shareLink}
+                            disabled={Boolean(createdInvitation)}
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                          />
+                        </label>
+                        <label>
+                          Contact name · optional
+                          <input
+                            maxLength={1000}
+                            value={contactName}
+                            disabled={Boolean(createdInvitation)}
+                            onChange={(e) => setContactName(e.target.value)}
+                          />
+                        </label>
+                        <label>
+                          Company · optional
+                          <input
+                            maxLength={1000}
+                            value={companyName}
+                            disabled={Boolean(createdInvitation)}
+                            onChange={(e) => setCompanyName(e.target.value)}
+                          />
+                        </label>
+                      </>
+                    )}
                     {!createdInvitation && (
                       <button
                         disabled={
                           busy ||
+                          (shareLink && status.publicForms === false) ||
                           ((!status.shareLinks || !shareLink) &&
                             status.delivery?.email === false)
                         }
                       >
-                        {status.shareLinks && shareLink
-                          ? "Create request link"
-                          : "Create request & invite"}
+                        {status.publicForms && shareLink
+                          ? "Create public form link"
+                          : status.shareLinks && shareLink
+                            ? "Create request link"
+                            : "Create request & invite"}
                       </button>
                     )}
                     {createdInvitation && (
@@ -916,8 +996,68 @@ export default function CoordinationPortal({
                     )}
                   </form>
                   <p className="coord-small">
-                    Creating a request uses no project credits.
+                    Creating a form or request uses no project credits.
                   </p>
+                  {createdInvitation?.form &&
+                    !forms.some((f) => f.id === createdInvitation.form.id) && (
+                      <ProjectInvitation
+                        jobId={createdInvitation.form.id}
+                        link={{ ...createdInvitation.form, reusable: true }}
+                      />
+                    )}
+                  {forms.length > 0 && (
+                    <section aria-label="Your public forms">
+                      <h3>Your public forms</h3>
+                      {forms.map((form) => (
+                        <div key={form.id} className="coord-project-link">
+                          <h4>
+                            {form.intake?.name || "Public work-order form"}
+                          </h4>
+                          <p className="coord-small">
+                            {form.openedAt
+                              ? `First form open: ${date(form.openedAt)} · visitor unverified`
+                              : "Waiting for first form open"}{" "}
+                            · {form.requestCount || 0} submitted requests
+                          </p>
+                          <label className="coord-check">
+                            <input
+                              type="checkbox"
+                              checked={form.active}
+                              disabled={busy}
+                              onChange={(e) =>
+                                perform("provider/form", {
+                                  formId: form.id,
+                                  active: e.target.checked,
+                                  verificationRequired:
+                                    form.verificationRequired,
+                                })
+                              }
+                            />
+                            Public form available
+                          </label>
+                          <label className="coord-check">
+                            <input
+                              type="checkbox"
+                              checked={form.verificationRequired}
+                              disabled={busy}
+                              onChange={(e) =>
+                                perform("provider/form", {
+                                  formId: form.id,
+                                  active: form.active,
+                                  verificationRequired: e.target.checked,
+                                })
+                              }
+                            />
+                            Require email confirmation
+                          </label>
+                          <ProjectInvitation
+                            jobId={form.id}
+                            link={{ ...form, reusable: true }}
+                          />
+                        </div>
+                      ))}
+                    </section>
+                  )}
                   {selectedJob &&
                     selectedJob.state !== "archived" &&
                     (!selectedJob.archiveAt ||
@@ -1309,9 +1449,14 @@ function ProjectInvitation({ jobId, link }) {
         </svg>
       )}
       <p className="coord-small">
-        {link?.url
-          ? "One prospect per link. Valid for 30 days; private project access requires email verification. Share through your usual messaging app."
-          : "Only the invited client can open the work order after verifying their email."}
+        {link?.reusable
+          ? "Reusable public form. Every submission creates its own private request page. Share this link or QR anywhere. " +
+            (link.verificationRequired
+              ? "Email confirmation is enabled."
+              : "Email confirmation is off; email is optional.")
+          : link?.url
+            ? "One prospect per link. Valid for 30 days; private project access requires email verification. Share through your usual messaging app."
+            : "Only the invited client can open the work order after verifying their email."}
       </p>
       {notice && <p role="status">{notice}</p>}
     </div>
@@ -1362,7 +1507,8 @@ function JobPanel({
     [group, setGroup] = useState("Scope"),
     [draft, setDraft] = useState(restored?.fields || job.fields),
     [text, setText] = useState(""),
-    [reason, setReason] = useState("");
+    [reason, setReason] = useState(""),
+    [notifyDecline, setNotifyDecline] = useState(false);
   const [authorized, setAuthorized] = useState(false),
     [fileError, setFileError] = useState("");
   const [baseFields, setBaseFields] = useState(
@@ -1557,6 +1703,15 @@ function JobPanel({
           .filter(Boolean)
           .join(" · ") || "Client details pending"}
       </p>
+      {job.source === "public-form" && (
+        <p className="coord-small">
+          {job.emailVerified
+            ? "Email confirmed"
+            : job.fields.requesterEmail
+              ? "Email supplied by prospect · unverified"
+              : "No email provided · use this request page"}
+        </p>
+      )}
       <RequestProgress
         job={job}
         link={link}
@@ -2115,6 +2270,34 @@ function JobPanel({
                   onChange={(e) => setReason(e.target.value)}
                 />
               </label>
+              {!closed && !job.accepted && (
+                <>
+                  <label className="coord-check">
+                    <input
+                      type="checkbox"
+                      checked={notifyDecline}
+                      disabled={busy || !job.fields.requesterEmail}
+                      onChange={(e) => setNotifyDecline(e.target.checked)}
+                    />
+                    Email the decline response{" "}
+                    {job.fields.requesterEmail
+                      ? "(optional)"
+                      : "(no email provided)"}
+                  </label>
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      command(job, "decline", { reason, notify: notifyDecline })
+                    }
+                  >
+                    Decline request
+                  </button>
+                  <p className="coord-small">
+                    The client status page will show Declined and any response
+                    above, with access ending in 30 days.
+                  </p>
+                </>
+              )}
               <div className="coord-actions">
                 {job.state === "delivered" && (
                   <button

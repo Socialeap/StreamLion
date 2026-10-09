@@ -11,8 +11,17 @@ export default function RequestProgress({ job, link, activity, client }) {
           {done} of {steps.length} milestones recorded
         </span>
       </div>
-      {["cancelled", "archived"].includes(job.state) && (
+      {["cancelled", "archived", "declined", "expired"].includes(job.state) && (
         <p>This request is {job.state}. Recorded milestones are retained.</p>
+      )}
+      {job.state === "declined" && (
+        <p role="status">
+          <strong>Request declined.</strong>{" "}
+          {job.declineMessage ||
+            "The provider is unable to accept this request."}{" "}
+          {job.archiveAt &&
+            `This page expires ${new Date(job.archiveAt).toLocaleDateString()}.`}
+        </p>
       )}
       <div
         className="coord-progress-track"

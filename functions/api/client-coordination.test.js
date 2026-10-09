@@ -2754,3 +2754,552 @@ test("background verified-claim recovery backs off before another Google attempt
     null,
   );
 });
+
+const { randomProspectToken } = await import("../../server/prospect-intake.js");
+const {
+  createPublicForm,
+  openPublicForm,
+  submitPublicForm,
+  syncPublicSubmission,
+  verifyPublicSubmission,
+  updatePublicForm,
+  formsForProvider,
+} = await import("../../server/public-intake.js");
+async function publicFixture(t, verificationRequired = false) {
+  const f = fixture(t),
+    google = googleFixture(),
+    engine = new CoordinationEngine(f.env, f.connection, google);
+  const base = newClientJob({
+    id: "public-base",
+    provider: "a",
+    clientEmail: "",
+    title: "Private starting title",
+    contactName: "Private contact",
+    prospect: true,
+    now: Date.now(),
+  });
+  const form = await createPublicForm(
+    f.env,
+    f.connection,
+    "public-form-test",
+    base,
+    verificationRequired,
+  );
+  const token = new URLSearchParams(new URL(form.url).hash.slice(1)).get(
+    "form",
+  );
+  const submit = (body) => submitPublicForm(f.env, body, () => engine);
+  return { ...f, form, token, google, engine, submit };
+}
+const publicBody = (f, op = "lead-one", email = "") => ({
+  token: f.token,
+  operation: op,
+  accessToken: randomProspectToken(),
+  email,
+  fields: {
+    requesterName: "Synthetic prospect",
+    address: "Synthetic site",
+    scope: "Capture lobby. Exact 12 7/16 in.",
+  },
+});
+function accessRequest(
+  result,
+  token = new URLSearchParams(new URL(result.url).hash.slice(1)).get("access"),
+  jobId = result.jobId,
+) {
+  return new Request("https://app.example/api/coordination/client/access", {
+    method: "POST",
+    headers: {
+      Origin: "https://app.example",
+      "Content-Type": "application/json",
+      "CF-Connecting-IP": "192.0.2.6",
+    },
+    body: JSON.stringify({ token, jobId }),
+  });
+}
+test("public form opens without email and accepts independent anonymous requests with isolated status capabilities and no charges", async (t) => {
+  const f = await publicFixture(t),
+    descriptor = await openPublicForm(f.env, f.token);
+  assert.equal(descriptor.verificationRequired, false);
+  assert.equal(descriptor.reusable, true);
+  assert.equal(JSON.stringify(descriptor).includes("Private contact"), false);
+  assert.equal(
+    JSON.stringify(descriptor).includes("Private starting title"),
+    false,
+  );
+  const a = publicBody(f),
+    b = publicBody(f, "lead-two");
+  a.visit = descriptor.visit;
+  const first = await f.submit(a),
+    second = await f.submit(b),
+    replay = await f.submit(a);
+  assert.equal(first.jobId, replay.jobId);
+  assert.equal(first.url, replay.url);
+  assert.notEqual(first.jobId, second.jobId);
+  assert.equal(f.google.heads.size, 2);
+  assert.equal(f.google.events.size, 2);
+  const job = f.google.heads.get(first.jobId);
+  assert.equal(job.state, "submitted");
+  assert.equal(job.fields.requesterEmail, "");
+  assert.equal(job.emailVerified, false);
+  assert.equal(job.fields.scope, a.fields.scope);
+  assert.equal(job.providerApproved, false);
+  assert.equal(job.accepted, null);
+  assert.equal(job.requestExpiresAt - job.createdAt, 30 * 86400000);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1").get()
+      .n,
+    0,
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1 WHERE id LIKE 'public-verify-%'",
+      )
+      .get().n,
+    0,
+  );
+  const open = await handleCoordination({
+    env: f.env,
+    params: { path: "client/access" },
+    request: accessRequest(first),
+  });
+  assert.equal(open.status, 200);
+  assert.match(open.headers.get("Set-Cookie"), /HttpOnly/);
+  const other = await handleCoordination({
+    env: f.env,
+    params: { path: "client/access" },
+    request: accessRequest(first, a.accessToken, second.jobId),
+  });
+  assert.equal(other.status, 403);
+  await assert.rejects(
+    () => f.submit({ ...a, fields: { ...a.fields, scope: "Forged retry" } }),
+    /identity changed/,
+  );
+  await assert.rejects(
+    () =>
+      f.submit({
+        ...publicBody(f, "forged-finance"),
+        fields: { ...a.fields, paidAmount: "10000" },
+      }),
+    /cannot be changed/,
+  );
+  await assert.rejects(
+    () => openPublicForm(f.env, a.accessToken),
+    /unavailable/,
+  );
+  assert.ok((await openPublicForm(f.env, f.token)).reusable);
+});
+test("public form email confirmation is optional, pinned per pending submission, single-use and isolated from other forms", async (t) => {
+  const f = await publicFixture(t, true),
+    body = publicBody(f, "verified-lead", "client@example.com");
+  await assert.rejects(() => f.submit({ ...body, email: "" }), /valid email/);
+  const receipt = await f.submit(body);
+  assert.equal(receipt.verificationRequired, true);
+  assert.equal(receipt.url, undefined);
+  assert.equal(f.google.heads.size, 0);
+  await f.submit(body);
+  const notice = f.sql
+    .prepare(
+      "SELECT * FROM streamlion_coordination_outbox_v1 WHERE id LIKE 'public-verify-%'",
+    )
+    .get();
+  const mail = await unseal(f.env, notice.payload, "mail:" + notice.id),
+    challenge = new URLSearchParams(new URL(mail.url).hash.slice(1)).get(
+      "verify",
+    );
+  await updatePublicForm(f.env, f.connection, {
+    formId: f.form.id,
+    active: true,
+    verificationRequired: false,
+  });
+  assert.equal((await f.submit(body)).verificationRequired, true);
+  const session = randomProspectToken();
+  assert.equal(
+    await verifyPublicSubmission(
+      f.env,
+      await hash(challenge),
+      await hash(session),
+      Date.now(),
+    ),
+    true,
+  );
+  await syncPublicSubmission(f.env, f.engine, "job-public-verified-lead");
+  assert.equal(
+    f.google.heads.get("job-public-verified-lead").emailVerified,
+    true,
+  );
+  await assert.rejects(
+    async () =>
+      verifyPublicSubmission(
+        f.env,
+        await hash(challenge),
+        await hash(randomProspectToken()),
+        Date.now(),
+      ),
+    /expired or already used/,
+  );
+  const anonymous = await f.submit(publicBody(f, "anonymous-after-toggle"));
+  assert.ok(anonymous.url);
+  assert.equal(f.google.heads.get(anonymous.jobId).emailVerified, false);
+  assert.equal(
+    (await formsForProvider(f.env, { ...f.connection, id: "connection-b" }))
+      .length,
+    0,
+  );
+  await assert.rejects(
+    () =>
+      updatePublicForm(
+        f.env,
+        { ...f.connection, id: "connection-b" },
+        { formId: f.form.id, active: false, verificationRequired: false },
+      ),
+    /unavailable/,
+  );
+});
+test("public intake preserves and recovers an interrupted original Google operation without duplicating the request", async (t) => {
+  const f = await publicFixture(t),
+    body = publicBody(f),
+    event = f.google.event.bind(f.google);
+  let fail = true;
+  f.google.event = async (e) => {
+    await event(e);
+    if (fail) throw new Error("Synthetic Google interruption");
+  };
+  await assert.rejects(() => f.submit(body), /interruption/);
+  assert.equal(f.google.events.size, 1);
+  assert.equal(
+    f.sql.prepare("SELECT state FROM streamlion_public_submissions_v1").get()
+      .state,
+    "pending",
+  );
+  await updatePublicForm(f.env, f.connection, {
+    formId: f.form.id,
+    active: true,
+    verificationRequired: true,
+  });
+  fail = false;
+  const retry = await f.submit(body);
+  assert.ok(retry.url);
+  assert.equal(f.google.events.size, 1);
+  assert.equal(
+    f.sql.prepare("SELECT payload FROM streamlion_public_submissions_v1").get()
+      .payload,
+    null,
+  );
+});
+test("public forms fail closed for paused forms, revoked or refunded providers and full inboxes", async (t) => {
+  const f = await publicFixture(t);
+  await updatePublicForm(f.env, f.connection, {
+    formId: f.form.id,
+    active: false,
+    verificationRequired: false,
+  });
+  await assert.rejects(() => f.submit(publicBody(f)), /unavailable/);
+  await updatePublicForm(f.env, f.connection, {
+    formId: f.form.id,
+    active: true,
+    verificationRequired: false,
+  });
+  f.sql.exec(
+    "UPDATE streamlion_purchases_v1 SET status='refunded' WHERE google_subject='a'",
+  );
+  await assert.rejects(() => openPublicForm(f.env, f.token), /unavailable/);
+  f.sql.exec(
+    "UPDATE streamlion_purchases_v1 SET status='paid' WHERE google_subject='a'",
+  );
+  for (let i = 0; i < 100; i++)
+    f.sql
+      .prepare(
+        "INSERT INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) VALUES(?,'connection-a',?,'sealed',1)",
+      )
+      .run("capacity-" + i, "capacity-" + i);
+  await assert.rejects(() => f.submit(publicBody(f)), /inbox is full/);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_public_submissions_v1")
+      .get().n,
+    0,
+  );
+});
+test("provider can decline a public request silently or email an optional response, with 30-day read-only status", async (t) => {
+  const f = await publicFixture(t),
+    silent = await f.submit(publicBody(f, "silent", "client@example.com"));
+  const before = f.sql
+    .prepare(
+      "SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1 WHERE id LIKE '%-client'",
+    )
+    .get().n;
+  await f.engine.command(
+    "silent-decline",
+    silent.jobId,
+    {
+      action: "decline",
+      expectedRevision: 0,
+      reason: "Unavailable on that date",
+      notify: false,
+    },
+    { role: "provider" },
+  );
+  const job = f.google.heads.get(silent.jobId);
+  assert.equal(job.state, "declined");
+  assert.equal(job.archiveAt - job.closedAt, 30 * 86400000);
+  assert.equal(job.declineMessage, "Unavailable on that date");
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1 WHERE id LIKE '%-client'",
+      )
+      .get().n,
+    before,
+  );
+  await assert.rejects(
+    () =>
+      f.engine.command(
+        "client-edit-declined",
+        silent.jobId,
+        {
+          action: "edit",
+          expectedRevision: job.revision,
+          fields: { scope: "Changed" },
+        },
+        { role: "client" },
+      ),
+    /read-only/,
+  );
+  const notified = await f.submit(
+    publicBody(f, "notify", "client@example.com"),
+  );
+  await f.engine.command(
+    "notify-decline",
+    notified.jobId,
+    { action: "decline", expectedRevision: 0, reason: "", notify: true },
+    { role: "provider" },
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1 WHERE id='notice-notify-decline-client'",
+      )
+      .get().n,
+    1,
+  );
+  const noEmail = await f.submit(publicBody(f, "no-email"));
+  await assert.rejects(
+    () =>
+      f.engine.command(
+        "missing-email-decline",
+        noEmail.jobId,
+        { action: "decline", expectedRevision: 0, reason: "", notify: true },
+        { role: "provider" },
+      ),
+    /No client email/,
+  );
+});
+
+test("unaccepted public requests expire at 30 days but agreed work is preserved", async (t) => {
+  const f = await publicFixture(t),
+    receipt = await f.submit(publicBody(f)),
+    job = f.google.heads.get(receipt.jobId);
+  assert.throws(
+    () =>
+      reduceClientJob(
+        job,
+        { action: "expire_request", expectedRevision: job.revision },
+        { role: "system" },
+        job.requestExpiresAt - 1,
+      ),
+    /cannot expire/,
+  );
+  assert.throws(
+    () =>
+      reduceClientJob(
+        { ...job, accepted: { title: "Agreed" } },
+        { action: "expire_request", expectedRevision: job.revision },
+        { role: "system" },
+        job.requestExpiresAt,
+      ),
+    /cannot expire/,
+  );
+  const expired = reduceClientJob(
+    job,
+    { action: "expire_request", expectedRevision: job.revision },
+    { role: "system" },
+    job.requestExpiresAt,
+  );
+  assert.equal(expired.state, "expired");
+  assert.equal(expired.closedAt, job.requestExpiresAt);
+  assert.equal(expired.archiveAt, job.requestExpiresAt);
+  f.sql
+    .prepare(
+      "UPDATE streamlion_coordination_sessions_v1 SET expires_at=? WHERE job_id=?",
+    )
+    .run(Date.now() - 1, job.id);
+  assert.equal(
+    (
+      await handleCoordination({
+        env: f.env,
+        params: { path: "client/access" },
+        request: accessRequest(receipt),
+      })
+    ).status,
+    401,
+  );
+});
+test("0013 preflight requires exact 0012 prerequisites and all-or-none public intake markers", async () => {
+  const { coordinationPreflight } =
+    await import("../../scripts/preflight-coordination.mjs");
+  const sql = new DatabaseSync(":memory:");
+  try {
+    for (const name of readdirSync(
+      new URL("../../migrations/", import.meta.url),
+    )
+      .filter((n) => n.endsWith(".sql") && n < "0013")
+      .sort())
+      sql.exec(
+        readFileSync(
+          new URL("../../migrations/" + name, import.meta.url),
+          "utf8",
+        ),
+      );
+    const inspection = () => {
+      const schema = sql
+        .prepare(
+          "SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%' AND sql IS NOT NULL",
+        )
+        .all();
+      return {
+        schema,
+        stamps: Object.fromEntries(
+          schema
+            .filter((r) => r.name.includes("_schema_"))
+            .map((r) => [
+              r.name,
+              sql.prepare("SELECT version FROM " + r.name).get().version,
+            ]),
+        ),
+      };
+    };
+    assert.equal(
+      coordinationPreflight(inspection(), "0013_public_intake.sql").migration,
+      "pending",
+    );
+    sql.exec(
+      readFileSync(
+        new URL("../../migrations/0013_public_intake.sql", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.equal(
+      coordinationPreflight(inspection(), "0013_public_intake.sql").migration,
+      "already_applied",
+    );
+    const partial = inspection();
+    partial.schema = partial.schema.filter(
+      (r) => r.name !== "streamlion_public_pending_v1",
+    );
+    assert.throws(
+      () => coordinationPreflight(partial, "0013_public_intake.sql"),
+      /Partial/,
+    );
+    const mismatch = inspection();
+    mismatch.stamps.streamlion_public_intake_schema_v1 = 2;
+    assert.throws(
+      () => coordinationPreflight(mismatch, "0013_public_intake.sql"),
+      /Version stamp mismatch/,
+    );
+  } finally {
+    sql.close();
+  }
+});
+
+test("parallel public confirmation consumes once and creates exactly one session, even in the same millisecond", async (t) => {
+  const f = await publicFixture(t, true);
+  await f.submit(publicBody(f, "parallel-confirm", "client@example.com"));
+  const s = f.sql
+      .prepare("SELECT * FROM streamlion_public_submissions_v1")
+      .get(),
+    now = Date.now();
+  const results = await Promise.allSettled([
+    verifyPublicSubmission(
+      f.env,
+      s.challenge_hash,
+      await hash(randomProspectToken()),
+      now,
+    ),
+    verifyPublicSubmission(
+      f.env,
+      s.challenge_hash,
+      await hash(randomProspectToken()),
+      now,
+    ),
+  ]);
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal(results.filter((r) => r.status === "rejected").length, 1);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_sessions_v1")
+      .get().n,
+    1,
+  );
+});
+test("public confirmation rechecks provider eligibility atomically before granting access", async (t) => {
+  const f = await publicFixture(t, true);
+  await f.submit(publicBody(f, "refund-race", "client@example.com"));
+  const s = f.sql
+      .prepare("SELECT * FROM streamlion_public_submissions_v1")
+      .get(),
+    batch = f.env.GOOGLE_SESSIONS.batch;
+  f.env.GOOGLE_SESSIONS.batch = async (list) => {
+    f.sql.exec(
+      "UPDATE streamlion_purchases_v1 SET status='refunded' WHERE google_subject='a'",
+    );
+    return batch(list);
+  };
+  await assert.rejects(
+    () =>
+      verifyPublicSubmission(
+        f.env,
+        s.challenge_hash,
+        "synthetic-session-hash",
+        Date.now(),
+      ),
+    /expired or already used/,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_sessions_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT state FROM streamlion_public_submissions_v1").get()
+      .state,
+    "verification",
+  );
+});
+
+test("maintenance expires unconfirmed public drafts and clears temporary personal data without a Google job", async (t) => {
+  const f = await publicFixture(t, true);
+  await f.submit(publicBody(f, "never-confirmed", "client@example.com"));
+  const now = Date.now() + 31 * 86400000;
+  // This test models the one-year grant; the shared fixture expires tomorrow.
+  f.sql
+    .prepare(
+      "UPDATE streamlion_coordination_connections_v1 SET expires_at=? WHERE id=?",
+    )
+    .run(now + 86400000, f.connection.id);
+  await maintainCoordination(f.env, now);
+  const s = f.sql
+      .prepare("SELECT * FROM streamlion_public_submissions_v1")
+      .get(),
+    j = f.sql
+      .prepare("SELECT * FROM streamlion_coordination_jobs_v1 WHERE id=?")
+      .get(s.job_id);
+  assert.equal(s.state, "expired");
+  assert.equal(s.payload, null);
+  assert.equal(s.challenge_token, null);
+  assert.equal(j.archived, 1);
+  assert.equal(j.closed_at, now);
+  assert.equal(f.google.heads.size, 0);
+});

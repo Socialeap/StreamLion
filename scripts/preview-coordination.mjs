@@ -25,7 +25,8 @@ const recovered = new Map();
 const templates = new Map(),
   templateEvents = new Map();
 let templateRevision = 0;
-const links = new Map();
+const links = new Map(),
+  publicForms = new Map();
 let prospectVerified = true,
   claim = null;
 const initialTemplate = reviseIntakeTemplate(
@@ -125,11 +126,13 @@ const handler = async (req, res, next) => {
         wallet: { available: 7500000 },
         delivery: { email: true, push: false },
         shareLinks: true,
+        publicForms: true,
       };
     else if (path === "provider/jobs")
       result = {
         jobs: [job],
         links: [...links.values()],
+        forms: [...publicForms.values()],
         templates: [...templates.values()],
         pending: [],
         archives: [],
@@ -187,7 +190,7 @@ const handler = async (req, res, next) => {
         provider: "synthetic-provider",
         clientEmail: data.email,
         title: data.title,
-        prospect: data.shareLink === true,
+        prospect: data.shareLink === true || data.publicForm === true,
         contactName: data.contactName,
         companyName: data.companyName,
         now: Date.now(),
@@ -211,20 +214,74 @@ const handler = async (req, res, next) => {
                 )
               : null,
       });
-      const url =
-        `http://127.0.0.1:${process.env.STREAMLION_QA_PORT || 5175}/api/client-portal?job=${job.id}` +
-        (data.shareLink ? "#invite=" + "S".repeat(43) : "");
-      if (data.shareLink) {
-        links.set(job.id, {
-          jobId: job.id,
-          url,
-          openedAt: null,
-          claimedAt: null,
-          expiresAt: Date.now() + 30 * 86400000,
-        });
-        prospectVerified = false;
+      if (data.publicForm) {
+        const form = {
+          id: "form-" + data.operation,
+          brand: "Synthetic provider",
+          intake: job.intake,
+          active: true,
+          verificationRequired: data.verificationRequired === true,
+          url:
+            `http://127.0.0.1:${process.env.STREAMLION_QA_PORT || 5175}/api/client-portal#form=` +
+            "P".repeat(43),
+        };
+        publicForms.set(form.id, form);
+        result = { form };
+      } else {
+        const url =
+          `http://127.0.0.1:${process.env.STREAMLION_QA_PORT || 5175}/api/client-portal?job=${job.id}` +
+          (data.shareLink ? "#invite=" + "S".repeat(43) : "");
+        if (data.shareLink) {
+          links.set(job.id, {
+            jobId: job.id,
+            url,
+            openedAt: null,
+            claimedAt: null,
+            expiresAt: Date.now() + 30 * 86400000,
+          });
+          prospectVerified = false;
+        }
+        result = { jobId: job.id, url, shareLink: data.shareLink };
       }
-      result = { jobId: job.id, url, shareLink: data.shareLink };
+    } else if (path === "provider/form") {
+      const data = JSON.parse(body),
+        form = publicForms.get(data.formId);
+      form.active = data.active;
+      form.verificationRequired = data.verificationRequired;
+      result = { updated: true };
+    } else if (path === "public/open") {
+      const form = [...publicForms.values()].at(-1);
+      result = { ...form, reusable: true };
+    } else if (path === "public/submit") {
+      const data = JSON.parse(body),
+        form = [...publicForms.values()].at(-1),
+        now = Date.now();
+      job = newClientJob({
+        id: "job-public-" + data.operation,
+        provider: "synthetic-provider",
+        clientEmail: data.email || "",
+        title: data.fields.title || "",
+        prospect: true,
+        now,
+      });
+      job.fields = { ...job.fields, ...data.fields };
+      job.state = "submitted";
+      job.submittedAt = now;
+      job.openedAt = now;
+      job.intake = form.intake;
+      job.source = "public-form";
+      job.emailVerified = false;
+      job.requestExpiresAt = now + 30 * 86400000;
+      prospectVerified = true;
+      result = {
+        jobId: job.id,
+        url: `http://127.0.0.1:${process.env.STREAMLION_QA_PORT || 5175}/api/client-portal?job=${job.id}#access=${data.accessToken}`,
+        expiresAt: job.requestExpiresAt,
+        message: "Request submitted. Save your private status link.",
+      };
+    } else if (path === "client/access") {
+      prospectVerified = true;
+      result = { opened: true };
     } else if (path === "prospect/open") {
       const link = links.get(job.id);
       link.openedAt ||= Date.now();

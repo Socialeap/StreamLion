@@ -5,6 +5,7 @@ import { DAY } from "../src/client-workflow.js";
 import { dispatchNotifications } from "./coordination-notifications.js";
 import { hasPurchase } from "./purchase-access.js";
 import { prospectSchema, syncProspectClaim } from "./prospect-intake.js";
+import { publicIntakeSchema, syncPublicSubmission } from "./public-intake.js";
 import {
   coordinationRuntime,
   deferWork,
@@ -24,6 +25,63 @@ export async function maintainCoordination(env, now = Date.now()) {
   const db = env.GOOGLE_SESSIONS;
   const started = Date.now();
   const hasProspects = await prospectSchema(env);
+  const hasPublic = await publicIntakeSchema(env);
+  if (hasPublic) {
+    const rows = await db
+      .prepare(
+        "SELECT s.*,j.connection_id FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='recovery' AND w.id=s.operation WHERE j.archived=0 AND j.closed_at IS NULL AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND EXISTS(SELECT 1 FROM streamlion_purchases_v1 b WHERE b.google_subject=c.google_subject AND b.mode=c.mode AND b.status='paid') AND COALESCE(w.next_attempt_at,0)<=? AND (s.state='pending' OR (s.expires_at>0 AND s.expires_at<=?)) ORDER BY s.created_at LIMIT 5",
+      )
+      .bind(now, env.STREAMLION_PAYMENTS_MODE, now, now)
+      .all();
+    for (const s of rows.results) {
+      if (Date.now() - started >= 10000) break;
+      try {
+        if (s.state === "verification") {
+          await db.batch([
+            db
+              .prepare(
+                "UPDATE streamlion_coordination_jobs_v1 SET archived=1,closed_at=?,archive_at=? WHERE id=? AND EXISTS(SELECT 1 FROM streamlion_public_submissions_v1 WHERE job_id=? AND state='verification' AND expires_at<=?)",
+              )
+              .bind(now, now, s.job_id, s.job_id, now),
+            db
+              .prepare(
+                "UPDATE streamlion_public_submissions_v1 SET state='expired',payload=NULL,challenge_hash=NULL,challenge_token=NULL WHERE job_id=? AND state='verification' AND expires_at<=?",
+              )
+              .bind(s.job_id, now),
+          ]);
+        } else {
+          const c = await db
+              .prepare(
+                "SELECT * FROM streamlion_coordination_connections_v1 WHERE id=?",
+              )
+              .bind(s.connection_id)
+              .first(),
+            engine = new CoordinationEngine(env, c);
+          await syncPublicSubmission(env, engine, s.job_id);
+          const job = (await engine.google.snapshot()).heads.get(s.job_id);
+          if (job?.accepted)
+            await db
+              .prepare(
+                "UPDATE streamlion_public_submissions_v1 SET expires_at=0 WHERE job_id=?",
+              )
+              .bind(s.job_id)
+              .run();
+          else if (job?.requestExpiresAt <= now && !job.closedAt)
+            await engine.command(
+              "expire-" + s.operation,
+              s.job_id,
+              { action: "expire_request", expectedRevision: job.revision },
+              { role: "system" },
+            );
+          counts.recovered++;
+        }
+        await completeWork(db, "recovery", s.operation);
+      } catch {
+        await deferWork(db, "recovery", s.operation, now);
+        counts.retained++;
+      }
+    }
+  }
   if (hasProspects) {
     const claims = await db
       .prepare(

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { captureEstimate, estimateMoney } from "./capture-estimate.js";
 import { PROJECT_FIELDS } from "./project-schema.js";
 import { activeIntakeQuestions } from "./intake-templates.js";
@@ -23,6 +23,7 @@ const fieldKeys = [
   "contact1Phone",
 ];
 export default function ProspectIntake({ descriptor, token, api }) {
+  const attempt = useRef(null);
   const [fields, setFields] = useState({}),
     [email, setEmail] = useState(""),
     [creative, setCreative] = useState(false),
@@ -30,7 +31,8 @@ export default function ProspectIntake({ descriptor, token, api }) {
     [complexity, setComplexity] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [receipt, setReceipt] = useState(null);
   const estimate = captureEstimate(
     descriptor.intake?.estimateProfile,
     fields.propertySizeSqFt,
@@ -52,12 +54,16 @@ export default function ProspectIntake({ descriptor, token, api }) {
   ];
   return (
     <section className="coord-card coord-prospect">
-      <p className="eyebrow">{descriptor.brand} · private invitation</p>
+      <p className="eyebrow">
+        {descriptor.brand} ·{" "}
+        {descriptor.reusable ? "public work-order form" : "private invitation"}
+      </p>
       <h2>Estimate & work-order request</h2>
       <p>
-        Your provider can now see that this form was opened. Submit the details
-        you know, then verify your email. The provider reviews scope and
-        availability before either side agrees to work.
+        Fill out the details you know and get an estimate. The provider reviews
+        scope and availability before either side agrees to work.
+        {(!descriptor.reusable || descriptor.verificationRequired) &&
+          " This provider requires email confirmation before submission."}
       </p>
       {descriptor.intake && (
         <p>
@@ -80,14 +86,34 @@ export default function ProspectIntake({ descriptor, token, api }) {
             ]
               .filter(Boolean)
               .join("\n");
-            const result = await api("prospect/request", {
+            const body = {
               token,
               email,
               fields: { ...fields, notes },
               creative,
-            });
+            };
+            if (descriptor.reusable && !attempt.current)
+              attempt.current = {
+                ...body,
+                visit: descriptor.visit,
+                operation: crypto.randomUUID(),
+                accessToken: btoa(
+                  String.fromCharCode(
+                    ...crypto.getRandomValues(new Uint8Array(32)),
+                  ),
+                )
+                  .replaceAll("+", "-")
+                  .replaceAll("/", "_")
+                  .replaceAll("=", ""),
+              };
+            const result = await api(
+              descriptor.reusable ? "public/submit" : "prospect/request",
+              descriptor.reusable ? attempt.current : body,
+            );
             setNotice(result.message);
+            if (result.url) setReceipt(result);
           } catch (e) {
+            if (e.status === 400) attempt.current = null;
             setError(e.message);
           } finally {
             setBusy(false);
@@ -204,7 +230,7 @@ export default function ProspectIntake({ descriptor, token, api }) {
                     : q?.label || f.label;
               const props = {
                 value: fields[k] || "",
-                disabled: busy,
+                disabled: busy || Boolean(attempt.current),
                 required,
                 maxLength: 6000,
                 onChange: (e) => setFields({ ...fields, [k]: e.target.value }),
@@ -237,31 +263,59 @@ export default function ProspectIntake({ descriptor, token, api }) {
               );
             })}
           <label>
-            Email for private project access
+            {descriptor.reusable && !descriptor.verificationRequired
+              ? "Email · optional for replies"
+              : "Email for confirmation"}
             <input
               type="email"
-              required
+              required={!descriptor.reusable || descriptor.verificationRequired}
               maxLength={254}
-              disabled={busy}
+              disabled={busy || Boolean(attempt.current)}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
         </div>
         <p>
-          Your project name can wait until agreement. Email verification
-          connects this request to one client; the share link stops accepting
-          new requests after verification. No work is authorized and no payment
-          is due with this request.
+          Your project name can wait until agreement. No work is authorized and
+          no payment is due with this request.{" "}
+          {descriptor.reusable
+            ? "After submission, save your private request link. Unaccepted requests expire after 30 days."
+            : "This invitation is for one client."}
         </p>
         <button disabled={busy || Boolean(notice)}>
           {busy
-            ? "Sending verification…"
-            : "Send request for email verification"}
+            ? "Submitting…"
+            : attempt.current && error
+              ? "Retry original submission"
+              : descriptor.reusable && !descriptor.verificationRequired
+                ? "Submit work-order request"
+                : "Send request for email verification"}
         </button>
         {error && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
-        {notice && (
+        {receipt && (
+          <div>
+            <label>
+              Private request status link
+              <input
+                readOnly
+                value={receipt.url}
+                onFocus={(e) => e.target.select()}
+              />
+            </label>
+            <a className="coord-share-action" href={receipt.url}>
+              Open request status
+            </a>
+            <p>
+              Save this link to revisit your request. Anyone with this private
+              link can access this request. Access expires{" "}
+              {new Date(receipt.expiresAt).toLocaleDateString()} unless the
+              provider agrees or extends access.
+            </p>
+          </div>
+        )}
+        {notice && !descriptor.reusable && (
           <button
             type="button"
             className="coord-secondary"

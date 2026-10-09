@@ -41,9 +41,13 @@ export function requestProgress(job, link, activity = [], client = false) {
       label: "Link opened",
       done: opened,
       detail: opened
-        ? link?.claimedAt || client
-          ? "Verified client access"
-          : "Form opened · visitor unverified"
+        ? job.source === "public-form"
+          ? job.emailVerified
+            ? "Form opened · email confirmed"
+            : "Form opened · email confirmation not required"
+          : link?.claimedAt || client
+            ? "Verified client access"
+            : "Form opened · visitor unverified"
         : link
           ? "Waiting for first form open"
           : "No recorded client open yet",

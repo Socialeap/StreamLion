@@ -165,7 +165,9 @@ export function reduceClientJob(previous, command, actor, now) {
       throw new CoordinationError("Provider action required.", 403);
   };
   if (
-    ["closed", "archived", "cancelled"].includes(job.state) &&
+    ["closed", "archived", "cancelled", "declined", "expired"].includes(
+      job.state,
+    ) &&
     !["reopen", "extend", "archive", "archive_early", "restore"].includes(
       command.action,
     )
@@ -443,6 +445,51 @@ export function reduceClientJob(previous, command, actor, now) {
       job.archiveAt = now + 90 * DAY;
       job.closureReason = command.reason;
       break;
+    case "decline":
+      onlyProvider();
+      if (
+        job.accepted ||
+        !["draft", "submitted", "clarification", "awaiting_agreement"].includes(
+          job.state,
+        )
+      )
+        throw new CoordinationError(
+          "Decline is available before agreement. Cancel agreed work instead.",
+          409,
+        );
+      if (
+        typeof command.reason !== "string" ||
+        command.reason.length > 2000 ||
+        typeof command.notify !== "boolean"
+      )
+        throw new CoordinationError(
+          "Choose a response and whether to email it.",
+        );
+      if (command.notify && !job.fields.requesterEmail)
+        throw new CoordinationError(
+          "No client email is available. Decline on the status page instead.",
+        );
+      job.state = "declined";
+      job.closedAt = now;
+      job.archiveAt = now + 30 * DAY;
+      job.declineMessage = command.reason.trim();
+      job.providerApproved = false;
+      job.clientApproved = false;
+      break;
+    case "expire_request":
+      if (
+        actor.role !== "system" ||
+        job.source !== "public-form" ||
+        job.accepted ||
+        !job.requestExpiresAt ||
+        job.requestExpiresAt > now ||
+        job.closedAt
+      )
+        throw new CoordinationError("This request cannot expire.", 409);
+      job.state = "expired";
+      job.closedAt = now;
+      job.archiveAt = now;
+      break;
     case "extend":
       onlyProvider();
       if (
@@ -472,6 +519,9 @@ export function reduceClientJob(previous, command, actor, now) {
       job.deliveryAccepted = false;
       job.reopenReason = command.reason.trim();
       job.reopenedAt = now;
+      delete job.declineMessage;
+      if (job.source === "public-form" && !job.accepted)
+        job.requestExpiresAt = now + 30 * DAY;
       delete job.workCompletedAt;
       delete job.deliveredAt;
       break;
@@ -484,7 +534,7 @@ export function reduceClientJob(previous, command, actor, now) {
       onlyProvider();
       if (
         !job.closedAt ||
-        !["closed", "cancelled"].includes(job.state) ||
+        !["closed", "cancelled", "declined", "expired"].includes(job.state) ||
         typeof command.reason !== "string" ||
         !command.reason.trim() ||
         command.reason.length > 2000

@@ -27,7 +27,9 @@ const { render, fireEvent, cleanup, waitFor, within } =
   await import("@testing-library/react");
 const { default: Portal, coordinationAPI } =
   await import("./CoordinationPortal.jsx");
-test.beforeEach(() => window.history.replaceState(null, "", "/client/?job=job-a"));
+test.beforeEach(() =>
+  window.history.replaceState(null, "", "/client/?job=job-a"),
+);
 const { coordinationDraftKey } = await import("./coordination-drafts.js");
 const { offerUpdate } = await import("./updates.js");
 const { reviseIntakeTemplate, INTAKE_PRESETS } =
@@ -275,7 +277,9 @@ test("a provider creates an invitation with the selected saved service version",
     />,
   );
   await ui.findByRole("heading", { name: "Invite a client" });
-  fireEvent.click(await ui.findByRole("button", { name: "Start another invitation" }));
+  fireEvent.click(
+    await ui.findByRole("button", { name: "Start another invitation" }),
+  );
   fireEvent.change(ui.getByLabelText("Service & intake"), {
     target: { value: record.id },
   });
@@ -579,7 +583,9 @@ test("an exhausted email allowance explains resumption and disables invites whil
     />,
   );
   await ui.findByText(/Email send limit reached/);
-  fireEvent.click(await ui.findByRole("button", { name: "Start another invitation" }));
+  fireEvent.click(
+    await ui.findByRole("button", { name: "Start another invitation" }),
+  );
   fireEvent.change(ui.getByLabelText("Project name"), {
     target: { value: "New request" },
   });
@@ -1171,17 +1177,26 @@ test("share-link creation accepts unknown title/email, retains contact identity 
   assert.ok(
     ui.getByRole("img", { name: "QR code for this client invitation" }),
   );
-  const svg = ui.getByRole("img", { name: "QR code for this client invitation" });
-  const moduleCount = Number(svg.getAttribute("viewBox").split(" ")[2]), scale = 4, width = moduleCount * scale;
+  const svg = ui.getByRole("img", {
+    name: "QR code for this client invitation",
+  });
+  const moduleCount = Number(svg.getAttribute("viewBox").split(" ")[2]),
+    scale = 4,
+    width = moduleCount * scale;
   const pixels = new Uint8ClampedArray(width * width * 4).fill(255);
-  for (const match of svg.querySelector("path").getAttribute("d").matchAll(/M(\d+) (\d+)h1v1h-1z/g)) {
-    const x = Number(match[1]) * scale, y = Number(match[2]) * scale;
-    for (let dy=0;dy<scale;dy++) for(let dx=0;dx<scale;dx++) {
-      const offset=((y+dy)*width+x+dx)*4;
-      pixels[offset]=pixels[offset+1]=pixels[offset+2]=0;
-    }
+  for (const match of svg
+    .querySelector("path")
+    .getAttribute("d")
+    .matchAll(/M(\d+) (\d+)h1v1h-1z/g)) {
+    const x = Number(match[1]) * scale,
+      y = Number(match[2]) * scale;
+    for (let dy = 0; dy < scale; dy++)
+      for (let dx = 0; dx < scale; dx++) {
+        const offset = ((y + dy) * width + x + dx) * 4;
+        pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 0;
+      }
   }
-  assert.equal(jsQR(pixels,width,width).data,links[0].url);
+  assert.equal(jsQR(pixels, width, width).data, links[0].url);
   const inviteCard = ui
     .getByRole("heading", { name: "Invite a client" })
     .closest("section");
@@ -1190,7 +1205,9 @@ test("share-link creation accepts unknown title/email, retains contact identity 
     inviteCard.compareDocumentPosition(setup) &
       window.Node.DOCUMENT_POSITION_FOLLOWING,
   );
-  fireEvent.click(await ui.findByRole("button", { name: "Start another invitation" }));
+  fireEvent.click(
+    await ui.findByRole("button", { name: "Start another invitation" }),
+  );
   assert.equal(ui.getByLabelText("Contact name · optional").value, "");
   assert.ok(ui.getByRole("button", { name: "Create request link" }));
 });
@@ -1223,7 +1240,7 @@ test("prospect estimator sends the original work-order wording for verification 
   fireEvent.change(ui.getByLabelText(/Scope of work/), {
     target: { value: "Capture lobby. Exact 12 7/16 in." },
   });
-  fireEvent.change(ui.getByLabelText("Email for private project access"), {
+  fireEvent.change(ui.getByLabelText("Email for confirmation"), {
     target: { value: "synthetic@example.com" },
   });
   fireEvent.click(
@@ -1234,4 +1251,203 @@ test("prospect estimator sends the original work-order wording for verification 
   assert.equal(call.body.fields.title, undefined);
   assert.equal(call.body.fields.scope, "Capture lobby. Exact 12 7/16 in.");
   assert.equal(call.body.fields.paidAmount, undefined);
+});
+
+test("provider defaults to a reusable public form without prospect email and persists verification preferences", async (t) => {
+  t.after(cleanup);
+  let forms = [],
+    call;
+  const ui = render(
+    <Portal
+      api={async (path, body) => {
+        if (path === "provider/status")
+          return {
+            enabled: true,
+            connected: true,
+            subject: "a",
+            wallet: { available: 7500000 },
+            projectMicros: 3000000,
+            delivery: { email: false },
+            shareLinks: true,
+            publicForms: true,
+          };
+        if (path === "provider/jobs")
+          return {
+            jobs: [],
+            forms,
+            links: [],
+            pending: [],
+            templates: [],
+            activity: [],
+          };
+        if (path === "provider/create") {
+          call = body;
+          const form = {
+            id: "form-public",
+            active: true,
+            verificationRequired: body.verificationRequired,
+            url: "https://app.example/api/client-portal#form=" + "P".repeat(43),
+          };
+          forms = [form];
+          return { form };
+        }
+        if (path === "provider/form") {
+          forms = forms.map((f) => ({
+            ...f,
+            active: body.active,
+            verificationRequired: body.verificationRequired,
+          }));
+          return { updated: true };
+        }
+        return { enabled: false, devices: [] };
+      }}
+    />,
+  );
+  const create = await ui.findByRole("button", {
+    name: "Create public form link",
+  });
+  assert.equal(ui.queryByLabelText("Client email"), null);
+  assert.equal(ui.queryByLabelText("Project name"), null);
+  assert.equal(create.disabled, false);
+  assert.equal(
+    ui.getByLabelText("Require email confirmation before submission").checked,
+    false,
+  );
+  fireEvent.click(create);
+  await ui.findByText(/Public form ready/);
+  assert.equal(call.email, "");
+  assert.equal(call.publicForm, true);
+  assert.equal(call.verificationRequired, false);
+  const controls = ui.getAllByRole("textbox").filter((n) => n.readOnly);
+  assert.ok(controls.some((n) => n.value.includes("#form=")));
+  assert.equal(ui.queryByText(/Draft request/), null);
+  fireEvent.click(ui.getByLabelText("Require email confirmation"));
+  await waitFor(() =>
+    assert.equal(ui.getByLabelText("Require email confirmation").checked, true),
+  );
+});
+test("public link opens directly to the form and accepts a request without email or login, retaining a private receipt link", async (t) => {
+  t.after(cleanup);
+  window.history.replaceState(
+    null,
+    "",
+    "/api/client-portal#form=" + "P".repeat(43),
+  );
+  let calls = [];
+  const { TM_CAPTURE_PRESET } = await import("./intake-templates.js");
+  const ui = render(
+    <Portal
+      client
+      api={async (path, body) => {
+        calls.push({ path, body });
+        if (path === "public/open")
+          return {
+            brand: "Synthetic provider",
+            intake: TM_CAPTURE_PRESET,
+            reusable: true,
+            verificationRequired: false,
+            visit: "sealed-visit",
+          };
+        if (path === "public/submit")
+          return {
+            jobId: "job-public",
+            url:
+              "https://app.example/api/client-portal?job=job-public#access=" +
+              body.accessToken,
+            expiresAt: Date.now() + 30 * 86400000,
+            message: "Request submitted.",
+          };
+        throw new Error("Unexpected email gate " + path);
+      }}
+    />,
+  );
+  await ui.findByRole("heading", { name: "Estimate & work-order request" });
+  assert.equal(
+    ui.getByLabelText("Email · optional for replies").required,
+    false,
+  );
+  fireEvent.change(ui.getByLabelText("Approximate square footage"), {
+    target: { value: "5000" },
+  });
+  assert.ok(ui.getByText("Estimated total: $750.00"));
+  fireEvent.change(ui.getByLabelText(/Requested by/), {
+    target: { value: "Synthetic prospect" },
+  });
+  fireEvent.change(ui.getByLabelText(/Street address/), {
+    target: { value: "Synthetic site" },
+  });
+  fireEvent.change(ui.getByLabelText(/Scope of work/), {
+    target: { value: "Capture lobby. Exact 12 7/16 in." },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Submit work-order request" }),
+  );
+  await ui.findByText("Request submitted.");
+  const request = calls.find((c) => c.path === "public/submit");
+  assert.equal(request.body.email, "");
+  assert.equal(request.body.fields.title, undefined);
+  assert.equal(request.body.fields.scope, "Capture lobby. Exact 12 7/16 in.");
+  assert.ok(request.body.accessToken);
+  assert.ok(request.body.operation);
+  assert.match(
+    ui.getByRole("link", { name: "Open request status" }).href,
+    /#access=/,
+  );
+  assert.equal(
+    calls.some((c) => c.path.startsWith("client/")),
+    false,
+  );
+});
+test("public intake opt-in verification requires an email at submission while leaving the estimate and form open", async (t) => {
+  t.after(cleanup);
+  const { default: Prospect } = await import("./ProspectIntake.jsx");
+  const ui = render(
+    <Prospect
+      token={"P".repeat(43)}
+      descriptor={{
+        brand: "Synthetic provider",
+        reusable: true,
+        verificationRequired: true,
+      }}
+      api={async () => ({ message: "Check your email." })}
+    />,
+  );
+  assert.equal(ui.getByLabelText("Email for confirmation").required, true);
+  assert.ok(ui.getByRole("heading", { name: "Estimate & work-order request" }));
+  assert.ok(
+    ui.getByRole("button", { name: "Send request for email verification" }),
+  );
+});
+test("declined request status shows the provider response and expiration to the client", async (t) => {
+  t.after(cleanup);
+  const job = newClientJob({
+    id: "job-a",
+    provider: "a",
+    clientEmail: "",
+    title: "",
+    prospect: true,
+    now: Date.now(),
+  });
+  job.source = "public-form";
+  job.state = "declined";
+  job.closedAt = Date.now();
+  job.archiveAt = Date.now() + 30 * 86400000;
+  job.declineMessage = "Unavailable on this date";
+  const ui = render(
+    <Portal
+      client
+      api={async (path) =>
+        path === "client/job"
+          ? { job: clientView(job), brand: "Synthetic provider", activity: [] }
+          : { enabled: false, devices: [] }
+      }
+    />,
+  );
+  await ui.findByText("Request declined.");
+  assert.ok(ui.getByText(/Unavailable on this date/));
+  assert.ok(ui.getByText(/This page expires/));
+  assert.equal(
+    ui.queryByRole("button", { name: "Submit current request" }),
+    null,
+  );
 });

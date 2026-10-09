@@ -1,31 +1,54 @@
-# Prospect invitations and work-order progress
+# Public capture forms and work-order progress
 
 ## Behavior
 
-Providers can create a one-prospect link without a project name or known email,
-add contact/company details, and share its URL or locally generated QR through
-their usual messaging app. An optional starting email restricts the invitation
-to that address. Starting details remain associated with the selected request;
-only **Start another invitation** clears them. Selecting or reloading a request
-shows its current identity and the service version pinned to that request.
+Providers create a **reusable public form link and local QR by default**, without
+knowing a prospect's project name or email. The same link can be shared on a
+website, social media, ads, messages or business cards. Each submission creates
+an independent Google-owned request and private status page; the public link
+continues accepting other prospects. Creating the form creates no empty job.
+Providers can pause/resume each saved public form and optionally require email
+confirmation. These choices persist in D1 and are enforced on the server.
 
-An unclaimed request initially shows invitation guidance and progress instead
-of an empty editor. Providers can explicitly prepare its brief themselves.
-The public link exposes only branding and pinned service wording/questions,
-never the existing private brief, contact details, files or financial records.
-It expires after 30 days and can be revoked before claim. A rendered form open
-is recorded once and labelled unverified until email verification. An ordinary
-GET/unfurl does not record an open. This is an observable form-open signal,
-not proof of the intended person's identity or an analytics fingerprint.
+The form opens directly to the estimate and work-order fields. Email is optional
+unless the provider enables confirmation. Anonymous submissions receive a
+random private status capability, separate from the public form token. The
+status URL keeps its secret in the fragment, then exchanges it for a secure,
+HttpOnly, SameSite cookie and removes the fragment. Anyone with that private
+status link can access that one request; prospects must save it. Public forms
+never expose existing jobs, contact details, files or finances. A per-visit
+server-sealed timestamp records the form open for the resulting request without
+an identity claim or analytics fingerprint.
 
-Prospects request an estimate, describe capture/access/scheduling/handoff,
-and verify the emailed 20-minute link. Verification atomically assigns one
-client and queues the original submitted fields into the existing signed,
-append-only Google history. Competing/replayed challenges cannot create a
-second client session. Google interruptions retain the original operation;
-private reads/mutations reconcile it first, and scheduled recovery backs off.
-Temporary claim payloads are erased after verified durable completion.
+Optional confirmation uses the existing 20-minute emailed link and cannot be
+bypassed by changing client-side fields or a provider's later preference change.
+Confirmation and anonymous submission are idempotent and preserve the original
+encrypted operation through Google interruptions. Provider/client reads and
+scheduled recovery reconcile pending saves before returning the private job.
+Transient copies are cleared after the signed append-only Google event completes.
+The server recomputes estimates and rejects client-supplied financial fields.
+There is no credit charge, work agreement or payment at intake submission.
+
+Private invitations to a known email remain an explicitly selected option.
+Legacy one-prospect invitation links from 0012 remain compatible and require
+verification; they are distinct from the default reusable public form.
 Project naming and other required details remain agreement blockers.
+
+Providers can decline a pre-agreement request with an optional response and an
+optional email. The default sends no decline email; the client's status page
+shows Declined and the response, or a neutral default when no response was given.
+Declined access ends after 30 days, then the existing archive process retains
+Google history and the private archive. Anonymous or unverified contact emails
+receive no automatic client update mail; only an explicitly selected decline
+email can be sent. Existing email budgets and QA recipient restrictions apply.
+
+Unaccepted public requests expire after 30 days and enter the same archive
+process. Agreed work is excluded from request expiry. Declined/expired records
+are read-only; a provider correction reopen records a fresh 30-day request period.
+Pending unconfirmed submissions expire without creating a Google work order.
+Open-request limits remain 100 per workspace, with 20 saved reusable forms,
+20 submission attempts per IP/hour and 100 per public form/hour. No CAPTCHA,
+paid anti-abuse service or infrastructure upgrade is introduced.
 
 The named **Transcendence Media · spatial capture** estimate is explicitly
 provider-selected, never the global default. It matches the reviewed Jotform
@@ -50,8 +73,9 @@ Core's Client requests link now shares the sidebar controls' layout and styling.
 are required. Approval of PRs #68–#71 does not approve this new release.**
 
 This changes frontend components, Cloudflare Pages Functions and maintenance
-logic, adds D1 migration **0012_prospect_intake.sql**, and adds local QR encoding
-plus a test-only decoder. Google headers, secrets, OAuth scopes, provider grants,
+logic, adds D1 migration **0013_public_intake.sql** and depends on the previously
+merged **0012_prospect_intake.sql**. It reuses local QR encoding and the
+test-only decoder. Google headers, secrets, OAuth scopes, provider grants,
 payment modes, credit pricing and email/spend ceilings are unchanged.
 No Lovable action is required. StreamLion uses GitHub and Cloudflare.
 
@@ -82,18 +106,28 @@ Pages Functions, so this diff requires **no relay Worker redeployment**.
    invitation, Google grant or spending by itself. It may be staged from the
    approved PR head before automatic production deployment; activation still
    waits for approved merge and all required CI.
-5. Deploy only Pages project `streamlion`, including its frontend and existing
+5. After 0012 is complete, inspect again and run
+   **`node scripts/preflight-public-intake.mjs <inspection.json>`**. It verifies
+   exact 0001–0012 prerequisites. The four 0013 markers are
+   `streamlion_public_forms_v1`, `streamlion_public_submissions_v1`,
+   `streamlion_public_pending_v1`, `streamlion_public_intake_schema_v1`.
+   Apply committed **0013_public_intake.sql** byte-for-byte only when all four
+   are absent and the result is `pending`. Skip `already_applied`; stop on
+   partial state, definition or stamp mismatch. Record SHA-256/platform receipt,
+   then reinspect and require `already_applied`, schema stamp `1`, and unchanged
+   financial/policy aggregates. No secret or Google grant change is needed.
+6. Deploy only Pages project `streamlion`, including its frontend and existing
    Pages Functions, from that exact approved merged `main`. No secret rotation,
    provider setting, broader function/Worker deployment or unrelated data
    change is required. The old email invitation path remains compatible; new
-   share invitations fail closed while 0012 is unavailable.
-6. Record main SHA, migration/preflight/hash/platform result, Pages deployment
+   share invitations fail closed while 0012 is unavailable; default public forms fail closed while 0013 is unavailable.
+7. Record main SHA, migration/preflight/hash/platform result, Pages deployment
    ID/SHA and separate frontend revision. Perform no-send health checks: public
    availability, malformed/unknown prospect token rejection, and authenticated
-   provider status `shareLinks: true`. Existing unauthenticated release checks
+   provider status `shareLinks: true` and `publicForms: true`. Existing unauthenticated release checks
    must pass. Preserve test-only purchases and live-payment/AI-cost approval
    flags as false.
-7. Independently verify a fresh synthetic invitation and first-open status,
+8. Independently verify a fresh synthetic invitation and first-open status,
    estimate boundary, email verification, exact Google history readback,
    provider/client milestone agreement, revocation and QR scanning after deploy.
    Use only the already-authorized QA workbook/folder/grant and approved inbox
@@ -110,10 +144,10 @@ delete Google history, drop schema or rotate the token encryption key.
 
 ## Acceptance evidence and limits
 
-Final source validation: **486 tests passed**, including **78 focused intake,
-workflow and rendered-portal checks**. App/extension build, Cloudflare Functions
-compilation, unchanged relay dry-run and synthetic quota/history exercise passed;
-the dependency audit reported **zero vulnerabilities**. The quota/history
+Final source validation: **500 tests passed**. The app/extension build and
+Cloudflare Functions compilation passed. Earlier 0012 validation passed 486 tests, the unchanged relay dry-run and
+synthetic quota/history exercise; that dependency audit reported zero vulnerabilities.
+The new PR repeats those CI checks against its exact head. The quota/history
 exercise makes no external provider calls and does not establish live capacity.
 
 Local synthetic browser QA exercised an unnamed/email-free invitation with
@@ -146,3 +180,12 @@ physical-phone QR/device acceptance, production capacity or launch readiness**.
 The prior physical-device/download and operator/capacity acceptance gates
 remain separate. Obtain the deployment receipt and deployed synthetic readback
 before calling this feature live.
+
+Public-intake acceptance adds anonymous independent submissions and isolated
+private status capabilities; optional confirmation and preference changes;
+interrupted original-operation recovery; paused/refunded-provider denial;
+workspace limits; silent/emailed decline and 30-day expiry; exact 0013 preflight.
+Local synthetic browser QA confirms direct form opening without login or email,
+the named USD $750 / 5,000 sq ft estimate, no-email submission, retained exact
+`12 7/16 in` scope and private status opening. Desktop 1280px and phone 390px
+layouts remain separate from real device and deployed Google/email acceptance.
