@@ -7,6 +7,7 @@ import {
 } from "../src/client-workflow.js";
 import {
   INTAKE_PRESETS,
+  TM_CAPTURE_PRESET,
   reviseIntakeTemplate,
   selectedIntakeTemplate,
 } from "../src/intake-templates.js";
@@ -24,6 +25,9 @@ const recovered = new Map();
 const templates = new Map(),
   templateEvents = new Map();
 let templateRevision = 0;
+const links = new Map();
+let prospectVerified = true,
+  claim = null;
 const initialTemplate = reviseIntakeTemplate(
   null,
   {
@@ -74,6 +78,22 @@ job = reduceClientJob(
   Date.now(),
 );
 const handler = async (req, res, next) => {
+  if (
+    ["/api/purchase/status", "/api/google/session"].includes(
+      req.url.split("?")[0],
+    )
+  ) {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "no-store");
+    res.end(
+      JSON.stringify(
+        req.url.startsWith("/api/purchase/")
+          ? { enabled: false, required: false, purchased: false }
+          : { enabled: true, connected: false },
+      ),
+    );
+    return;
+  }
   if (!req.url.startsWith("/api/coordination/")) return next();
   let body = "";
   for await (const chunk of req) {
@@ -104,10 +124,12 @@ const handler = async (req, res, next) => {
         expiresAt: Date.now() + 365 * 86400000,
         wallet: { available: 7500000 },
         delivery: { email: true, push: false },
+        shareLinks: true,
       };
     else if (path === "provider/jobs")
       result = {
         jobs: [job],
+        links: [...links.values()],
         templates: [...templates.values()],
         pending: [],
         archives: [],
@@ -117,7 +139,7 @@ const handler = async (req, res, next) => {
             jobId: job.id,
             at: job.updatedAt,
             revision: job.revision,
-            label: "Request submitted",
+            label: job.submittedAt ? "Request submitted" : "Request created",
           },
         ],
       };
@@ -165,20 +187,93 @@ const handler = async (req, res, next) => {
         provider: "synthetic-provider",
         clientEmail: data.email,
         title: data.title,
+        prospect: data.shareLink === true,
+        contactName: data.contactName,
+        companyName: data.companyName,
         now: Date.now(),
-        intakeTemplate: data.template
-          ? selectedIntakeTemplate(
-              { events: templateEvents },
-              data.template,
-              "synthetic-provider",
-            )
-          : null,
+        intakeTemplate:
+          data.preset === "tm-spatial"
+            ? reviseIntakeTemplate(
+                null,
+                {
+                  id: "intake-tm-spatial",
+                  provider: "synthetic-provider",
+                  expectedVersion: 0,
+                  config: TM_CAPTURE_PRESET,
+                },
+                Date.now(),
+              )
+            : data.template
+              ? selectedIntakeTemplate(
+                  { events: templateEvents },
+                  data.template,
+                  "synthetic-provider",
+                )
+              : null,
       });
+      const url =
+        `http://127.0.0.1:${process.env.STREAMLION_QA_PORT || 5175}/api/client-portal?job=${job.id}` +
+        (data.shareLink ? "#invite=" + "S".repeat(43) : "");
+      if (data.shareLink) {
+        links.set(job.id, {
+          jobId: job.id,
+          url,
+          openedAt: null,
+          claimedAt: null,
+          expiresAt: Date.now() + 30 * 86400000,
+        });
+        prospectVerified = false;
+      }
+      result = { jobId: job.id, url, shareLink: data.shareLink };
+    } else if (path === "prospect/open") {
+      const link = links.get(job.id);
+      link.openedAt ||= Date.now();
+      templateRevision++;
       result = {
         jobId: job.id,
-        url: `http://127.0.0.1:${process.env.STREAMLION_QA_PORT || 5175}/api/client-portal?job=${job.id}`,
+        brand: "Synthetic provider",
+        intake: job.intake,
+        expiresAt: link.expiresAt,
       };
-    } else if (path === "client/job")
+    } else if (path === "prospect/request") {
+      const data = JSON.parse(body);
+      claim = data;
+      result = {
+        message:
+          "Synthetic verification ready. Open the local verification link; no email was sent.",
+      };
+    } else if (path === "client/verify" && claim) {
+      const { captureEstimate } = await import("../src/capture-estimate.js");
+      job = reduceClientJob(
+        job,
+        {
+          action: "claim_request",
+          expectedRevision: job.revision,
+          email: claim.email,
+          fields: claim.fields,
+          openedAt: links.get(job.id).openedAt,
+          estimate: captureEstimate(
+            job.intake?.estimateProfile,
+            claim.fields.propertySizeSqFt,
+            claim.creative,
+          ),
+        },
+        { role: "system" },
+        Date.now(),
+      );
+      const link = links.get(job.id);
+      link.claimedAt = Date.now();
+      link.url = null;
+      prospectVerified = true;
+      result = { verified: true };
+    } else if (path === "client/job") {
+      if (!prospectVerified) {
+        res.statusCode = 401;
+        res.end(
+          JSON.stringify({ error: "Verify your email to open this project." }),
+        );
+        return;
+      }
       result = {
         synthetic: true,
         job: clientView(job),
@@ -193,7 +288,11 @@ const handler = async (req, res, next) => {
           },
         ],
       };
-    else if (path.endsWith("/command")) {
+    } else if (path === "provider/revoke-link") {
+      links.get(job.id).url = null;
+      links.get(job.id).revoked = true;
+      result = { revoked: true };
+    } else if (path.endsWith("/command")) {
       const data = JSON.parse(body),
         role = path.startsWith("client") ? "client" : "provider";
       job = reduceClientJob(
@@ -224,7 +323,16 @@ const handler = async (req, res, next) => {
           "-" +
           job.revision +
           "-" +
-          templateRevision,
+          templateRevision +
+          "-" +
+          JSON.stringify(
+            [...links.values()].map((l) => [
+              l.jobId,
+              l.openedAt || 0,
+              l.claimedAt || 0,
+              l.revoked || false,
+            ]),
+          ),
         verifiedAt: Date.now(),
         pollAfterMs: 15000,
         reconcileAfterMs: 60000,

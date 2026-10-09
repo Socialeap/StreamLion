@@ -2,6 +2,7 @@ import React from "react";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
+import jsQR from "jsqr";
 import {
   newClientJob,
   reduceClientJob,
@@ -26,6 +27,7 @@ const { render, fireEvent, cleanup, waitFor, within } =
   await import("@testing-library/react");
 const { default: Portal, coordinationAPI } =
   await import("./CoordinationPortal.jsx");
+test.beforeEach(() => window.history.replaceState(null, "", "/client/?job=job-a"));
 const { coordinationDraftKey } = await import("./coordination-drafts.js");
 const { offerUpdate } = await import("./updates.js");
 const { reviseIntakeTemplate, INTAKE_PRESETS } =
@@ -273,6 +275,7 @@ test("a provider creates an invitation with the selected saved service version",
     />,
   );
   await ui.findByRole("heading", { name: "Invite a client" });
+  fireEvent.click(await ui.findByRole("button", { name: "Start another invitation" }));
   fireEvent.change(ui.getByLabelText("Service & intake"), {
     target: { value: record.id },
   });
@@ -576,6 +579,7 @@ test("an exhausted email allowance explains resumption and disables invites whil
     />,
   );
   await ui.findByText(/Email send limit reached/);
+  fireEvent.click(await ui.findByRole("button", { name: "Start another invitation" }));
   fireEvent.change(ui.getByLabelText("Project name"), {
     target: { value: "New request" },
   });
@@ -1085,4 +1089,149 @@ test("an unacknowledged transient verification keeps its token until authorized 
     ui.queryByRole("button", { name: "Retry original request" }),
     null,
   );
+});
+
+test("share-link creation accepts unknown title/email, retains contact identity and waits for the prospect instead of opening an empty editor", async (t) => {
+  t.after(cleanup);
+  let jobs = [],
+    links = [],
+    call;
+  const ui = render(
+    <Portal
+      api={async (path, body) => {
+        if (path === "provider/status")
+          return {
+            connected: true,
+            subject: "a",
+            shareLinks: true,
+            wallet: { available: 7500000 },
+            projectMicros: 3000000,
+            delivery: { email: false },
+          };
+        if (path === "provider/jobs")
+          return { jobs, links, pending: [], archives: [] };
+        if (path === "provider/notifications")
+          return { enabled: false, devices: [] };
+        if (path === "provider/create") {
+          call = body;
+          const job = newClientJob({
+            id: "job-new-link",
+            provider: "a",
+            clientEmail: body.email,
+            title: body.title,
+            contactName: body.contactName,
+            companyName: body.companyName,
+            prospect: true,
+            now: 1,
+          });
+          jobs = [job];
+          links = [
+            {
+              jobId: job.id,
+              url:
+                "https://app.example/api/client-portal?job=" +
+                job.id +
+                "#invite=" +
+                "S".repeat(43),
+              openedAt: null,
+              claimedAt: null,
+              expiresAt: Date.now() + 86400000,
+            },
+          ];
+          return { jobId: job.id, url: links[0].url, shareLink: true };
+        }
+        throw new Error("Unexpected fixture " + path);
+      }}
+    />,
+  );
+  await ui.findByRole("button", { name: "Create request link" });
+  assert.equal(ui.getByLabelText("Project name").required, false);
+  assert.equal(ui.getByLabelText("Client email").required, false);
+  fireEvent.change(ui.getByLabelText("Contact name · optional"), {
+    target: { value: "Initial contact" },
+  });
+  fireEvent.change(ui.getByLabelText("Company · optional"), {
+    target: { value: "Initial company" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Create request link" }));
+  await ui.findByLabelText("Trackable intake link");
+  assert.equal(call.email, "");
+  assert.equal(call.title, "");
+  assert.equal(call.shareLink, true);
+  assert.equal(
+    ui.getByLabelText("Contact name · optional").value,
+    "Initial contact",
+  );
+  assert.ok(ui.getByText("Waiting for first form open"));
+  assert.equal(
+    ui.queryByRole("button", { name: "Save current information" }),
+    null,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Show QR code" }));
+  assert.ok(
+    ui.getByRole("img", { name: "QR code for this client invitation" }),
+  );
+  const svg = ui.getByRole("img", { name: "QR code for this client invitation" });
+  const moduleCount = Number(svg.getAttribute("viewBox").split(" ")[2]), scale = 4, width = moduleCount * scale;
+  const pixels = new Uint8ClampedArray(width * width * 4).fill(255);
+  for (const match of svg.querySelector("path").getAttribute("d").matchAll(/M(\d+) (\d+)h1v1h-1z/g)) {
+    const x = Number(match[1]) * scale, y = Number(match[2]) * scale;
+    for (let dy=0;dy<scale;dy++) for(let dx=0;dx<scale;dx++) {
+      const offset=((y+dy)*width+x+dx)*4;
+      pixels[offset]=pixels[offset+1]=pixels[offset+2]=0;
+    }
+  }
+  assert.equal(jsQR(pixels,width,width).data,links[0].url);
+  const inviteCard = ui
+    .getByRole("heading", { name: "Invite a client" })
+    .closest("section");
+  const setup = ui.getByText("How client requests work").closest("details");
+  assert.ok(
+    inviteCard.compareDocumentPosition(setup) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  fireEvent.click(await ui.findByRole("button", { name: "Start another invitation" }));
+  assert.equal(ui.getByLabelText("Contact name · optional").value, "");
+  assert.ok(ui.getByRole("button", { name: "Create request link" }));
+});
+test("prospect estimator sends the original work-order wording for verification without asserting an agreement", async (t) => {
+  t.after(cleanup);
+  const { default: Prospect } = await import("./ProspectIntake.jsx");
+  const { TM_CAPTURE_PRESET } = await import("./intake-templates.js");
+  let call;
+  const ui = render(
+    <Prospect
+      descriptor={{ brand: "Synthetic provider", intake: TM_CAPTURE_PRESET }}
+      token={"S".repeat(43)}
+      api={async (path, body) => {
+        call = { path, body };
+        return { message: "Check your synthetic inbox." };
+      }}
+    />,
+  );
+  fireEvent.change(ui.getByLabelText("Approximate square footage"), {
+    target: { value: "5000" },
+  });
+  fireEvent.click(ui.getByLabelText("Add Creative Direction · 6 hours / $900"));
+  assert.ok(ui.getByText("Estimated total: $1,650.00"));
+  fireEvent.change(ui.getByLabelText(/Requested by/), {
+    target: { value: "Synthetic client" },
+  });
+  fireEvent.change(ui.getByLabelText(/Street address/), {
+    target: { value: "Synthetic site" },
+  });
+  fireEvent.change(ui.getByLabelText(/Scope of work/), {
+    target: { value: "Capture lobby. Exact 12 7/16 in." },
+  });
+  fireEvent.change(ui.getByLabelText("Email for private project access"), {
+    target: { value: "synthetic@example.com" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Send request for email verification" }),
+  );
+  await ui.findByText("Check your synthetic inbox.");
+  assert.equal(call.path, "prospect/request");
+  assert.equal(call.body.fields.title, undefined);
+  assert.equal(call.body.fields.scope, "Capture lobby. Exact 12 7/16 in.");
+  assert.equal(call.body.fields.paidAmount, undefined);
 });

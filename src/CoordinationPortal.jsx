@@ -8,6 +8,10 @@ import { PROJECT_FIELDS } from "./project-schema.js";
 import NotificationSettings from "./NotificationSettings.jsx";
 import IntakeTemplateSettings from "./IntakeTemplateSettings.jsx";
 import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
+import ProspectIntake from "./ProspectIntake.jsx";
+import RequestProgress from "./RequestProgress.jsx";
+import QRCode from "qrcode";
+import { estimateMoney } from "./capture-estimate.js";
 import { activeIntakeQuestions } from "./intake-templates.js";
 import { startCoordinationRefresh } from "./coordination-refresh.js";
 import { subscribeUpdate, updateReady, applyUpdate } from "./updates.js";
@@ -54,6 +58,7 @@ const states = {
   activation_pending: "Confirming — recovery in progress",
   confirmed: "Confirmed",
   in_progress: "In progress",
+  work_completed: "Work completed · delivery pending",
   delivered: "Delivered",
   closed: "Closed · read-only",
   cancelled: "Cancelled · read-only",
@@ -110,7 +115,15 @@ export default function CoordinationPortal({
   const [brand, setBrand] = useState(""),
     [consent, setConsent] = useState(false),
     [email, setEmail] = useState(""),
-    [title, setTitle] = useState("");
+    [title, setTitle] = useState(""),
+    [contactName, setContactName] = useState(""),
+    [companyName, setCompanyName] = useState("");
+  const [links, setLinks] = useState([]),
+    [shareLink, setShareLink] = useState(true),
+    [createdInvitation, setCreatedInvitation] = useState(null),
+    [prepareBrief, setPrepareBrief] = useState(false),
+    [prospect, setProspect] = useState(null),
+    [prospectToken, setProspectToken] = useState("");
   const [verified, setVerified] = useState(false),
     [showClosed, setShowClosed] = useState(false),
     [verification, setVerification] = useState("");
@@ -235,12 +248,16 @@ export default function CoordinationPortal({
         setJobs(result.jobs);
         setTemplates(result.templates || []);
         setSelectedTemplate((value) =>
-          (result.templates || []).some((t) => t.id === value) ? value : "",
+          value === "preset:tm-spatial" ||
+          (result.templates || []).some((t) => t.id === value)
+            ? value
+            : "",
         );
         setPending(result.pending);
         setArchives(result.archives || []);
         setMail(result.mail);
         setActivity(result.activity || []);
+        setLinks(result.links || []);
         return result;
       }
       refreshRef.current = null;
@@ -270,6 +287,24 @@ export default function CoordinationPortal({
       if (client) window.removeEventListener("hashchange", newClientLink);
     };
     if (client) {
+      const invitation = new URLSearchParams(window.location.hash.slice(1)).get(
+        "invite",
+      );
+      if (invitation) {
+        setProspectToken(invitation);
+        api("prospect/open", { token: invitation })
+          .then((data) => {
+            if (active) {
+              setProspect(data);
+              setBrand(data.brand);
+              setAccess("prospect");
+            }
+          })
+          .catch((e) => {
+            if (active) reportAccessError(e);
+          });
+        return cleanup;
+      }
       const token = new URLSearchParams(window.location.hash.slice(1)).get(
         "verify",
       );
@@ -355,6 +390,34 @@ export default function CoordinationPortal({
     }
   }
   const selectedJob = jobs.find((j) => j.id === selected);
+  function selectRequest(id) {
+    setSelected(id);
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("job", id);
+    else url.searchParams.delete("job");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }
+  useEffect(() => {
+    if (!selectedJob) return;
+    setCreatedInvitation((previous) =>
+      previous?.jobId === selectedJob.id ? previous : { jobId: selectedJob.id },
+    );
+    setTitle(selectedJob.fields.title || "");
+    setEmail(selectedJob.fields.requesterEmail || "");
+    setContactName(selectedJob.fields.requesterName || "");
+    setCompanyName(selectedJob.fields.companyName || "");
+    setSelectedTemplate(
+      selectedJob.intake?.id === "intake-tm-spatial"
+        ? "preset:tm-spatial"
+        : selectedJob.intake?.id || "",
+    );
+  }, [
+    selectedJob?.id,
+    selectedJob?.fields.title,
+    selectedJob?.fields.requesterEmail,
+    selectedJob?.fields.requesterName,
+    selectedJob?.fields.companyName,
+  ]);
   const operation = () => crypto.randomUUID();
   async function command(job, action, extra = {}) {
     return perform((client ? "client" : "provider") + "/command", {
@@ -488,11 +551,18 @@ export default function CoordinationPortal({
             {message}
           </div>
         )}
-        {(client ? verified : status?.connected) && (
+        {client && verified && (
           <NotificationSettings
             key={"notifications-" + (client ? selected : status?.subject)}
             role={client ? "client" : "provider"}
             subject={status?.subject}
+            api={api}
+          />
+        )}
+        {client && prospect && !verified && (
+          <ProspectIntake
+            descriptor={prospect}
+            token={prospectToken}
             api={api}
           />
         )}
@@ -577,13 +647,15 @@ export default function CoordinationPortal({
             )}
           </section>
         )}
-        {access !== "ready" && !(client && access === "verification") && (
-          <CoordinationAccess
-            access={access}
-            client={client}
-            retry={retryAccess}
-          />
-        )}
+        {access !== "ready" &&
+          access !== "prospect" &&
+          !(client && access === "verification") && (
+            <CoordinationAccess
+              access={access}
+              client={client}
+              retry={retryAccess}
+            />
+          )}
         {!client && status && !status.connected && (
           <section className="coord-card">
             <h2>Enable your client workspace</h2>
@@ -630,10 +702,6 @@ export default function CoordinationPortal({
         )}
         {!client && status?.connected && (
           <>
-            <details className="coord-card coord-guide">
-              <summary>How client requests work</summary>
-              <RequestGuide />
-            </details>
             {mail?.stalled > 0 && (
               <p className="coord-alert">
                 {mail.stalled} notification(s) need review. Keep the client’s
@@ -673,6 +741,324 @@ export default function CoordinationPortal({
                 ))}
               </section>
             )}
+            <div className="coord-layout">
+              <aside>
+                <section className="coord-card">
+                  <h2>Invite a client</h2>
+                  <p>
+                    Share an estimate and request form by link or QR. Project
+                    name, contact and company can wait. Add a client email only
+                    if you want the link restricted to that address.
+                  </p>
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const result = await perform("provider/create", {
+                        operation: operation(),
+                        email,
+                        title,
+                        contactName,
+                        companyName,
+                        ...(status.shareLinks ? { shareLink } : {}),
+                        ...(selectedTemplate === "preset:tm-spatial"
+                          ? { preset: "tm-spatial" }
+                          : selectedTemplate
+                            ? {
+                                template: {
+                                  id: selectedTemplate,
+                                  version:
+                                    templates.find(
+                                      (t) => t.id === selectedTemplate,
+                                    ).revision + 1,
+                                },
+                              }
+                            : {}),
+                      });
+                      if (result) {
+                        selectRequest(result.jobId);
+                        setCreatedInvitation({
+                          ...result,
+                          title,
+                          email,
+                          contactName,
+                          companyName,
+                        });
+                        setPrepareBrief(false);
+                        setMessage(
+                          result.shareLink
+                            ? "Request link ready. Share it by text, DM, email or QR. Waiting for the prospect to open and submit."
+                            : "Invitation queued. Starting details are retained below.",
+                        );
+                      }
+                    }}
+                  >
+                    {status.shareLinks && (
+                      <label>
+                        Invitation method
+                        <select
+                          value={shareLink ? "share" : "email"}
+                          disabled={busy || Boolean(createdInvitation)}
+                          onChange={(e) =>
+                            setShareLink(e.target.value === "share")
+                          }
+                        >
+                          <option value="share">
+                            Share a request link or QR
+                          </option>
+                          <option value="email">Invite a known email</option>
+                        </select>
+                      </label>
+                    )}
+                    <label>
+                      Service & intake
+                      <select
+                        value={selectedTemplate}
+                        disabled={busy || Boolean(createdInvitation)}
+                        onChange={(e) => setSelectedTemplate(e.target.value)}
+                      >
+                        <option value="">Standard work order</option>
+                        <option value="preset:tm-spatial">
+                          Transcendence Media · spatial capture estimate
+                        </option>
+                        {createdInvitation &&
+                          selectedJob?.intake &&
+                          selectedJob.intake.id !== "intake-tm-spatial" && (
+                            <option value={selectedJob.intake.id}>
+                              {selectedJob.intake.name} · version{" "}
+                              {selectedJob.intake.version} (this request)
+                            </option>
+                          )}
+                        {templates
+                          .filter(
+                            (t) =>
+                              !(
+                                createdInvitation &&
+                                t.id === selectedJob?.intake?.id
+                              ),
+                          )
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.config.name} · version {t.revision + 1}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Project name
+                      <input
+                        value={title}
+                        disabled={Boolean(createdInvitation)}
+                        maxLength={1000}
+                        onChange={(e) => setTitle(e.target.value)}
+                      />
+                    </label>
+                    <p className="coord-small">
+                      Project name can wait until agreement. In share-link mode,
+                      client email can also be left blank.
+                    </p>
+                    <label>
+                      Client email
+                      <input
+                        type="email"
+                        required={!status.shareLinks || !shareLink}
+                        disabled={Boolean(createdInvitation)}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Contact name · optional
+                      <input
+                        maxLength={1000}
+                        value={contactName}
+                        disabled={Boolean(createdInvitation)}
+                        onChange={(e) => setContactName(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Company · optional
+                      <input
+                        maxLength={1000}
+                        value={companyName}
+                        disabled={Boolean(createdInvitation)}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                      />
+                    </label>
+                    {!createdInvitation && (
+                      <button
+                        disabled={
+                          busy ||
+                          ((!status.shareLinks || !shareLink) &&
+                            status.delivery?.email === false)
+                        }
+                      >
+                        {status.shareLinks && shareLink
+                          ? "Create request link"
+                          : "Create request & invite"}
+                      </button>
+                    )}
+                    {createdInvitation && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setCreatedInvitation(null);
+                          selectRequest(null);
+                          setTitle("");
+                          setEmail("");
+                          setContactName("");
+                          setCompanyName("");
+                          setPrepareBrief(false);
+                        }}
+                      >
+                        Start another invitation
+                      </button>
+                    )}
+                  </form>
+                  <p className="coord-small">
+                    Creating a request uses no project credits.
+                  </p>
+                  {selectedJob &&
+                    selectedJob.state !== "archived" &&
+                    (!selectedJob.archiveAt ||
+                      selectedJob.archiveAt > Date.now()) && (
+                      <ProjectInvitation
+                        jobId={selectedJob.id}
+                        link={links.find((l) => l.jobId === selectedJob.id)}
+                      />
+                    )}
+                </section>
+              </aside>
+              <div>
+                {selectedJob &&
+                links.some((l) => l.jobId === selectedJob.id && !l.claimedAt) &&
+                !prepareBrief &&
+                !selectedJob.submittedAt ? (
+                  <section className="coord-card coord-detail">
+                    <h2>
+                      {selectedJob.fields.title ||
+                        "Project name to be confirmed"}
+                    </h2>
+                    <p>
+                      {[
+                        selectedJob.fields.requesterName,
+                        selectedJob.fields.companyName,
+                        selectedJob.fields.requesterEmail,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") ||
+                        "Prospect details have not been provided yet."}
+                    </p>
+                    <RequestProgress
+                      job={selectedJob}
+                      link={links.find((l) => l.jobId === selectedJob.id)}
+                      activity={activity.filter(
+                        (e) => e.jobId === selectedJob.id,
+                      )}
+                    />
+                    <p>
+                      Share the invitation first. The prospect’s verified
+                      submission will appear here for your review. A project
+                      name is required when both sides formalize the agreement.
+                    </p>
+                    <div className="coord-actions">
+                      <button onClick={() => setPrepareBrief(true)}>
+                        Prepare the brief yourself
+                      </button>
+                      <button
+                        className="coord-secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          perform("provider/revoke-link", {
+                            jobId: selectedJob.id,
+                          })
+                        }
+                      >
+                        Revoke this unclaimed link
+                      </button>
+                    </div>
+                  </section>
+                ) : selectedJob ? (
+                  <JobPanel
+                    key={selectedJob.id}
+                    job={selectedJob}
+                    activity={activity.filter(
+                      (e) => e.jobId === selectedJob.id,
+                    )}
+                    link={links.find((l) => l.jobId === selectedJob.id)}
+                    client={false}
+                    busy={busy}
+                    command={command}
+                    upload={(file) =>
+                      perform("provider/upload", {
+                        operation: operation(),
+                        jobId: selectedJob.id,
+                        file,
+                      })
+                    }
+                    archive={archives.find((a) => a.jobId === selectedJob.id)}
+                    invite={() =>
+                      perform("provider/invite", { jobId: selectedJob.id })
+                    }
+                    inviteAvailable={
+                      status.delivery?.email !== false &&
+                      (!links.find((l) => l.jobId === selectedJob.id) ||
+                        Boolean(
+                          links.find((l) => l.jobId === selectedJob.id)
+                            ?.claimedAt,
+                        ))
+                    }
+                    price={status.projectMicros}
+                  />
+                ) : (
+                  <section className="coord-card">
+                    <h2>A complete brief before you travel</h2>
+                    <p>
+                      Select a request to review scope, confirm the appointment
+                      and identify missing information.
+                    </p>
+                  </section>
+                )}
+              </div>
+            </div>
+            <section className="coord-card">
+              <h2>Your projects</h2>
+              <label className="coord-check">
+                <input
+                  type="checkbox"
+                  checked={showClosed}
+                  onChange={(e) => setShowClosed(e.target.checked)}
+                />
+                Include closed projects
+              </label>
+              <div className="coord-job-list">
+                {jobs
+                  .filter((j) => showClosed || !j.closedAt)
+                  .map((j) => (
+                    <button
+                      key={j.id}
+                      className={j.id === selected ? "selected" : ""}
+                      onClick={() => {
+                        selectRequest(j.id);
+                        setPrepareBrief(false);
+                      }}
+                    >
+                      <strong>{j.fields.title || "Untitled request"}</strong>
+                      <span>{states[j.state]}</span>
+                    </button>
+                  ))}
+                {!jobs.length && <p>Your first request starts here.</p>}
+              </div>
+            </section>
+            <details className="coord-card coord-guide">
+              <summary>How client requests work</summary>
+              <RequestGuide />
+            </details>
+            <NotificationSettings
+              role="provider"
+              subject={status.subject}
+              api={api}
+            />
             <IntakeTemplateSettings
               templates={templates}
               busy={busy}
@@ -700,156 +1086,6 @@ export default function CoordinationPortal({
                 return result;
               }}
             />
-            <div className="coord-layout">
-              <aside>
-                <section className="coord-card">
-                  <h2>Invite a client</h2>
-                  <p>
-                    Name the project and enter your client’s email. They receive
-                    a private link to complete the work order in their browser.
-                  </p>
-                  <form
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      const result = await perform("provider/create", {
-                        operation: operation(),
-                        email,
-                        title,
-                        ...(selectedTemplate
-                          ? {
-                              template: {
-                                id: selectedTemplate,
-                                version:
-                                  templates.find(
-                                    (t) => t.id === selectedTemplate,
-                                  ).revision + 1,
-                              },
-                            }
-                          : {}),
-                      });
-                      if (result) {
-                        setSelected(result.jobId);
-                        setMessage(
-                          "Invitation queued. Share this project link: " +
-                            result.url,
-                        );
-                        setEmail("");
-                        setTitle("");
-                      }
-                    }}
-                  >
-                    <label>
-                      Service & intake
-                      <select
-                        value={selectedTemplate}
-                        disabled={busy}
-                        onChange={(e) => setSelectedTemplate(e.target.value)}
-                      >
-                        <option value="">Standard work order</option>
-                        {templates.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.config.name} · version {t.revision + 1}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Project name
-                      <input
-                        value={title}
-                        required
-                        maxLength={1000}
-                        onChange={(e) => setTitle(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Client email
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                      />
-                    </label>
-                    <button disabled={busy || status.delivery?.email === false}>
-                      Create request & invite
-                    </button>
-                  </form>
-                  <p className="coord-small">
-                    Creating a request uses no project credits.
-                  </p>
-                  {selectedJob &&
-                    selectedJob.state !== "archived" &&
-                    (!selectedJob.archiveAt ||
-                      selectedJob.archiveAt > Date.now()) && (
-                      <ProjectInvitation jobId={selectedJob.id} />
-                    )}
-                </section>
-                <section className="coord-card">
-                  <h2>Your projects</h2>
-                  <label className="coord-check">
-                    <input
-                      type="checkbox"
-                      checked={showClosed}
-                      onChange={(e) => setShowClosed(e.target.checked)}
-                    />
-                    Include closed projects
-                  </label>
-                  <div className="coord-job-list">
-                    {jobs
-                      .filter((j) => showClosed || !j.closedAt)
-                      .map((j) => (
-                        <button
-                          key={j.id}
-                          className={j.id === selected ? "selected" : ""}
-                          onClick={() => setSelected(j.id)}
-                        >
-                          <strong>
-                            {j.fields.title || "Untitled request"}
-                          </strong>
-                          <span>{states[j.state]}</span>
-                        </button>
-                      ))}
-                    {!jobs.length && <p>Your first request starts here.</p>}
-                  </div>
-                </section>
-              </aside>
-              <div>
-                {selectedJob ? (
-                  <JobPanel
-                    key={selectedJob.id}
-                    job={selectedJob}
-                    activity={activity.filter(
-                      (e) => e.jobId === selectedJob.id,
-                    )}
-                    client={false}
-                    busy={busy}
-                    command={command}
-                    upload={(file) =>
-                      perform("provider/upload", {
-                        operation: operation(),
-                        jobId: selectedJob.id,
-                        file,
-                      })
-                    }
-                    archive={archives.find((a) => a.jobId === selectedJob.id)}
-                    invite={() =>
-                      perform("provider/invite", { jobId: selectedJob.id })
-                    }
-                    inviteAvailable={status.delivery?.email !== false}
-                    price={status.projectMicros}
-                  />
-                ) : (
-                  <section className="coord-card">
-                    <h2>A complete brief before you travel</h2>
-                    <p>
-                      Select a request to review scope, confirm the appointment
-                      and identify missing information.
-                    </p>
-                  </section>
-                )}
-              </div>
-            </div>
             <footer className="coord-footer">
               <span>
                 Background authorization expires {date(status.expiresAt)}.
@@ -890,8 +1126,8 @@ function RequestGuide() {
   return (
     <ol className="coord-request-guide">
       <li>
-        <strong>Invite your client.</strong> Create a named request and share
-        its private project link.
+        <strong>Invite your client.</strong> Create a request link or QR with
+        the details you know. Project name and client email can wait.
       </li>
       <li>
         <strong>Build the work order.</strong> Your client verifies their email,
@@ -955,22 +1191,36 @@ function CoordinationAccess({ access, client, retry }) {
     </section>
   );
 }
-function ProjectInvitation({ jobId }) {
+function ProjectInvitation({ jobId, link }) {
   const [notice, setNotice] = useState("");
+  const [qr, setQR] = useState(false);
   const url = new URL("/api/client-portal", window.location.origin);
   url.searchParams.set("job", jobId);
+  const shareURL = link?.url || url.href;
+  const matrix = qr
+    ? QRCode.create(shareURL, { errorCorrectionLevel: "M" }).modules
+    : null;
   useEffect(() => setNotice(""), [jobId]);
+  if (link && !link.claimedAt && !link.url)
+    return (
+      <div className="coord-project-link">
+        <p role="status">
+          This intake link {link.revoked ? "was revoked" : "has expired"}. Start
+          another invitation to generate a new prospect link.
+        </p>
+      </div>
+    );
   return (
     <div className="coord-project-link">
       <label>
-        Private project link
-        <input readOnly value={url.href} onFocus={(e) => e.target.select()} />
+        {link?.url ? "Trackable intake link" : "Private project link"}
+        <input readOnly value={shareURL} onFocus={(e) => e.target.select()} />
       </label>
       <button
         type="button"
         onClick={async () => {
           try {
-            await navigator.clipboard.writeText(url.href);
+            await navigator.clipboard.writeText(shareURL);
             setNotice("Project link copied.");
           } catch {
             setNotice(
@@ -981,9 +1231,87 @@ function ProjectInvitation({ jobId }) {
       >
         Copy client link
       </button>
+      <div className="coord-actions">
+        <button
+          type="button"
+          className="coord-secondary"
+          onClick={() => setQR(!qr)}
+        >
+          {qr ? "Hide QR code" : "Show QR code"}
+        </button>
+        <button
+          type="button"
+          className="coord-secondary"
+          onClick={async () => {
+            try {
+              if (navigator.share)
+                await navigator.share({
+                  title: "Work-order request",
+                  text: "Complete your estimate and work-order request",
+                  url: shareURL,
+                });
+              else {
+                await navigator.clipboard.writeText(shareURL);
+                setNotice("Link copied. Paste it into your text, DM or email.");
+              }
+            } catch (e) {
+              if (e.name !== "AbortError")
+                setNotice("Use Copy client link, or select and copy the URL.");
+            }
+          }}
+        >
+          Share link
+        </button>
+        <a
+          className="coord-share-action"
+          href={
+            "mailto:?subject=Work-order%20request&body=" +
+            encodeURIComponent(
+              "Complete your estimate and work-order request: " + shareURL,
+            )
+          }
+        >
+          Email link
+        </a>
+        <a
+          className="coord-share-action"
+          href={
+            "sms:?&body=" +
+            encodeURIComponent(
+              "Complete your estimate and work-order request: " + shareURL,
+            )
+          }
+        >
+          Text link
+        </a>
+      </div>
+      {matrix && (
+        <svg
+          className="coord-qr"
+          role="img"
+          aria-label="QR code for this client invitation"
+          viewBox={`0 0 ${matrix.size + 8} ${matrix.size + 8}`}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect width="100%" height="100%" fill="white" />
+          <path
+            fill="black"
+            d={Array.from(matrix.data)
+              .flatMap((value, i) =>
+                value
+                  ? [
+                      `M${(i % matrix.size) + 4} ${Math.floor(i / matrix.size) + 4}h1v1h-1z`,
+                    ]
+                  : [],
+              )
+              .join("")}
+          />
+        </svg>
+      )}
       <p className="coord-small">
-        Only the invited client can open the work order after verifying their
-        email.
+        {link?.url
+          ? "One prospect per link. Valid for 30 days; private project access requires email verification. Share through your usual messaging app."
+          : "Only the invited client can open the work order after verifying their email."}
       </p>
       {notice && <p role="status">{notice}</p>}
     </div>
@@ -991,6 +1319,7 @@ function ProjectInvitation({ jobId }) {
 }
 function JobPanel({
   activity = [],
+  link,
   job,
   client,
   busy,
@@ -1214,6 +1543,36 @@ function JobPanel({
           Version {job.revision} · updated {date(job.updatedAt)}
         </span>
       </div>
+      {!client && (
+        <h2 className="coord-job-title">
+          Request · {job.fields.title || "Project name to be confirmed"}
+        </h2>
+      )}
+      <p className="coord-identity">
+        {[
+          job.fields.requesterName,
+          job.fields.companyName,
+          job.fields.requesterEmail,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "Client details pending"}
+      </p>
+      <RequestProgress
+        job={job}
+        link={link}
+        activity={activity}
+        client={client}
+      />
+      {job.estimate && (
+        <p className="coord-estimate">
+          Submitted estimate:{" "}
+          <strong>
+            {estimateMoney(job.estimate.totalCents, job.estimate.currency)}
+          </strong>{" "}
+          · {job.estimate.sqft} sq ft. Preliminary, subject to provider review;
+          this does not set the agreed fee.
+        </p>
+      )}
       {job.reopenReason && (
         <p className="coord-notice">
           Provider reopened for correction {date(job.reopenedAt)}:{" "}
@@ -1717,7 +2076,9 @@ function JobPanel({
           )}
           {!client && (
             <>
-              {["confirmed", "in_progress"].includes(job.state) && (
+              {["confirmed", "in_progress", "work_completed"].includes(
+                job.state,
+              ) && (
                 <div className="coord-actions">
                   <button
                     disabled={busy}
@@ -1726,6 +2087,14 @@ function JobPanel({
                     }
                   >
                     Mark in progress
+                  </button>
+                  <button
+                    disabled={busy || issues.length > 0}
+                    onClick={() =>
+                      command(job, "progress", { state: "work_completed" })
+                    }
+                  >
+                    Mark work completed
                   </button>
                   <button
                     disabled={busy || issues.length > 0}

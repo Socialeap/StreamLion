@@ -1,6 +1,7 @@
 import { PROJECT_FIELDS, validateFields } from "./project-schema.js";
 import { CLIENT_FIELDS, REQUIRED_FIELDS } from "./client-permissions.js";
 import { CoordinationError, stableJSON } from "./coordination-contract.js";
+import { TM_ESTIMATE } from "./capture-estimate.js";
 
 export const INTAKE_KIND = "streamlion.intake-template";
 export const INTAKE_DEFAULT_FIELDS = [
@@ -65,6 +66,7 @@ export function validateIntakeConfig(input) {
     "description",
     "defaults",
     "questions",
+    "estimateProfile",
   ]);
   if (input.schemaVersion !== undefined && input.schemaVersion !== 1)
     throw new CoordinationError("Unsupported service template version.");
@@ -166,7 +168,15 @@ export function validateIntakeConfig(input) {
       Object.keys(defaults).map((k) => [k, checked[k]]),
     ),
     questions,
+    ...(input.estimateProfile
+      ? { estimateProfile: input.estimateProfile }
+      : {}),
   };
+  if (
+    input.estimateProfile !== undefined &&
+    input.estimateProfile !== TM_ESTIMATE
+  )
+    throw new CoordinationError("Select a supported estimate preset.");
   validateIntakeAnswers({ intake: config }, checked);
   if (stableJSON(config).length > 12000)
     throw new CoordinationError(
@@ -241,6 +251,9 @@ export function pinIntakeTemplate(record) {
     name: record.config.name,
     description: record.config.description,
     questions: structuredClone(record.config.questions),
+    ...(record.config.estimateProfile
+      ? { estimateProfile: record.config.estimateProfile }
+      : {}),
   };
 }
 export function selectedIntakeTemplate(snapshot, selection, provider) {
@@ -360,3 +373,24 @@ export const INTAKE_PRESETS = [
     ],
   },
 ];
+export const TM_CAPTURE_PRESET = {
+  schemaVersion: 1,
+  name: "Transcendence Media · spatial capture",
+  description:
+    "Request a preliminary 3D capture estimate and availability. Final scope, hosting, handoff, scheduling and invoice require provider review.",
+  estimateProfile: TM_ESTIMATE,
+  defaults: {
+    deliverables:
+      "3D capture; agree final outputs, hosting and account handoff with the provider.",
+    paymentTerms:
+      "No payment due with the request. Provider confirms the final quote and payment terms before agreement.",
+  },
+  questions: [
+    {
+      field: "deliveryDestination",
+      label: "Matterport / hosting account and handoff instructions",
+      help: "State the receiving account or ask for help. Do not enter account passwords. Agree any temporary hosting and transfer deadline with the provider.",
+      required: false,
+    },
+  ],
+};

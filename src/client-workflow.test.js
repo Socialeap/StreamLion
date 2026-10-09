@@ -132,6 +132,52 @@ test("client operational changes block close until acknowledged", () => {
   );
   assert.throws(() => change(job, "archive", "system"), /deadline/);
 });
+test("completion and delivery are distinct, and newly agreed scope reopens work", () => {
+  let job = confirmed();
+  assert.throws(
+    () => change(job, "progress", "client", { state: "work_completed" }),
+    /provider/i,
+  );
+  job = change(job, "progress", "provider", { state: "work_completed" });
+  const completedAt = job.workCompletedAt;
+  assert.equal(job.deliveredAt, undefined);
+  job = change(job, "progress", "provider", { state: "delivered" });
+  assert.equal(job.workCompletedAt, completedAt);
+  assert.ok(job.deliveredAt > completedAt);
+  job = change(job, "propose", "client", {
+    fields: { scope: "Capture one additional room" },
+  });
+  job = change(job, "accept_proposal", "provider", {
+    proposalId: job.proposal.id,
+  });
+  assert.equal(job.state, "in_progress");
+  assert.equal(job.workCompletedAt, undefined);
+  assert.equal(job.deliveredAt, undefined);
+  job = change(job, "progress", "provider", { state: "work_completed" });
+  job = change(job, "progress", "provider", { state: "in_progress" });
+  assert.equal(job.workCompletedAt, undefined);
+});
+test("reopened corrections record a fresh completion and delivery timestamp", () => {
+  let job = change(confirmed(), "progress", "provider", {
+    state: "work_completed",
+  });
+  const firstCompletion = job.workCompletedAt;
+  job = change(job, "progress", "provider", { state: "delivered" });
+  const firstDelivery = job.deliveredAt;
+  job = change(job, "accept_delivery", "client");
+  job = change(job, "close", "provider");
+  job = change(job, "reopen", "provider", { reason: "Correction requested" });
+  assert.equal(job.state, "in_progress");
+  assert.equal(job.workCompletedAt, undefined);
+  assert.equal(job.deliveredAt, undefined);
+  assert.equal(job.deliveryAccepted, false);
+  job = change(job, "progress", "provider", { state: "work_completed" });
+  assert.ok(job.workCompletedAt > firstCompletion);
+  const correctedCompletion = job.workCompletedAt;
+  job = change(job, "progress", "provider", { state: "delivered" });
+  assert.equal(job.workCompletedAt, correctedCompletion);
+  assert.ok(job.deliveredAt > firstDelivery);
+});
 test("stale edits, provider-only fields and private data are rejected or removed", () => {
   const job = confirmed();
   assert.throws(

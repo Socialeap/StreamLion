@@ -7,6 +7,7 @@ import {
   validateIntakeConfig,
 } from "./intake-templates.js";
 import { stableJSON } from "./coordination-contract.js";
+import { TM_ESTIMATE } from "./capture-estimate.js";
 
 const blank = () => ({
   name: "",
@@ -211,6 +212,34 @@ export default function IntakeTemplateSettings({
             ))}
           </div>
         </details>
+        <label>
+          Prospect estimate preset
+          <select
+            value={config.estimateProfile || ""}
+            disabled={busy}
+            onChange={(e) => {
+              const { estimateProfile, ...rest } = config;
+              setConfig(
+                e.target.value
+                  ? { ...rest, estimateProfile: e.target.value }
+                  : rest,
+              );
+            }}
+          >
+            <option value="">Provider reviews and quotes each request</option>
+            <option value={TM_ESTIMATE}>
+              Transcendence Media · spatial capture
+            </option>
+          </select>
+        </label>
+        {config.estimateProfile && (
+          <p className="coord-small">
+            USD $0.15/sq ft through 5,000; $0.12 at 5,001–19,999; $0.10 at
+            20,000+. Optional Creative Direction: 6 hours / $900. This
+            preliminary estimate requires your review; no payment or booking
+            occurs at submission.
+          </p>
+        )}
         <h3>Service questions</h3>
         <p className="coord-small">
           Choose a work-order field for each question. Required answers block
