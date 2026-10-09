@@ -34,7 +34,20 @@ import {
   beginRead,
   finishRead,
 } from "./coordination-runtime.js";
-import { selectedIntakeTemplate } from "../src/intake-templates.js";
+import {
+  selectedIntakeTemplate,
+  reviseIntakeTemplate,
+  TM_CAPTURE_PRESET,
+} from "../src/intake-templates.js";
+import {
+  prospectSchema,
+  createProspectLink,
+  openProspect,
+  requestProspectVerification,
+  verifyProspect,
+  syncProspectClaim,
+  prospectLinksForProvider,
+} from "./prospect-intake.js";
 const COOKIE = "__Host-streamlion-client";
 const random = () =>
   btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
@@ -336,6 +349,26 @@ export async function handleCoordination({ request, env, params = {} }) {
       throw new CoordinationError("Use the StreamLion project portal.", 403);
     if (!["GET", "POST"].includes(request.method))
       return json({ error: "Method not allowed." }, 405);
+    if (route.startsWith("prospect/") && request.method === "POST") {
+      const body = await bodyJSON(request, 40000);
+      await limited(
+        env,
+        "prospect-ip:" + request.headers.get("CF-Connecting-IP"),
+        route === "prospect/open" ? 60 : 20,
+      );
+      if (route === "prospect/open")
+        return json(await openProspect(env, body.token));
+      if (route === "prospect/request") {
+        await requireInvitationDelivery(env);
+        await limited(
+          env,
+          "prospect-link:" + (await hash(String(body.token).slice(0, 43))),
+          5,
+        );
+        return json(await requestProspectVerification(env, body));
+      }
+      throw new CoordinationError("Unknown intake action.", 404);
+    }
     if (route === "client/request" && request.method === "POST") {
       await requireInvitationDelivery(env);
       const body = await bodyJSON(request, 2048);
@@ -355,6 +388,18 @@ export async function handleCoordination({ request, env, params = {} }) {
         !row.archived &&
         (!row.archive_at || row.archive_at > Date.now())
       ) {
+        if (await prospectSchema(env)) {
+          const link = await env.GOOGLE_SESSIONS.prepare(
+            "SELECT claimed_at FROM streamlion_prospect_links_v1 WHERE job_id=?",
+          )
+            .bind(row.id)
+            .first();
+          if (link && !link.claimed_at)
+            return json({
+              message:
+                "Use the provider's intake invitation to submit and verify your request.",
+            });
+        }
         const email = await unseal(
           env,
           row.client_email,
@@ -384,15 +429,23 @@ export async function handleCoordination({ request, env, params = {} }) {
         sessionToken = random(),
         sessionHash = await hash(sessionToken),
         now = Date.now();
-      const results = await env.GOOGLE_SESSIONS.batch([
-        env.GOOGLE_SESSIONS.prepare(
-          "INSERT INTO streamlion_coordination_sessions_v1(hash,job_id,expires_at) SELECT ?,c.job_id,? FROM streamlion_coordination_challenges_v1 c JOIN streamlion_coordination_jobs_v1 j ON j.id=c.job_id WHERE c.hash=? AND c.consumed=0 AND c.expires_at>? AND j.archived=0 AND (j.archive_at IS NULL OR j.archive_at>?)",
-        ).bind(sessionHash, now + 7 * DAY, challengeHash, now, now),
-        env.GOOGLE_SESSIONS.prepare(
-          "UPDATE streamlion_coordination_challenges_v1 SET consumed=1 WHERE hash=? AND consumed=0 AND expires_at>?",
-        ).bind(challengeHash, now),
-      ]);
-      if (results[0].meta.changes !== 1)
+      const prospectVerified = await verifyProspect(
+        env,
+        challengeHash,
+        sessionHash,
+        now,
+      );
+      const results = prospectVerified
+        ? null
+        : await env.GOOGLE_SESSIONS.batch([
+            env.GOOGLE_SESSIONS.prepare(
+              "INSERT INTO streamlion_coordination_sessions_v1(hash,job_id,expires_at) SELECT ?,c.job_id,? FROM streamlion_coordination_challenges_v1 c JOIN streamlion_coordination_jobs_v1 j ON j.id=c.job_id WHERE c.hash=? AND c.consumed=0 AND c.expires_at>? AND j.archived=0 AND (j.archive_at IS NULL OR j.archive_at>?)",
+            ).bind(sessionHash, now + 7 * DAY, challengeHash, now, now),
+            env.GOOGLE_SESSIONS.prepare(
+              "UPDATE streamlion_coordination_challenges_v1 SET consumed=1 WHERE hash=? AND consumed=0 AND expires_at>?",
+            ).bind(challengeHash, now),
+          ]);
+      if (!prospectVerified && results[0].meta.changes !== 1)
         throw new CoordinationError(
           "Link expired or already used. Request a new link.",
           401,
@@ -428,6 +481,7 @@ export async function handleCoordination({ request, env, params = {} }) {
     if (route.startsWith("client/")) {
       const principal = await client(request, env),
         engine = new CoordinationEngine(env, principal.connection);
+      await syncProspectClaim(env, engine, principal.row.id);
       if (route === "client/notifications") {
         if (request.method === "POST")
           await limited(env, "push-client:" + principal.grantHash, 30);
@@ -579,6 +633,7 @@ export async function handleCoordination({ request, env, params = {} }) {
           connection.expires_at > Date.now(),
         ),
         delivery: { ...(await emailDeliveryStatus(env)), push: pushReady(env) },
+        shareLinks: await prospectSchema(env),
         expiresAt: connection?.expires_at,
         projectMicros: policy.project_micros,
         wallet: await sharedWallet(
@@ -718,6 +773,9 @@ export async function handleCoordination({ request, env, params = {} }) {
       return json({ disconnected: true });
     }
     if (route === "provider/jobs" && request.method === "GET") {
+      const links = await prospectLinksForProvider(env, connection);
+      for (const link of links.filter((l) => l.claimedAt))
+        await syncProspectClaim(env, engine, link.jobId);
       const pending = await env.GOOGLE_SESSIONS.prepare(
         "SELECT id,job_id,created_at FROM streamlion_coordination_operations_v1 WHERE connection_id=? AND state='pending'",
       )
@@ -731,6 +789,7 @@ export async function handleCoordination({ request, env, params = {} }) {
       const read = await beginRead(env, connection, "", request, {
         pending: pending.results,
         mail,
+        links,
       });
       if (read.unchanged)
         return json({ unchanged: true, refresh: read.refresh });
@@ -748,6 +807,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         archives: snapshot.rows[3]
           .slice(1)
           .map((r) => ({ jobId: r[0], fileId: r[2] })),
+        links,
       };
       const capacity = await finishRead(
         env,
@@ -778,7 +838,13 @@ export async function handleCoordination({ request, env, params = {} }) {
       return json(await engine.restoreArchive(body.operation, body.fileId));
     if (route === "provider/create" && request.method === "POST") {
       // Do not create a project/challenge that its client cannot verify.
-      await requireInvitationDelivery(env);
+      if (body.shareLink === true) {
+        if (!(await prospectSchema(env)))
+          throw new CoordinationError(
+            "Share-link intake awaits activation.",
+            503,
+          );
+      } else await requireInvitationDelivery(env);
       if (!operationID(body.operation))
         throw new CoordinationError("Invalid operation identity.");
       const id = "job-" + body.operation;
@@ -793,19 +859,36 @@ export async function handleCoordination({ request, env, params = {} }) {
         email = String(body.email || "")
           .trim()
           .toLowerCase();
+      if (body.preset && body.preset !== "tm-spatial")
+        throw new CoordinationError("Select a supported service preset.");
       const job = newClientJob({
         id,
         provider: connection.google_subject,
         clientEmail: email,
         title: body.title || "",
+        contactName: body.contactName || "",
+        companyName: body.companyName || "",
+        prospect: body.shareLink === true,
         now,
-        intakeTemplate: body.template
-          ? selectedIntakeTemplate(
-              await engine.google.snapshot(),
-              body.template,
-              connection.google_subject,
-            )
-          : null,
+        intakeTemplate:
+          body.preset === "tm-spatial"
+            ? reviseIntakeTemplate(
+                null,
+                {
+                  id: "intake-tm-spatial",
+                  provider: connection.google_subject,
+                  expectedVersion: 0,
+                  config: TM_CAPTURE_PRESET,
+                },
+                now,
+              )
+            : body.template
+              ? selectedIntakeTemplate(
+                  await engine.google.snapshot(),
+                  body.template,
+                  connection.google_subject,
+                )
+              : null,
       });
       const active = await env.GOOGLE_SESSIONS.prepare(
         "SELECT COUNT(*) AS count FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL",
@@ -840,10 +923,15 @@ export async function handleCoordination({ request, env, params = {} }) {
       )
         .bind(id)
         .first();
-      await invite(env, row);
+      const url =
+        body.shareLink === true
+          ? await createProspectLink(env, row, job, connection)
+          : env.GOOGLE_AUTH_ORIGIN + "/api/client-portal?job=" + id;
+      if (body.shareLink !== true) await invite(env, row);
       return json({
         jobId: id,
-        url: env.GOOGLE_AUTH_ORIGIN + "/api/client-portal?job=" + id,
+        url,
+        shareLink: body.shareLink === true,
       });
     }
     if (
@@ -852,6 +940,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         "provider/retry",
         "provider/invite",
         "provider/upload",
+        "provider/revoke-link",
       ].includes(route) &&
       request.method === "POST"
     ) {
@@ -867,6 +956,17 @@ export async function handleCoordination({ request, env, params = {} }) {
         return json(await engine.run(body.operation));
       }
       if (!row) throw new CoordinationError("Job unavailable.", 404);
+      if (route === "provider/revoke-link") {
+        if (!(await prospectSchema(env)))
+          throw new CoordinationError("Intake unavailable.", 503);
+        await env.GOOGLE_SESSIONS.prepare(
+          "UPDATE streamlion_prospect_links_v1 SET revoked=1 WHERE job_id=? AND claimed_at IS NULL",
+        )
+          .bind(row.id)
+          .run();
+        return json({ revoked: true });
+      }
+      await syncProspectClaim(env, engine, row.id);
       if (route === "provider/upload")
         return json(
           await engine.upload(body.operation, row.id, body.file, {
@@ -874,6 +974,18 @@ export async function handleCoordination({ request, env, params = {} }) {
           }),
         );
       if (route === "provider/invite") {
+        if (await prospectSchema(env)) {
+          const link = await env.GOOGLE_SESSIONS.prepare(
+            "SELECT claimed_at FROM streamlion_prospect_links_v1 WHERE job_id=?",
+          )
+            .bind(row.id)
+            .first();
+          if (link && !link.claimed_at)
+            throw new CoordinationError(
+              "Share the intake link. Email sign-in becomes available after the prospect verifies and submits.",
+              409,
+            );
+        }
         if (row.archived || (row.archive_at && row.archive_at <= Date.now()))
           throw new CoordinationError("Client access has expired.", 409);
         await limited(env, "request-job:" + row.id, 5);
@@ -910,6 +1022,7 @@ function activityFor(snapshot, jobId, clientOnly = false) {
     create: "Request created",
     edit: "Project information updated",
     submit: "Request submitted",
+    claim_request: "Verified request submitted",
     question: "Clarification requested",
     answer: "Answer recorded",
     approve: "Approval recorded",
@@ -942,6 +1055,7 @@ function activityFor(snapshot, jobId, clientOnly = false) {
       jobId: e.jobId,
       at: e.at,
       revision: e.revision,
+      actor: e.actor,
       label: labels[e.action],
     }));
 }

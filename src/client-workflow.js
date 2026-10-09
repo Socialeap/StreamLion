@@ -40,6 +40,7 @@ function validateBriefFields(input, options) {
 }
 export function isMaterialField(job, key) {
   return (
+    (key === "propertySizeSqFt" && Boolean(job.intake?.estimateProfile)) ||
     MATERIAL_FIELDS.has(key) ||
     (!OPERATIONAL_FIELDS.has(key) &&
       (job.intake?.questions || []).some(
@@ -85,6 +86,9 @@ export function newClientJob({
   provider,
   clientEmail,
   title,
+  contactName = "",
+  companyName = "",
+  prospect = false,
   now,
   intakeTemplate = null,
 }) {
@@ -96,7 +100,8 @@ export function newClientJob({
   const intake = intakeTemplate ? pinIntakeTemplate(intakeTemplate) : null;
   if (
     !/^[\w-]{1,100}$/.test(id) ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)
+    (!(prospect && clientEmail === "") &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail))
   )
     throw new CoordinationError("Provide a valid client email.");
   const fields = validateBriefFields(
@@ -104,6 +109,8 @@ export function newClientJob({
       ...(intakeTemplate?.config.defaults || {}),
       title,
       requesterEmail: clientEmail,
+      requesterName: contactName,
+      companyName,
     },
     { requireTitle: false },
   );
@@ -112,6 +119,7 @@ export function newClientJob({
     id,
     provider,
     state: "draft",
+    ...(prospect ? { invitationKind: "prospect" } : {}),
     revision: 0,
     fields,
     ...(intake ? { intake } : {}),
@@ -172,6 +180,32 @@ export function reduceClientJob(previous, command, actor, now) {
       409,
     );
   switch (command.action) {
+    case "claim_request": {
+      if (
+        actor.role !== "system" ||
+        job.accepted ||
+        job.state !== "draft" ||
+        (job.fields.requesterEmail &&
+          job.fields.requesterEmail !== command.email)
+      )
+        throw new CoordinationError(
+          "Request claim requires verified identity.",
+          403,
+        );
+      validatePatch(command.fields, "client");
+      job.fields = validateBriefFields(
+        { ...job.fields, ...command.fields, requesterEmail: command.email },
+        { requireTitle: false },
+      );
+      validateIntakeAnswers(job, job.fields);
+      job.state = "submitted";
+      job.submittedAt = now;
+      job.openedAt = command.openedAt;
+      if (command.estimate) job.estimate = command.estimate;
+      job.providerApproved = false;
+      job.clientApproved = false;
+      break;
+    }
     case "attach":
       if (job.attachments.length >= 20)
         throw new CoordinationError("Maximum 20 attachments per job.");
@@ -231,6 +265,7 @@ export function reduceClientJob(previous, command, actor, now) {
       )
         throw new CoordinationError("This request is already agreed.", 409);
       job.state = "submitted";
+      job.submittedAt = now;
       break;
     case "question":
       onlyProvider();
@@ -341,7 +376,11 @@ export function reduceClientJob(previous, command, actor, now) {
         job.accepted = structuredClone(job.fields);
         job.proposal = null;
         job.deliveryAccepted = false;
-        if (job.state === "delivered") job.state = "in_progress";
+        if (["work_completed", "delivered"].includes(job.state)) {
+          job.state = "in_progress";
+          delete job.workCompletedAt;
+          delete job.deliveredAt;
+        }
       }
       break;
     case "reject_proposal":
@@ -355,14 +394,18 @@ export function reduceClientJob(previous, command, actor, now) {
     case "progress":
       onlyProvider();
       if (
-        !["confirmed", "in_progress"].includes(job.state) ||
-        !["in_progress", "delivered"].includes(command.state)
+        !["confirmed", "in_progress", "work_completed"].includes(job.state) ||
+        !["in_progress", "work_completed", "delivered"].includes(command.state)
       )
         throw new CoordinationError(
           "Confirm this job before recording work.",
           409,
         );
       job.state = command.state;
+      if (command.state === "work_completed" || command.state === "delivered")
+        job.workCompletedAt ??= now;
+      if (command.state === "in_progress") delete job.workCompletedAt;
+      if (command.state === "delivered") job.deliveredAt = now;
       break;
     case "accept_delivery":
       if (actor.role !== "client" || job.state !== "delivered")

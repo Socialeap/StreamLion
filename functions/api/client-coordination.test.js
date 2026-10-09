@@ -16,6 +16,13 @@ import { handleCoordination } from "../../server/client-coordination.js";
 import { CoordinationEngine } from "../../server/coordination-engine.js";
 import { CoordinationGoogle } from "../../server/coordination-google.js";
 import {
+  createProspectLink,
+  openProspect,
+  requestProspectVerification,
+  syncProspectClaim,
+} from "../../server/prospect-intake.js";
+import { TM_ESTIMATE } from "../../src/capture-estimate.js";
+import {
   archiveFixture,
   archiveGoogleFixture,
 } from "../../test/archive-fixture.js";
@@ -2113,4 +2120,555 @@ test("0009 backfills old AI reservations without double debit and returns their 
   } finally {
     sql.close();
   }
+});
+
+async function prospectFixture(t, email = "") {
+  const f = fixture(t),
+    google = googleFixture();
+  const template = {
+    kind: "streamlion.intake-template",
+    version: 1,
+    id: "intake-prospect",
+    provider: "a",
+    revision: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    config: {
+      schemaVersion: 1,
+      name: "TM spatial capture",
+      description: "Public service guidance",
+      defaults: {},
+      questions: [],
+      estimateProfile: TM_ESTIMATE,
+    },
+  };
+  const job = newClientJob({
+    id: "job-prospect",
+    provider: "a",
+    clientEmail: email,
+    title: "Private starting name",
+    contactName: "Private contact",
+    companyName: "Private company",
+    prospect: true,
+    now: Date.now(),
+    intakeTemplate: template,
+  });
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) VALUES(?,?,?,?,?)",
+    )
+    .run(
+      job.id,
+      f.connection.id,
+      job.id,
+      await seal(f.env, email, "job-email:" + job.id),
+      job.createdAt,
+    );
+  google.heads.set(job.id, job);
+  const row = f.sql
+    .prepare("SELECT * FROM streamlion_coordination_jobs_v1 WHERE id=?")
+    .get(job.id);
+  const url = await createProspectLink(f.env, row, job, f.connection),
+    token = new URLSearchParams(new URL(url).hash.slice(1)).get("invite");
+  const engine = new CoordinationEngine(f.env, f.connection, google);
+  return { ...f, google, job, row, url, token, engine };
+}
+const prospectBody = (f, email = "client@example.com") => ({
+  token: f.token,
+  email,
+  creative: true,
+  fields: {
+    requesterName: "Synthetic client",
+    address: "Synthetic site",
+    scope: "3D capture",
+    propertySizeSqFt: "5000",
+    notes: "Exact 12 7/16 in; handoff to client account",
+  },
+});
+async function verificationToken(f, email) {
+  const notices = f.sql
+    .prepare(
+      "SELECT * FROM streamlion_coordination_outbox_v1 WHERE id LIKE 'prospect-verify-%'",
+    )
+    .all();
+  for (const notice of notices) {
+    const payload = await unseal(f.env, notice.payload, "mail:" + notice.id);
+    if (payload.to === email)
+      return new URLSearchParams(new URL(payload.url).hash.slice(1)).get(
+        "verify",
+      );
+  }
+  throw new Error("Synthetic verification missing");
+}
+function verifyRequest(token) {
+  return new Request("https://app.example/api/coordination/client/verify", {
+    method: "POST",
+    headers: {
+      Origin: "https://app.example",
+      "Content-Type": "application/json",
+      "CF-Connecting-IP": "192.0.2.5",
+    },
+    body: JSON.stringify({ token }),
+  });
+}
+test("prospect link exposes only public service wording, records one unverified open and grants no private access", async (t) => {
+  const f = await prospectFixture(t);
+  assert.ok(f.url.includes("#invite="));
+  const view = await openProspect(f.env, f.token),
+    first = f.sql
+      .prepare("SELECT opened_at FROM streamlion_prospect_links_v1")
+      .get().opened_at;
+  await openProspect(f.env, f.token);
+  assert.equal(
+    f.sql.prepare("SELECT opened_at FROM streamlion_prospect_links_v1").get()
+      .opened_at,
+    first,
+  );
+  assert.equal(view.brand, "Provider");
+  assert.equal(view.intake.estimateProfile, TM_ESTIMATE);
+  assert.equal(JSON.stringify(view).includes("Private"), false);
+  assert.equal(view.fields, undefined);
+  const requestResponse = await handleCoordination({
+    env: f.env,
+    params: { path: "prospect/request" },
+    request: new Request(
+      "https://app.example/api/coordination/prospect/request",
+      {
+        method: "POST",
+        headers: {
+          Origin: "https://app.example",
+          "Content-Type": "application/json",
+          "CF-Connecting-IP": "192.0.2.5",
+        },
+        body: JSON.stringify(prospectBody(f)),
+      },
+    ),
+  });
+  assert.equal(requestResponse.status, 200);
+  assert.ok(
+    !JSON.stringify(
+      f.sql.prepare("SELECT * FROM streamlion_coordination_rates_v1").all(),
+    ).includes(f.token),
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_sessions_v1")
+      .get().n,
+    0,
+  );
+  const response = await handleCoordination({
+    env: f.env,
+    request: new Request("https://app.example/api/coordination/client/job"),
+    params: { path: "client/job" },
+  });
+  assert.equal(response.status, 401);
+  await assert.rejects(
+    () => openProspect(f.env, "x".repeat(43)),
+    /unavailable/,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1").get()
+      .n,
+    0,
+  );
+});
+test("unknown-email claims verify atomically, reject a competing email/replays and recover the same Google submission", async (t) => {
+  const f = await prospectFixture(t);
+  await openProspect(f.env, f.token);
+  await requestProspectVerification(
+    f.env,
+    prospectBody(f, "first@example.com"),
+  );
+  await requestProspectVerification(
+    f.env,
+    prospectBody(f, "second@example.com"),
+  );
+  const first = await verificationToken(f, "first@example.com"),
+    second = await verificationToken(f, "second@example.com");
+  const replies = await Promise.all(
+    [first, second].map((token) =>
+      handleCoordination({
+        env: f.env,
+        request: verifyRequest(token),
+        params: { path: "client/verify" },
+      }),
+    ),
+  );
+  assert.deepEqual(replies.map((r) => r.status).sort(), [200, 401]);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_sessions_v1")
+      .get().n,
+    1,
+  );
+  const winner = await unseal(
+    f.env,
+    f.sql
+      .prepare("SELECT client_email FROM streamlion_coordination_jobs_v1")
+      .get().client_email,
+    "job-email:" + f.job.id,
+  );
+  assert.ok(["first@example.com", "second@example.com"].includes(winner));
+  const repeated = await handleCoordination({
+    env: f.env,
+    request: verifyRequest(winner === "first@example.com" ? first : second),
+    params: { path: "client/verify" },
+  });
+  assert.equal(repeated.status, 401);
+  await syncProspectClaim(f.env, f.engine, f.job.id);
+  await syncProspectClaim(f.env, f.engine, f.job.id);
+  const job = f.google.heads.get(f.job.id);
+  assert.equal(job.state, "submitted");
+  assert.equal(job.fields.requesterEmail, winner);
+  assert.equal(job.fields.title, "Private starting name");
+  assert.equal(job.fields.notes, "Exact 12 7/16 in; handoff to client account");
+  assert.equal(job.estimate.totalCents, 165000);
+  assert.equal(job.fields.agreedFee, "");
+  assert.equal(f.google.events.size, 1);
+  assert.equal(
+    f.sql
+      .prepare("SELECT claim_payload FROM streamlion_prospect_links_v1")
+      .get().claim_payload,
+    null,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1").get()
+      .n,
+    0,
+  );
+  await assert.rejects(() => openProspect(f.env, f.token), /unavailable/);
+});
+test("claim verification fails closed for revoked/expired links, closed jobs, disconnected or refunded providers", async (t) => {
+  for (const mutation of [
+    "UPDATE streamlion_prospect_links_v1 SET revoked=1",
+    "UPDATE streamlion_prospect_links_v1 SET expires_at=1",
+    "UPDATE streamlion_prospect_challenges_v1 SET expires_at=1",
+    "UPDATE streamlion_coordination_jobs_v1 SET closed_at=1",
+    "UPDATE streamlion_coordination_connections_v1 SET revoked=1",
+    "UPDATE streamlion_purchases_v1 SET status='refunded' WHERE google_subject='a'",
+  ]) {
+    const f = await prospectFixture(t);
+    await requestProspectVerification(f.env, prospectBody(f));
+    const token = await verificationToken(f, "client@example.com");
+    f.sql.exec(mutation);
+    const response = await handleCoordination({
+      env: f.env,
+      request: verifyRequest(token),
+      params: { path: "client/verify" },
+    });
+    assert.equal(response.status, 401, mutation);
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT COUNT(*) AS n FROM streamlion_coordination_sessions_v1",
+        )
+        .get().n,
+      0,
+    );
+    assert.equal(
+      f.sql.prepare("SELECT claimed_at FROM streamlion_prospect_links_v1").get()
+        .claimed_at,
+      null,
+    );
+  }
+});
+test("pre-addressed share links cannot be claimed by another email or forge financial fields", async (t) => {
+  const f = await prospectFixture(t, "expected@example.com");
+  await requestProspectVerification(
+    f.env,
+    prospectBody(f, "other@example.com"),
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_prospect_challenges_v1")
+      .get().n,
+    0,
+  );
+  await assert.rejects(
+    () =>
+      requestProspectVerification(f.env, {
+        ...prospectBody(f, "expected@example.com"),
+        fields: { ...prospectBody(f).fields, paidAmount: "999" },
+      }),
+    /cannot be changed/,
+  );
+  await requestProspectVerification(f.env, {
+    ...prospectBody(f, "expected@example.com"),
+    estimate: { totalCents: 1 },
+    state: "closed",
+  });
+  const challenge = f.sql
+      .prepare("SELECT * FROM streamlion_prospect_challenges_v1")
+      .get(),
+    payload = await unseal(
+      f.env,
+      challenge.payload,
+      "prospect-claim:" + f.job.id,
+    );
+  assert.equal(payload.estimate.totalCents, 165000);
+  assert.equal(payload.state, undefined);
+});
+test("Google interruption after verified claim retains the original operation and blocks premature private readback", async (t) => {
+  const f = await prospectFixture(t);
+  await requestProspectVerification(f.env, prospectBody(f));
+  const response = await handleCoordination({
+    env: f.env,
+    request: verifyRequest(await verificationToken(f, "client@example.com")),
+    params: { path: "client/verify" },
+  });
+  assert.equal(response.status, 200);
+  const originalEvent = f.google.event.bind(f.google);
+  let fail = true;
+  f.google.event = async (event) => {
+    if (fail) throw new Error("Synthetic Google interruption");
+    return originalEvent(event);
+  };
+  await assert.rejects(
+    () => syncProspectClaim(f.env, f.engine, f.job.id),
+    /Synthetic/,
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_coordination_operations_v1 WHERE state='pending'",
+      )
+      .get().n,
+    1,
+  );
+  fail = false;
+  await syncProspectClaim(f.env, f.engine, f.job.id);
+  assert.equal(f.google.heads.get(f.job.id).state, "submitted");
+  assert.equal(f.google.events.size, 1);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_coordination_operations_v1 WHERE state='pending'",
+      )
+      .get().n,
+    0,
+  );
+});
+test("0012 preflight accepts only exact complete or entirely absent markers", (t) => {
+  const f = fixture(t),
+    schema = f.sql
+      .prepare(
+        "SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%' AND sql IS NOT NULL",
+      )
+      .all();
+  const stamps = Object.fromEntries(
+    schema
+      .filter((r) => r.name.includes("_schema_"))
+      .map((r) => [
+        r.name,
+        Number(f.sql.prepare("SELECT version FROM " + r.name).get().version),
+      ]),
+  );
+  const target = "0012_prospect_intake.sql",
+    check = coordinationPreflight({ schema, stamps }, target);
+  assert.equal(check.migration, "already_applied");
+  assert.equal(
+    coordinationPreflight(
+      {
+        schema: schema.filter((r) => !check.newMarkers.includes(r.name)),
+        stamps,
+      },
+      target,
+    ).migration,
+    "pending",
+  );
+  assert.throws(
+    () =>
+      coordinationPreflight(
+        {
+          schema: schema.filter(
+            (r) => r.name !== "streamlion_prospect_challenges_v1",
+          ),
+          stamps,
+        },
+        target,
+      ),
+    /Partial/,
+  );
+  assert.throws(
+    () =>
+      coordinationPreflight(
+        { schema, stamps: { ...stamps, streamlion_prospect_schema_v1: 0 } },
+        target,
+      ),
+    /stamp mismatch/,
+  );
+});
+test("share invitation creation retries preserve mode and provider ownership, with no invite email or charge", async (t) => {
+  const f = fixture(t),
+    google = googleFixture();
+  for (const method of ["snapshot", "event", "projection"])
+    t.mock.method(CoordinationGoogle.prototype, method, (...args) =>
+      method === "snapshot"
+        ? google.snapshot().then((s) => ({ ...s, rows: [[], [], [], []] }))
+        : google[method](...args),
+    );
+  for (const subject of ["a", "b"])
+    f.sql
+      .prepare(
+        "INSERT INTO streamlion_google_sessions_v1(session_hash,google_subject,email,credentials,expires_at,workbook_id,folder_id) VALUES(?,?,?,?,?,?,?)",
+      )
+      .run(
+        await hash(subject.repeat(43)),
+        subject,
+        subject + "@example.com",
+        "encrypted",
+        Date.now() + 86400000,
+        "book-" + subject,
+        "folder-" + subject,
+      );
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_connections_v1(id,google_subject,mode,workbook_id,folder_id,credentials,client_brand,expires_at,revoked) VALUES(?,?,?,?,?,?,?,?,?)",
+    )
+    .run(
+      "connection-b",
+      "b",
+      "test",
+      "book-b",
+      "folder-b",
+      "encrypted",
+      "Provider B",
+      Date.now() + 86400000,
+      0,
+    );
+  const call = (route, body, subject = "a") =>
+    handleCoordination({
+      env: f.env,
+      params: { path: route.split("/") },
+      request: new Request("https://app.example/api/coordination/" + route, {
+        method: body ? "POST" : "GET",
+        headers: {
+          Cookie: "__Host-streamlion-session=" + subject.repeat(43),
+          Origin: "https://app.example",
+          "Content-Type": "application/json",
+          "X-StreamLion-Account": subject,
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+    });
+  const input = {
+    operation: "unknown-client",
+    title: "",
+    email: "",
+    contactName: "DM prospect",
+    companyName: "Example company",
+    shareLink: true,
+    preset: "tm-spatial",
+  };
+  delete f.env.COORDINATION_MAILER;
+  const created = await call("provider/create", input);
+  assert.equal(created.status, 200);
+  const original = await created.json();
+  assert.equal(
+    (await (await call("provider/create", input)).json()).url,
+    original.url,
+  );
+  const saved = google.heads.get(original.jobId);
+  assert.equal(saved.fields.title, "");
+  assert.equal(saved.fields.requesterName, "DM prospect");
+  assert.equal(saved.fields.companyName, "Example company");
+  assert.equal(saved.intake.estimateProfile, TM_ESTIMATE);
+  f.env.COORDINATION_MAILER = {
+    fetch: async () => {
+      throw new Error("No external mail");
+    },
+  };
+  assert.equal(
+    (
+      await call("provider/create", {
+        ...input,
+        shareLink: false,
+        email: "client@example.com",
+      })
+    ).status,
+    409,
+  );
+  const addressed = {
+    ...input,
+    operation: "addressed-prospect",
+    email: "client@example.com",
+  };
+  assert.equal((await call("provider/create", addressed)).status, 200);
+  assert.equal(
+    (await call("provider/create", { ...addressed, shareLink: false })).status,
+    409,
+  );
+  assert.equal((await call("provider/create", input, "b")).status, 409);
+  assert.equal(
+    (await call("provider/revoke-link", { jobId: original.jobId }, "b")).status,
+    404,
+  );
+  assert.equal(
+    (await (await call("provider/jobs", null, "b")).json()).links.length,
+    0,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_coordination_outbox_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
+    0,
+  );
+  assert.equal(
+    (await call("provider/revoke-link", { jobId: original.jobId })).status,
+    200,
+  );
+  await assert.rejects(
+    () =>
+      openProspect(
+        f.env,
+        new URLSearchParams(new URL(original.url).hash.slice(1)).get("invite"),
+      ),
+    /unavailable/,
+  );
+});
+test("background verified-claim recovery backs off before another Google attempt", async (t) => {
+  const f = await prospectFixture(t);
+  await requestProspectVerification(f.env, prospectBody(f));
+  assert.equal(
+    (
+      await handleCoordination({
+        env: f.env,
+        request: verifyRequest(
+          await verificationToken(f, "client@example.com"),
+        ),
+        params: { path: "client/verify" },
+      })
+    ).status,
+    200,
+  );
+  f.sql.exec("UPDATE streamlion_coordination_outbox_v1 SET status='delivered'");
+  let reads = 0;
+  t.mock.method(CoordinationGoogle.prototype, "snapshot", async () => {
+    reads++;
+    throw new Error("Synthetic Google unavailable");
+  });
+  const now = Date.now();
+  await maintainCoordination(f.env, now);
+  assert.equal(reads, 1);
+  const schedule = f.sql
+    .prepare(
+      "SELECT * FROM streamlion_coordination_work_schedule_v1 WHERE kind='recovery'",
+    )
+    .get();
+  assert.equal(schedule.attempts, 1);
+  assert.ok(schedule.next_attempt_at > now);
+  await maintainCoordination(f.env, now + 1);
+  assert.equal(reads, 1);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT claimed_at,synced_at,claim_payload FROM streamlion_prospect_links_v1",
+      )
+      .get().synced_at,
+    null,
+  );
 });

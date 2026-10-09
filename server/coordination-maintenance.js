@@ -4,6 +4,7 @@ import { hash } from "./google-auth.js";
 import { DAY } from "../src/client-workflow.js";
 import { dispatchNotifications } from "./coordination-notifications.js";
 import { hasPurchase } from "./purchase-access.js";
+import { prospectSchema, syncProspectClaim } from "./prospect-intake.js";
 import {
   coordinationRuntime,
   deferWork,
@@ -22,6 +23,36 @@ export async function maintainCoordination(env, now = Date.now()) {
   if (!(await coordinationReady(env))) return counts;
   const db = env.GOOGLE_SESSIONS;
   const started = Date.now();
+  const hasProspects = await prospectSchema(env);
+  if (hasProspects) {
+    const claims = await db
+      .prepare(
+        "SELECT p.job_id,p.claim_operation,j.connection_id FROM streamlion_prospect_links_v1 p JOIN streamlion_coordination_jobs_v1 j ON j.id=p.job_id JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='recovery' AND w.id=p.claim_operation WHERE p.claimed_at IS NOT NULL AND p.synced_at IS NULL AND j.archived=0 AND j.closed_at IS NULL AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND EXISTS(SELECT 1 FROM streamlion_purchases_v1 b WHERE b.google_subject=c.google_subject AND b.mode=c.mode AND b.status='paid') AND COALESCE(w.next_attempt_at,0)<=? ORDER BY p.claimed_at LIMIT 5",
+      )
+      .bind(now, env.STREAMLION_PAYMENTS_MODE, now)
+      .all();
+    for (const claim of claims.results) {
+      if (Date.now() - started >= 10000) break;
+      const connection = await db
+        .prepare(
+          "SELECT * FROM streamlion_coordination_connections_v1 WHERE id=?",
+        )
+        .bind(claim.connection_id)
+        .first();
+      try {
+        await syncProspectClaim(
+          env,
+          new CoordinationEngine(env, connection),
+          claim.job_id,
+        );
+        await completeWork(db, "recovery", claim.claim_operation);
+        counts.recovered++;
+      } catch {
+        await deferWork(db, "recovery", claim.claim_operation, now);
+        counts.retained++;
+      }
+    }
+  }
   // Bounded batches. One unresolved operation always blocks later workbook writes.
   const pending = await db
     .prepare(
@@ -115,6 +146,13 @@ export async function maintainCoordination(env, now = Date.now()) {
     .first();
   if (cleanup)
     try {
+      if (hasProspects)
+        await db
+          .prepare(
+            "DELETE FROM streamlion_prospect_challenges_v1 WHERE hash IN (SELECT hash FROM streamlion_prospect_challenges_v1 WHERE expires_at<? OR consumed=1 ORDER BY expires_at LIMIT 100)",
+          )
+          .bind(now - DAY)
+          .run();
       await db.batch([
         db
           .prepare(
@@ -163,7 +201,11 @@ export async function maintainCoordination(env, now = Date.now()) {
           )
           .bind(now - 30 * DAY),
         db.prepare(
-          "DELETE FROM streamlion_coordination_work_schedule_v1 WHERE (kind='recovery' AND NOT EXISTS(SELECT 1 FROM streamlion_coordination_operations_v1 o WHERE o.id=streamlion_coordination_work_schedule_v1.id AND o.state='pending')) OR (kind='archive' AND NOT EXISTS(SELECT 1 FROM streamlion_coordination_jobs_v1 j WHERE j.id=streamlion_coordination_work_schedule_v1.id AND j.archived=0))",
+          "DELETE FROM streamlion_coordination_work_schedule_v1 WHERE (kind='recovery' AND NOT EXISTS(SELECT 1 FROM streamlion_coordination_operations_v1 o WHERE o.id=streamlion_coordination_work_schedule_v1.id AND o.state='pending')" +
+            (hasProspects
+              ? " AND NOT EXISTS(SELECT 1 FROM streamlion_prospect_links_v1 p WHERE p.claim_operation=streamlion_coordination_work_schedule_v1.id AND p.claimed_at IS NOT NULL AND p.synced_at IS NULL)"
+              : "") +
+            ") OR (kind='archive' AND NOT EXISTS(SELECT 1 FROM streamlion_coordination_jobs_v1 j WHERE j.id=streamlion_coordination_work_schedule_v1.id AND j.archived=0))",
         ),
         db
           .prepare(

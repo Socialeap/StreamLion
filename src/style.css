@@ -1307,3 +1307,7 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
   .workspace-page-head .actions button { padding: 10px 14px; }
   .connection-records { padding: 16px; }
 }
+.sidebar nav .client-coordination-link { display: flex; align-items: center; justify-content: flex-start; gap: 10px; color: var(--text); text-decoration: none; padding: 14px 16px; border-radius: 12px; font-size: 15px; font-weight: 500; }
+.sidebar nav .client-coordination-link:hover { background: var(--accent-soft); color: var(--green); }
+@media (max-width: 760px) { .sidebar nav .client-coordination-link { font-size: 12px; white-space: normal; line-height: 1.25; } }
+@media (max-width: 640px) { .sidebar nav .client-coordination-link { flex: 1; flex-direction: column; justify-content: center; gap: 5px; padding: 8px 2px; min-width: 0; min-height: 57px; border-radius: 4px; text-align: center; } }

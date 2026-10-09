@@ -953,10 +953,11 @@ export default function App() {
               )}
             </button>
           ))}
+          <a className="client-coordination-link" href="/api/client-requests">
+            <FileText size={20} />
+            <span>Client requests</span>
+          </a>
         </nav>
-        <a className="client-coordination-link" href="/api/client-requests">
-          Client requests
-        </a>
         {!(page === "Connections" && bookId) && (
           <div
             className={
