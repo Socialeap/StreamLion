@@ -2408,6 +2408,88 @@ test("pre-addressed share links cannot be claimed by another email or forge fina
   assert.equal(payload.estimate.totalCents, 165000);
   assert.equal(payload.state, undefined);
 });
+test("provider-prepared submissions and approvals do not strand a verified prospect claim", async (t) => {
+  for (const state of ["submitted", "clarification", "awaiting_agreement"]) {
+    const f = await prospectFixture(t);
+    let current = f.google.heads.get(f.job.id);
+    const prepare = async (operation, command) => {
+      await f.engine.command(
+        operation,
+        f.job.id,
+        { ...command, expectedRevision: current.revision },
+        { role: "provider" },
+      );
+      current = f.google.heads.get(f.job.id);
+    };
+    await prepare("prepare-brief", {
+      action: "edit",
+      fields: {
+        address: "Provider starting site",
+        scope: "Provider starting scope",
+        deliverables: "3D tour",
+        accessInstructions: "Arrange access",
+        companyName: "Provider starting company",
+      },
+    });
+    await prepare("provider-submit", { action: "submit" });
+    if (state === "clarification")
+      await prepare("provider-question", {
+        action: "question",
+        text: "Confirm site access",
+      });
+    if (state === "awaiting_agreement")
+      await prepare("provider-approve", {
+        action: "approve",
+        authorizedMicros: 3000000,
+      });
+    assert.equal(current.state, state);
+    await requestProspectVerification(f.env, prospectBody(f));
+    const token = await verificationToken(f, "client@example.com");
+    assert.equal(
+      (
+        await handleCoordination({
+          env: f.env,
+          request: verifyRequest(token),
+          params: { path: "client/verify" },
+        })
+      ).status,
+      200,
+    );
+    await syncProspectClaim(f.env, f.engine, f.job.id);
+    await syncProspectClaim(f.env, f.engine, f.job.id);
+    const claimed = f.google.heads.get(f.job.id);
+    assert.equal(claimed.state, "submitted");
+    assert.equal(claimed.fields.scope, "3D capture");
+    assert.equal(claimed.fields.companyName, "Provider starting company");
+    assert.equal(claimed.providerApproved, false);
+    assert.equal(claimed.clientApproved, false);
+    assert.equal(
+      [...f.google.events.values()].filter((e) => e.action === "claim_request")
+        .length,
+      1,
+    );
+    assert.ok(
+      f.sql.prepare("SELECT synced_at FROM streamlion_prospect_links_v1").get()
+        .synced_at,
+    );
+    assert.equal(
+      f.sql
+        .prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1")
+        .get().n,
+      0,
+    );
+    assert.equal(
+      (
+        await handleCoordination({
+          env: f.env,
+          request: verifyRequest(token),
+          params: { path: "client/verify" },
+        })
+      ).status,
+      401,
+    );
+  }
+});
 test("Google interruption after verified claim retains the original operation and blocks premature private readback", async (t) => {
   const f = await prospectFixture(t);
   await requestProspectVerification(f.env, prospectBody(f));

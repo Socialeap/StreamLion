@@ -110,7 +110,7 @@ delete Google history, drop schema or rotate the token encryption key.
 
 ## Acceptance evidence and limits
 
-Final source validation: **483 tests passed**, including **75 focused intake,
+Final source validation: **486 tests passed**, including **78 focused intake,
 workflow and rendered-portal checks**. App/extension build, Cloudflare Functions
 compilation, unchanged relay dry-run and synthetic quota/history exercise passed;
 the dependency audit reported **zero vulnerabilities**. The quota/history
@@ -132,6 +132,14 @@ denial; pre-addressed email restriction; forged finance/price rejection; isolate
 provider creation/list/revoke; unchanged request-mode retries; exact migration
 preflight; interrupted durable Google recovery and maintained retry backoff.
 Work-state tests distinguish completion/delivery and reopened scope.
+
+PR #72 review regressions also verify that a provider-prepared request can be
+claimed after submission, clarification or provider approval. Verified claims
+reset both approvals while preserving identity, role and accepted-work guards;
+repeated synchronization writes only one claim event and spends no credits.
+Reopening corrections clears completion and delivery timestamps, so completing
+and delivering the corrected work records the new cycle's times. These fixes
+add no migration or configuration beyond the existing 0012 release plan.
 
 These are source/local-browser checks, **not live activation, real email,
 physical-phone QR/device acceptance, production capacity or launch readiness**.

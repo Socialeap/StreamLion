@@ -184,7 +184,9 @@ export function reduceClientJob(previous, command, actor, now) {
       if (
         actor.role !== "system" ||
         job.accepted ||
-        job.state !== "draft" ||
+        !["draft", "submitted", "clarification", "awaiting_agreement"].includes(
+          job.state,
+        ) ||
         (job.fields.requesterEmail &&
           job.fields.requesterEmail !== command.email)
       )
@@ -470,6 +472,8 @@ export function reduceClientJob(previous, command, actor, now) {
       job.deliveryAccepted = false;
       job.reopenReason = command.reason.trim();
       job.reopenedAt = now;
+      delete job.workCompletedAt;
+      delete job.deliveredAt;
       break;
     case "archive":
       if (actor.role !== "system" || !job.closedAt || job.archiveAt > now)

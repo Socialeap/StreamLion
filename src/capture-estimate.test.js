@@ -87,3 +87,81 @@ test("verified request can defer title but cannot agree until a formal name exis
     /Resolve required/,
   );
 });
+test("verified claims allow prepared pre-agreement states but never retain approvals or bypass identity guards", () => {
+  const initial = newClientJob({
+    id: "prepared-claim",
+    provider: "a",
+    clientEmail: "client@example.com",
+    title: "Provider starting name",
+    prospect: true,
+    now: 1,
+  });
+  const command = {
+    action: "claim_request",
+    expectedRevision: 0,
+    email: "client@example.com",
+    openedAt: 2,
+    fields: {
+      scope: "Prospect's revised scope",
+      requesterName: "Verified prospect",
+    },
+  };
+  for (const state of [
+    "draft",
+    "submitted",
+    "clarification",
+    "awaiting_agreement",
+  ]) {
+    const job = {
+      ...initial,
+      state,
+      providerApproved: true,
+      clientApproved: true,
+    };
+    const claimed = reduceClientJob(job, command, { role: "system" }, 3);
+    assert.equal(claimed.state, "submitted");
+    assert.equal(claimed.fields.scope, command.fields.scope);
+    assert.equal(claimed.fields.title, initial.fields.title);
+    assert.equal(claimed.providerApproved, false);
+    assert.equal(claimed.clientApproved, false);
+    assert.equal(claimed.accepted, null);
+    for (const role of ["provider", "client"])
+      assert.throws(
+        () => reduceClientJob(job, command, { role }, 3),
+        /verified identity/,
+      );
+    assert.throws(
+      () =>
+        reduceClientJob(
+          job,
+          { ...command, email: "other@example.com" },
+          { role: "system" },
+          3,
+        ),
+      /verified identity/,
+    );
+  }
+  for (const state of [
+    "activation_pending",
+    "confirmed",
+    "in_progress",
+    "work_completed",
+    "delivered",
+    "closed",
+    "cancelled",
+    "archived",
+  ])
+    assert.throws(() =>
+      reduceClientJob({ ...initial, state }, command, { role: "system" }, 3),
+    );
+  assert.throws(
+    () =>
+      reduceClientJob(
+        { ...initial, accepted: { ...initial.fields } },
+        command,
+        { role: "system" },
+        3,
+      ),
+    /verified identity/,
+  );
+});

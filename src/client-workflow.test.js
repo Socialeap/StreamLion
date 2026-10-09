@@ -157,6 +157,27 @@ test("completion and delivery are distinct, and newly agreed scope reopens work"
   job = change(job, "progress", "provider", { state: "in_progress" });
   assert.equal(job.workCompletedAt, undefined);
 });
+test("reopened corrections record a fresh completion and delivery timestamp", () => {
+  let job = change(confirmed(), "progress", "provider", {
+    state: "work_completed",
+  });
+  const firstCompletion = job.workCompletedAt;
+  job = change(job, "progress", "provider", { state: "delivered" });
+  const firstDelivery = job.deliveredAt;
+  job = change(job, "accept_delivery", "client");
+  job = change(job, "close", "provider");
+  job = change(job, "reopen", "provider", { reason: "Correction requested" });
+  assert.equal(job.state, "in_progress");
+  assert.equal(job.workCompletedAt, undefined);
+  assert.equal(job.deliveredAt, undefined);
+  assert.equal(job.deliveryAccepted, false);
+  job = change(job, "progress", "provider", { state: "work_completed" });
+  assert.ok(job.workCompletedAt > firstCompletion);
+  const correctedCompletion = job.workCompletedAt;
+  job = change(job, "progress", "provider", { state: "delivered" });
+  assert.equal(job.workCompletedAt, correctedCompletion);
+  assert.ok(job.deliveredAt > firstDelivery);
+});
 test("stale edits, provider-only fields and private data are rejected or removed", () => {
   const job = confirmed();
   assert.throws(
