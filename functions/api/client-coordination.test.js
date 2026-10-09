@@ -3303,3 +3303,236 @@ test("maintenance expires unconfirmed public drafts and clears temporary persona
   assert.equal(j.closed_at, now);
   assert.equal(f.google.heads.size, 0);
 });
+
+for (const mode of ["disconnected", "refunded", "grant-expired", "paused"]) {
+  test(`unconfirmed public privacy cleanup survives ${mode}`, async (t) => {
+    const f = await publicFixture(t, true);
+    await f.submit(publicBody(f, "privacy-" + mode, "client@example.com"));
+    if (mode === "disconnected")
+      f.sql.exec("UPDATE streamlion_coordination_connections_v1 SET revoked=1");
+    if (mode === "refunded")
+      f.sql.exec("UPDATE streamlion_purchases_v1 SET status='refunded'");
+    if (mode === "grant-expired")
+      f.sql.exec(
+        "UPDATE streamlion_coordination_connections_v1 SET expires_at=1",
+      );
+    if (mode === "paused") f.env.ENABLE_CLIENT_COORDINATION = "false";
+    await maintainCoordination(f.env, Date.now() + 31 * 86400000);
+    const s = f.sql
+      .prepare("SELECT * FROM streamlion_public_submissions_v1")
+      .get();
+    assert.equal(s.state, "expired");
+    for (const field of [
+      "payload",
+      "challenge_hash",
+      "challenge_token",
+      "challenge_expires",
+      "verified_session_hash",
+    ])
+      assert.equal(s[field], null);
+    const j = f.sql
+      .prepare("SELECT * FROM streamlion_coordination_jobs_v1")
+      .get();
+    assert.equal(j.archived, 1);
+    assert.equal(j.client_email, "");
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1 WHERE id LIKE 'public-verify-%'",
+        )
+        .get().n,
+      0,
+    );
+    assert.equal(f.google.heads.size, 0);
+  });
+}
+
+test("overdue completed public request closes while disconnected and reconciles after renewal using a bounded identity", async (t) => {
+  const f = await publicFixture(t);
+  const receipt = await f.submit(publicBody(f, "x".repeat(73)));
+  const jobId = receipt.jobId;
+  const job = f.google.heads.get(jobId);
+  assert.ok(job);
+  job.requestExpiresAt = Date.now() - 1;
+  f.sql
+    .prepare(
+      "UPDATE streamlion_public_submissions_v1 SET expires_at=? WHERE job_id=?",
+    )
+    .run(job.requestExpiresAt, jobId);
+  f.sql.exec("UPDATE streamlion_coordination_connections_v1 SET revoked=1");
+  await maintainCoordination(f.env);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT state FROM streamlion_public_submissions_v1 WHERE job_id=?",
+      )
+      .get(jobId).state,
+    "expired",
+  );
+  assert.ok(
+    f.sql
+      .prepare(
+        "SELECT closed_at FROM streamlion_coordination_jobs_v1 WHERE id=?",
+      )
+      .get(jobId).closed_at,
+  );
+  assert.equal(f.google.heads.get(jobId).state, "submitted");
+  await assert.rejects(
+    () =>
+      f.engine.command(
+        "cannot-resurrect",
+        jobId,
+        {
+          action: "edit",
+          fields: { scope: "Expired correction" },
+          expectedRevision: job.revision,
+        },
+        { role: "provider" },
+      ),
+    /expired|closed/i,
+  );
+  f.sql.exec("UPDATE streamlion_coordination_connections_v1 SET revoked=0");
+  await syncPublicSubmission(f.env, f.engine, jobId);
+  assert.equal(f.google.heads.get(jobId).state, "expired");
+  const id = await hash("public-expiry:" + "public-" + "x".repeat(73));
+  assert.equal(id.length, 43);
+  assert.equal((await f.engine.operation(id)).state, "complete");
+  await syncPublicSubmission(f.env, f.engine, jobId);
+  assert.equal(f.google.events.size, 2);
+});
+
+test("concurrent public form creation atomically admits only the twentieth form and retains retry identity", async (t) => {
+  const f = await publicFixture(t);
+  const base = newClientJob({
+    id: "base-limit",
+    provider: "a",
+    clientEmail: "",
+    title: "",
+    prospect: true,
+    now: Date.now(),
+  });
+  for (let i = 1; i < 19; i++)
+    await createPublicForm(f.env, f.connection, "form-limit-" + i, base);
+  const results = await Promise.allSettled(
+    Array.from({ length: 8 }, (_, i) =>
+      createPublicForm(f.env, f.connection, "racing-form-" + i, base),
+    ),
+  );
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_public_forms_v1").get()
+      .n,
+    20,
+  );
+  const winner = results.findIndex((r) => r.status === "fulfilled");
+  assert.deepEqual(
+    await createPublicForm(f.env, f.connection, "racing-form-" + winner, base),
+    results[winner].value,
+  );
+});
+
+test("expiry cleanup preserves accepted requests and an unresolved agreement journal", async (t) => {
+  const f = await publicFixture(t);
+  const first = await f.submit(publicBody(f, "accepted-retention"));
+  const second = await f.submit(publicBody(f, "pending-agreement"));
+  f.sql
+    .prepare(
+      "UPDATE streamlion_public_submissions_v1 SET expires_at=0 WHERE job_id=?",
+    )
+    .run(first.jobId);
+  f.sql
+    .prepare(
+      "UPDATE streamlion_public_submissions_v1 SET expires_at=1 WHERE job_id=?",
+    )
+    .run(second.jobId);
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES('agreement-in-flight',?,?,'provider','synthetic','encrypted',1)",
+    )
+    .run(f.connection.id, second.jobId);
+  f.env.ENABLE_CLIENT_COORDINATION = "false";
+  await maintainCoordination(f.env);
+  for (const id of [first.jobId, second.jobId]) {
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT closed_at FROM streamlion_coordination_jobs_v1 WHERE id=?",
+        )
+        .get(id).closed_at,
+      null,
+    );
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT state FROM streamlion_public_submissions_v1 WHERE job_id=?",
+        )
+        .get(id).state,
+      "complete",
+    );
+  }
+});
+
+test("concurrent retries of the final public form return the same capability", async (t) => {
+  const f = await publicFixture(t);
+  const base = newClientJob({
+    id: "retry-limit",
+    provider: "a",
+    clientEmail: "",
+    title: "",
+    prospect: true,
+    now: Date.now(),
+  });
+  for (let i = 1; i < 19; i++)
+    await createPublicForm(f.env, f.connection, "retry-limit-" + i, base);
+  const forms = await Promise.all(
+    Array.from({ length: 6 }, () =>
+      createPublicForm(f.env, f.connection, "last-shared-identity", base),
+    ),
+  );
+  for (const form of forms) assert.deepEqual(form, forms[0]);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_public_forms_v1").get()
+      .n,
+    20,
+  );
+});
+
+for (const mode of ["refunded", "grant-expired", "paused"]) {
+  test(`overdue submitted public requests close without Google writes while ${mode}`, async (t) => {
+    const f = await publicFixture(t);
+    const receipt = await f.submit(publicBody(f, "submitted-" + mode));
+    f.sql
+      .prepare(
+        "UPDATE streamlion_public_submissions_v1 SET expires_at=1 WHERE job_id=?",
+      )
+      .run(receipt.jobId);
+    if (mode === "refunded")
+      f.sql.exec("UPDATE streamlion_purchases_v1 SET status='refunded'");
+    if (mode === "grant-expired")
+      f.sql.exec(
+        "UPDATE streamlion_coordination_connections_v1 SET expires_at=1",
+      );
+    if (mode === "paused") f.env.ENABLE_CLIENT_COORDINATION = "false";
+    t.mock.method(CoordinationGoogle.prototype, "snapshot", async () => {
+      throw new Error("Unexpected Google access");
+    });
+    const result = await maintainCoordination(f.env);
+    assert.equal(result.retained, 0);
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT state FROM streamlion_public_submissions_v1 WHERE job_id=?",
+        )
+        .get(receipt.jobId).state,
+      "expired",
+    );
+    assert.ok(
+      f.sql
+        .prepare(
+          "SELECT closed_at FROM streamlion_coordination_jobs_v1 WHERE id=?",
+        )
+        .get(receipt.jobId).closed_at,
+    );
+    assert.equal(f.google.events.size, 1);
+  });
+}

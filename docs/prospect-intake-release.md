@@ -144,7 +144,7 @@ delete Google history, drop schema or rotate the token encryption key.
 
 ## Acceptance evidence and limits
 
-Final source validation: **500 tests passed**. The app/extension build and
+Final source validation: **511 tests passed**. The app/extension build and
 Cloudflare Functions compilation passed. Earlier 0012 validation passed 486 tests, the unchanged relay dry-run and
 synthetic quota/history exercise; that dependency audit reported zero vulnerabilities.
 The new PR repeats those CI checks against its exact head. The quota/history
@@ -189,3 +189,14 @@ Local synthetic browser QA confirms direct form opening without login or email,
 the named USD $750 / 5,000 sq ft estimate, no-email submission, retained exact
 `12 7/16 in` scope and private status opening. Desktop 1280px and phone 390px
 layouts remain separate from real device and deployed Google/email acceptance.
+
+PR #73 review acceptance additionally proves D1-only privacy cleanup after
+provider disconnection, refund, grant expiry and a coordination pause. Overdue
+submitted requests receive a durable closed/expired marker without unauthorized
+Google writes; a renewed eligible connection reconciles the original request
+with one bounded hashed expiry operation. Pending agreement journals and the
+accepted-request expiry sentinel remain protected. Unconfirmed draft email and
+verification notices are erased alongside their temporary payload/challenge.
+The 20-form ceiling is enforced within the insert; concurrent distinct creations
+admit only the final available form and same-identity retries return one link.
+These fixes add no migration or configuration beyond the existing 0013 plan.

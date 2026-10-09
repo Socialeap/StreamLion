@@ -112,18 +112,8 @@ export async function createPublicForm(
       throw new CoordinationError("Form identity changed.", 409);
     return formView(env, old);
   }
-  const count = await env.GOOGLE_SESSIONS.prepare(
-    "SELECT COUNT(*) AS n FROM streamlion_public_forms_v1 WHERE connection_id=?",
-  )
-    .bind(c.id)
-    .first();
-  if (count.n >= 20)
-    throw new CoordinationError(
-      "This workspace supports 20 public forms. Reuse or pause an existing form.",
-      409,
-    );
   await env.GOOGLE_SESSIONS.prepare(
-    "INSERT INTO streamlion_public_forms_v1(id,connection_id,token_hash,token_cipher,descriptor,verification_required,created_at) VALUES(?,?,?,?,?,?,?)",
+    "INSERT OR IGNORE INTO streamlion_public_forms_v1(id,connection_id,token_hash,token_cipher,descriptor,verification_required,created_at) SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_public_forms_v1 WHERE connection_id=?)<20",
   )
     .bind(
       id,
@@ -133,16 +123,28 @@ export async function createPublicForm(
       await seal(env, descriptor, "public-form:" + id),
       verificationRequired ? 1 : 0,
       Date.now(),
+      c.id,
     )
     .run();
-  return formView(
-    env,
-    await env.GOOGLE_SESSIONS.prepare(
-      "SELECT * FROM streamlion_public_forms_v1 WHERE id=?",
-    )
-      .bind(id)
-      .first(),
-  );
+  const saved = await env.GOOGLE_SESSIONS.prepare(
+    "SELECT * FROM streamlion_public_forms_v1 WHERE id=?",
+  )
+    .bind(id)
+    .first();
+  if (!saved)
+    throw new CoordinationError(
+      "This workspace supports 20 public forms. Reuse or pause an existing form.",
+      409,
+    );
+  // A concurrent retry may have inserted this identity first.
+  if (
+    saved.connection_id !== c.id ||
+    stableJSON(await unseal(env, saved.descriptor, "public-form:" + id)) !==
+      stableJSON(descriptor) ||
+    Boolean(saved.verification_required) !== verificationRequired
+  )
+    throw new CoordinationError("Form identity changed.", 409);
+  return formView(env, saved);
 }
 export async function updatePublicForm(env, c, body) {
   if (
@@ -184,11 +186,38 @@ export async function openPublicForm(env, token) {
 export async function syncPublicSubmission(env, engine, jobId) {
   if (!(await publicIntakeSchema(env))) return;
   const s = await env.GOOGLE_SESSIONS.prepare(
-    "SELECT s.* FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id WHERE s.job_id=? AND j.connection_id=? AND s.state='pending'",
+    "SELECT s.* FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id WHERE s.job_id=? AND j.connection_id=? AND j.archived=0 AND s.state IN('pending','expired')",
   )
     .bind(jobId, engine.connection.id)
     .first();
   if (!s) return;
+  if (s.state === "expired") {
+    const id = await hash("public-expiry:" + s.operation);
+    const prior = await engine.operation(id);
+    if (prior) {
+      if (prior.state !== "complete") await engine.run(id);
+    } else {
+      const job = (await engine.google.snapshot()).heads.get(jobId);
+      if (!job || job.accepted)
+        throw new CoordinationError(
+          "Expired request needs reconciliation review.",
+          409,
+        );
+      if (!job.closedAt)
+        await engine.command(
+          id,
+          jobId,
+          { action: "expire_request", expectedRevision: job.revision },
+          { role: "system" },
+        );
+    }
+    await env.GOOGLE_SESSIONS.prepare(
+      "UPDATE streamlion_public_submissions_v1 SET state='complete' WHERE job_id=? AND state='expired'",
+    )
+      .bind(jobId)
+      .run();
+    return;
+  }
   const prior = await engine.operation(s.operation);
   if (prior) {
     if (prior.state !== "complete") await engine.run(prior.id);

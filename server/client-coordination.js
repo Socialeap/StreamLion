@@ -843,7 +843,7 @@ export async function handleCoordination({ request, env, params = {} }) {
       const forms = await formsForProvider(env, connection);
       if (await publicIntakeSchema(env)) {
         const submissions = await env.GOOGLE_SESSIONS.prepare(
-          "SELECT s.job_id FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id WHERE j.connection_id=? AND s.state='pending' ORDER BY s.created_at LIMIT 5",
+          "SELECT s.job_id FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id WHERE j.connection_id=? AND j.archived=0 AND s.state IN('pending','expired') ORDER BY s.created_at LIMIT 5",
         )
           .bind(connection.id)
           .all();

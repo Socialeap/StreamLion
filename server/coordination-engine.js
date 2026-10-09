@@ -142,12 +142,23 @@ export class CoordinationEngine {
             409,
           );
       } else {
-        await this.db
+        const publicMutation =
+          plan.events?.at(-1)?.job.source === "public-form" &&
+          !["expire_request", "archive"].includes(command.action);
+        const result = await this.db
           .prepare(
-            "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO streamlion_coordination_operations_v1(id,connection_id,job_id,actor,fingerprint,payload,created_at) SELECT ?,?,?,?,?,?,?" +
+              (publicMutation
+                ? " WHERE NOT EXISTS(SELECT 1 FROM streamlion_public_submissions_v1 WHERE job_id=? AND state='expired')"
+                : ""),
           )
-          .bind(...values)
+          .bind(...values, ...(publicMutation ? [jobId] : []))
           .run();
+        if (result.meta.changes !== 1)
+          throw new CoordinationError(
+            "Request expired. Reconcile its history before making changes.",
+            409,
+          );
       }
     } catch (error) {
       const existing = await this.operation(id);
