@@ -7,3 +7,5 @@ dist/
 
 .dev.vars*
 server/generated/
+.playwright-cli/
+artifacts/

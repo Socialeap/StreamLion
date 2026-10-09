@@ -48,6 +48,16 @@ import {
   syncProspectClaim,
   prospectLinksForProvider,
 } from "./prospect-intake.js";
+import {
+  publicIntakeSchema,
+  openPublicForm,
+  submitPublicForm,
+  verifyPublicSubmission,
+  syncPublicSubmission,
+  createPublicForm,
+  updatePublicForm,
+  formsForProvider,
+} from "./public-intake.js";
 const COOKIE = "__Host-streamlion-client";
 const random = () =>
   btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
@@ -349,6 +359,57 @@ export async function handleCoordination({ request, env, params = {} }) {
       throw new CoordinationError("Use the StreamLion project portal.", 403);
     if (!["GET", "POST"].includes(request.method))
       return json({ error: "Method not allowed." }, 405);
+    if (route.startsWith("public/") && request.method === "POST") {
+      const body = await bodyJSON(request, 40000);
+      await limited(
+        env,
+        "public-ip:" + request.headers.get("CF-Connecting-IP"),
+        route === "public/open" ? 60 : 20,
+      );
+      if (route === "public/open")
+        return json(await openPublicForm(env, body.token));
+      if (route === "public/submit") {
+        await limited(
+          env,
+          "public-form:" + (await hash(String(body.token).slice(0, 43))),
+          100,
+        );
+        return json(await submitPublicForm(env, body));
+      }
+      throw new CoordinationError("Unknown form action.", 404);
+    }
+    if (route === "client/access" && request.method === "POST") {
+      const body = await bodyJSON(request, 1024);
+      if (!/^[A-Za-z0-9_-]{43}$/.test(body.token || ""))
+        throw new CoordinationError("Invalid status link.", 401);
+      await limited(
+        env,
+        "status-ip:" + request.headers.get("CF-Connecting-IP"),
+        30,
+      );
+      const headers = new Headers(request.headers);
+      headers.set("Cookie", COOKIE + "=" + body.token);
+      const principal = await client(
+        new Request(request.url, { headers }),
+        env,
+      );
+      if (principal.row.id !== body.jobId)
+        throw new CoordinationError(
+          "This link belongs to a different request.",
+          403,
+        );
+      return json({ opened: true }, 200, {
+        "Set-Cookie":
+          COOKIE +
+          "=" +
+          body.token +
+          "; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=" +
+          Math.max(
+            0,
+            Math.floor((principal.row.session_expires - Date.now()) / 1000),
+          ),
+      });
+    }
     if (route.startsWith("prospect/") && request.method === "POST") {
       const body = await bodyJSON(request, 40000);
       await limited(
@@ -429,12 +490,15 @@ export async function handleCoordination({ request, env, params = {} }) {
         sessionToken = random(),
         sessionHash = await hash(sessionToken),
         now = Date.now();
-      const prospectVerified = await verifyProspect(
+      const publicVerified = await verifyPublicSubmission(
         env,
         challengeHash,
         sessionHash,
         now,
       );
+      const prospectVerified =
+        publicVerified ||
+        (await verifyProspect(env, challengeHash, sessionHash, now));
       const results = prospectVerified
         ? null
         : await env.GOOGLE_SESSIONS.batch([
@@ -482,6 +546,7 @@ export async function handleCoordination({ request, env, params = {} }) {
       const principal = await client(request, env),
         engine = new CoordinationEngine(env, principal.connection);
       await syncProspectClaim(env, engine, principal.row.id);
+      await syncPublicSubmission(env, engine, principal.row.id);
       if (route === "client/notifications") {
         if (request.method === "POST")
           await limited(env, "push-client:" + principal.grantHash, 30);
@@ -634,6 +699,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         ),
         delivery: { ...(await emailDeliveryStatus(env)), push: pushReady(env) },
         shareLinks: await prospectSchema(env),
+        publicForms: await publicIntakeSchema(env),
         expiresAt: connection?.expires_at,
         projectMicros: policy.project_micros,
         wallet: await sharedWallet(
@@ -774,6 +840,16 @@ export async function handleCoordination({ request, env, params = {} }) {
     }
     if (route === "provider/jobs" && request.method === "GET") {
       const links = await prospectLinksForProvider(env, connection);
+      const forms = await formsForProvider(env, connection);
+      if (await publicIntakeSchema(env)) {
+        const submissions = await env.GOOGLE_SESSIONS.prepare(
+          "SELECT s.job_id FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id WHERE j.connection_id=? AND j.archived=0 AND s.state IN('pending','expired') ORDER BY s.created_at LIMIT 5",
+        )
+          .bind(connection.id)
+          .all();
+        for (const s of submissions.results)
+          await syncPublicSubmission(env, engine, s.job_id);
+      }
       for (const link of links.filter((l) => l.claimedAt))
         await syncProspectClaim(env, engine, link.jobId);
       const pending = await env.GOOGLE_SESSIONS.prepare(
@@ -790,6 +866,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         pending: pending.results,
         mail,
         links,
+        forms,
       });
       if (read.unchanged)
         return json({ unchanged: true, refresh: read.refresh });
@@ -808,6 +885,7 @@ export async function handleCoordination({ request, env, params = {} }) {
           .slice(1)
           .map((r) => ({ jobId: r[0], fileId: r[2] })),
         links,
+        forms,
       };
       const capacity = await finishRead(
         env,
@@ -838,7 +916,10 @@ export async function handleCoordination({ request, env, params = {} }) {
       return json(await engine.restoreArchive(body.operation, body.fileId));
     if (route === "provider/create" && request.method === "POST") {
       // Do not create a project/challenge that its client cannot verify.
-      if (body.shareLink === true) {
+      if (body.publicForm === true) {
+        if (!(await publicIntakeSchema(env)))
+          throw new CoordinationError("Public forms await activation.", 503);
+      } else if (body.shareLink === true) {
         if (!(await prospectSchema(env)))
           throw new CoordinationError(
             "Share-link intake awaits activation.",
@@ -868,7 +949,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         title: body.title || "",
         contactName: body.contactName || "",
         companyName: body.companyName || "",
-        prospect: body.shareLink === true,
+        prospect: body.shareLink === true || body.publicForm === true,
         now,
         intakeTemplate:
           body.preset === "tm-spatial"
@@ -890,6 +971,21 @@ export async function handleCoordination({ request, env, params = {} }) {
                 )
               : null,
       });
+      if (body.publicForm === true) {
+        if (email)
+          throw new CoordinationError(
+            "Public forms do not need a prospect email. Use a private invitation to restrict access.",
+          );
+        return json({
+          form: await createPublicForm(
+            env,
+            connection,
+            body.operation,
+            job,
+            body.verificationRequired === true,
+          ),
+        });
+      }
       const active = await env.GOOGLE_SESSIONS.prepare(
         "SELECT COUNT(*) AS count FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL",
       )
@@ -934,6 +1030,8 @@ export async function handleCoordination({ request, env, params = {} }) {
         shareLink: body.shareLink === true,
       });
     }
+    if (route === "provider/form" && request.method === "POST")
+      return json(await updatePublicForm(env, connection, body));
     if (
       [
         "provider/command",
@@ -967,6 +1065,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         return json({ revoked: true });
       }
       await syncProspectClaim(env, engine, row.id);
+      await syncPublicSubmission(env, engine, row.id);
       if (route === "provider/upload")
         return json(
           await engine.upload(body.operation, row.id, body.file, {
@@ -1023,6 +1122,9 @@ function activityFor(snapshot, jobId, clientOnly = false) {
     edit: "Project information updated",
     submit: "Request submitted",
     claim_request: "Verified request submitted",
+    submit_public_request: "Public form request submitted",
+    decline: "Request declined",
+    expire_request: "Request expired",
     question: "Clarification requested",
     answer: "Answer recorded",
     approve: "Approval recorded",

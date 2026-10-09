@@ -133,7 +133,9 @@ export function validateArchive(archive) {
     !archiveID(job.id) ||
     job.provider !== source.provider ||
     job.version !== 1 ||
-    !["closed", "cancelled", "archived"].includes(job.state) ||
+    !["closed", "cancelled", "declined", "expired", "archived"].includes(
+      job.state,
+    ) ||
     !Number.isSafeInteger(job.closedAt) ||
     job.closedAt <= 0 ||
     !Number.isSafeInteger(job.archiveAt) ||

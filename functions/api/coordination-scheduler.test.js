@@ -22,7 +22,9 @@ function fixture() {
     ...envSettings,
     GOOGLE_SESSIONS: {
       prepare: (sql) => ({
+        first: async () => db.prepare(sql).get(),
         bind: (...args) => ({
+          first: async () => db.prepare(sql).get(...args),
           run: async () => {
             const result = db.prepare(sql).run(...args);
             return { meta: { changes: Number(result.changes) } };
@@ -48,6 +50,10 @@ function fixture() {
       db
         .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_rates_v1")
         .get().n,
+    activatePublicRetention: () =>
+      db.exec(
+        "CREATE TABLE streamlion_public_intake_schema_v1(version INTEGER); INSERT INTO streamlion_public_intake_schema_v1 VALUES(1)",
+      ),
     close: () => db.close(),
   };
 }
@@ -300,5 +306,51 @@ test("scheduler authentication and atomic claims work in the actual Workers runt
     assert.equal((await mf.dispatchFetch("http://localhost/run")).status, 409);
   } finally {
     await mf.dispose();
+  }
+});
+
+test("signed scheduler permits rate-limited public retention while coordination is paused", async () => {
+  const f = fixture();
+  try {
+    f.activatePublicRetention();
+    const request = await createMaintenanceRequest(f.env, now);
+    const options = { ...f.options, ready: async () => false };
+    assert.equal(
+      (
+        await handleScheduledCoordination(
+          { request: request.clone(), env: f.env },
+          options,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(f.calls(), 1);
+    assert.equal(
+      (
+        await handleScheduledCoordination(
+          { request: request.clone(), env: f.env },
+          options,
+        )
+      ).status,
+      409,
+    );
+    assert.equal(f.calls(), 1);
+    const unsigned = new Request(request.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    assert.equal(
+      (
+        await handleScheduledCoordination(
+          { request: unsigned, env: f.env },
+          options,
+        )
+      ).status,
+      401,
+    );
+    assert.equal(f.calls(), 1);
+  } finally {
+    f.close();
   }
 });
