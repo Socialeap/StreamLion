@@ -3316,8 +3316,38 @@ for (const mode of ["disconnected", "refunded", "grant-expired", "paused"]) {
       f.sql.exec(
         "UPDATE streamlion_coordination_connections_v1 SET expires_at=1",
       );
-    if (mode === "paused") f.env.ENABLE_CLIENT_COORDINATION = "false";
+    if (mode === "paused") {
+      f.env.ENABLE_CLIENT_COORDINATION = "false";
+      const hour = Math.floor((Date.now() + 31 * 86400000) / 3600000);
+      f.sql
+        .prepare(
+          "INSERT INTO streamlion_coordination_rates_v1(key,window,count) VALUES(?,?,1)",
+        )
+        .run("old-scheduler-nonce", hour - 25);
+      f.sql
+        .prepare(
+          "INSERT INTO streamlion_coordination_rates_v1(key,window,count) VALUES(?,?,1)",
+        )
+        .run("recent-scheduler-nonce", hour);
+    }
     await maintainCoordination(f.env, Date.now() + 31 * 86400000);
+    if (mode === "paused") {
+      assert.equal(
+        f.sql
+          .prepare(
+            "SELECT key FROM streamlion_coordination_rates_v1 WHERE key='old-scheduler-nonce'",
+          )
+          .get(),
+        undefined,
+      );
+      assert.ok(
+        f.sql
+          .prepare(
+            "SELECT key FROM streamlion_coordination_rates_v1 WHERE key='recent-scheduler-nonce'",
+          )
+          .get(),
+      );
+    }
     const s = f.sql
       .prepare("SELECT * FROM streamlion_public_submissions_v1")
       .get();

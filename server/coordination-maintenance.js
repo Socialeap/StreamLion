@@ -65,7 +65,16 @@ export async function maintainCoordination(env, now = Date.now()) {
       ]);
     }
   }
-  if (!(await coordinationReady(env))) return counts;
+  if (!(await coordinationReady(env))) {
+    if (hasPublic)
+      await db
+        .prepare(
+          "DELETE FROM streamlion_coordination_rates_v1 WHERE key IN (SELECT key FROM streamlion_coordination_rates_v1 WHERE window<? ORDER BY window LIMIT 100)",
+        )
+        .bind(Math.floor(now / 3600000) - 24)
+        .run();
+    return counts;
+  }
   if (hasPublic) {
     const rows = await db
       .prepare(
