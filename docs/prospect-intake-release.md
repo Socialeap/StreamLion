@@ -144,7 +144,7 @@ delete Google history, drop schema or rotate the token encryption key.
 
 ## Acceptance evidence and limits
 
-Final source validation: **511 tests passed**. The app/extension build and
+Final source validation: **512 tests passed**. The app/extension build and
 Cloudflare Functions compilation passed. Earlier 0012 validation passed 486 tests, the unchanged relay dry-run and
 synthetic quota/history exercise; that dependency audit reported zero vulnerabilities.
 The new PR repeats those CI checks against its exact head. The quota/history
@@ -199,4 +199,6 @@ accepted-request expiry sentinel remain protected. Unconfirmed draft email and
 verification notices are erased alongside their temporary payload/challenge.
 The 20-form ceiling is enforced within the insert; concurrent distinct creations
 admit only the final available form and same-identity retries return one link.
+The signed scheduler also permits rate-limited D1 retention while coordination
+is paused, with signature, nonce and minute-slot replay protection preserved.
 These fixes add no migration or configuration beyond the existing 0013 plan.

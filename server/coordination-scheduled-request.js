@@ -1,6 +1,7 @@
 import { boundedText } from "./request-body.js";
 import { hash } from "./google-auth.js";
 import { coordinationReady } from "./client-coordination.js";
+import { publicIntakeSchema } from "./public-intake.js";
 import { maintainCoordination } from "./coordination-maintenance.js";
 import { verifyMaintenanceRequest } from "./coordination-schedule-auth.js";
 
@@ -38,7 +39,10 @@ export async function handleScheduledCoordination(
   }
   if (!grant) return reply(401);
   try {
-    if (!(await ready(env))) return reply(503);
+    // Signed, rate-limited D1 retention work remains available while product
+    // coordination is paused. Maintenance itself gates every Google/email path.
+    if (!(await ready(env)) && !(await publicIntakeSchema(env)))
+      return reply(503);
     // Existing hourly-maintained rate metadata retains nonces for at least 24h,
     // longer than the two-minute signature window. The atomic insert rejects
     // concurrent duplicates before maintenance or any Google/email work begins.
