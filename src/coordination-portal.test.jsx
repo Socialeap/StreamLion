@@ -618,7 +618,8 @@ test("public requests offer email sign-in only after the prospect verifies, pres
     const job = fixture();
     job.source = "public-form";
     job.emailVerified = false;
-    job.clientEmail = email;
+    job.fields.requesterEmail = email;
+    job.accepted.requesterEmail = email;
     const ui = render(<Portal api={providerAPI(job)} />);
     fireEvent.click(
       await ui.findByRole("button", { name: /Office.*Confirmed/ }),
