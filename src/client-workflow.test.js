@@ -126,6 +126,7 @@ test("client operational changes block close until acknowledged", () => {
   job = change(job, "acknowledge", "provider", { updateId: job.updates[0].id });
   job = change(job, "close", "provider", { reason: "Accepted by phone" });
   assert.equal(job.archiveAt - job.closedAt, 90 * DAY);
+  assert.equal(job.finalizedAt, job.closedAt);
   assert.throws(
     () => change(job, "edit", "client", { fields: { notes: "Late" } }),
     /read-only/,
@@ -166,10 +167,12 @@ test("reopened corrections record a fresh completion and delivery timestamp", ()
   const firstDelivery = job.deliveredAt;
   job = change(job, "accept_delivery", "client");
   job = change(job, "close", "provider");
+  assert.equal(job.finalizedAt, job.closedAt);
   job = change(job, "reopen", "provider", { reason: "Correction requested" });
   assert.equal(job.state, "in_progress");
   assert.equal(job.workCompletedAt, undefined);
   assert.equal(job.deliveredAt, undefined);
+  assert.equal(job.finalizedAt, undefined);
   assert.equal(job.deliveryAccepted, false);
   job = change(job, "progress", "provider", { state: "work_completed" });
   assert.ok(job.workCompletedAt > firstCompletion);

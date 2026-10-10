@@ -51,10 +51,8 @@ export function requestProgress(job, link, activity = [], client = false) {
     Boolean(
       archived &&
       job.accepted &&
-      job.closedAt &&
-      activity.some(
-        (event) => event.label === "Job closed" && event.at === job.closedAt,
-      ),
+      job.finalizedAt &&
+      job.finalizedAt === job.closedAt,
     );
   return [
     {
@@ -133,4 +131,23 @@ export function requestProgress(job, link, activity = [], client = false) {
         : "Closure and follow-up pending",
     },
   ];
+}
+
+// Compatibility for archived records written before finalizedAt was recorded.
+// Use the complete verified event history, never the bounded UI activity feed.
+export function recordedFinalizations(events) {
+  const finalized = new Map();
+  for (const event of events)
+    if (event.action === "close")
+      finalized.set(
+        event.jobId,
+        Math.max(finalized.get(event.jobId) || 0, event.at),
+      );
+  return finalized;
+}
+export function withRecordedFinalization(job, finalized) {
+  if (job.state !== "archived" || job.finalizedAt || !job.closedAt) return job;
+  if (finalized.get(job.id) === job.closedAt)
+    return { ...job, finalizedAt: job.closedAt };
+  return job;
 }

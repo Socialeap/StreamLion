@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { requestProgress } from "./request-progress.js";
+import {
+  requestProgress,
+  withRecordedFinalization,
+  recordedFinalizations,
+} from "./request-progress.js";
 
 test("archiving a completed request preserves all recorded milestones", () => {
   const job = {
@@ -11,6 +15,7 @@ test("archiving a completed request preserves all recorded milestones", () => {
     workCompletedAt: 3,
     deliveredAt: 4,
     closedAt: 5,
+    finalizedAt: 5,
     fields: { agreedFee: "1", paidAmount: "1", paidDate: "2026-10-10" },
   };
   const activity = [{ label: "Job closed", at: 5 }];
@@ -19,6 +24,40 @@ test("archiving a completed request preserves all recorded milestones", () => {
   assert.deepEqual(
     requestProgress({ ...job, state: "archived" }, null, activity),
     before,
+  );
+});
+
+test("legacy finalization uses full job history beyond the activity window", () => {
+  const job = {
+    id: "old",
+    state: "archived",
+    accepted: {},
+    closedAt: 5,
+    fields: {},
+  };
+  const events = [
+    { jobId: "old", action: "close", at: 5 },
+    ...Array.from({ length: 150 }, (_, i) => ({
+      jobId: "new",
+      action: "edit",
+      at: 10 + i,
+    })),
+  ];
+  const history = recordedFinalizations(events.values());
+  const projected = withRecordedFinalization(job, history);
+  assert.equal(projected.finalizedAt, 5);
+  assert.equal(
+    requestProgress(projected).find((s) => s.key === "final").done,
+    true,
+  );
+  assert.equal(job.finalizedAt, undefined);
+  assert.equal(
+    withRecordedFinalization({ ...job, closedAt: 7 }, history).finalizedAt,
+    undefined,
+  );
+  assert.equal(
+    withRecordedFinalization({ ...job, id: "other" }, history).finalizedAt,
+    undefined,
   );
 });
 

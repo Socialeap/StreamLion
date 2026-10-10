@@ -433,6 +433,7 @@ export function reduceClientJob(previous, command, actor, now) {
         );
       job.state = "closed";
       job.closedAt = now;
+      job.finalizedAt = now;
       job.archiveAt = now + 90 * DAY;
       job.closureReason = command.reason || "";
       break;
@@ -441,6 +442,7 @@ export function reduceClientJob(previous, command, actor, now) {
       if (!command.reason?.trim())
         throw new CoordinationError("Record a cancellation reason.");
       job.state = "cancelled";
+      delete job.finalizedAt;
       job.closedAt = now;
       job.archiveAt = now + 90 * DAY;
       job.closureReason = command.reason;
@@ -515,6 +517,7 @@ export function reduceClientJob(previous, command, actor, now) {
         throw new CoordinationError("Record the correction reason.");
       job.state = job.accepted ? "in_progress" : "draft";
       job.closedAt = null;
+      delete job.finalizedAt;
       job.archiveAt = null;
       job.deliveryAccepted = false;
       job.reopenReason = command.reason.trim();
@@ -528,6 +531,7 @@ export function reduceClientJob(previous, command, actor, now) {
     case "archive":
       if (actor.role !== "system" || !job.closedAt || job.archiveAt > now)
         throw new CoordinationError("Archive deadline has not elapsed.", 409);
+      if (job.state === "closed") job.finalizedAt = job.closedAt;
       job.state = "archived";
       break;
     case "archive_early":
@@ -544,6 +548,7 @@ export function reduceClientJob(previous, command, actor, now) {
           409,
         );
       job.archiveAt = now;
+      if (job.state === "closed") job.finalizedAt = job.closedAt;
       job.state = "archived";
       job.archivalReason = command.reason.trim();
       break;
