@@ -35,6 +35,25 @@ export function requestProgress(job, link, activity = [], client = false) {
     (total === 0
       ? Boolean(job.accepted)
       : paid >= total && Boolean(fields.paidDate));
+  const archived = job.state === "archived";
+  const completed = Boolean(
+    job.accepted &&
+    (["work_completed", "delivered", "closed"].includes(job.state) ||
+      (archived && job.workCompletedAt)),
+  );
+  const delivered = Boolean(
+    job.accepted &&
+    (["delivered", "closed"].includes(job.state) ||
+      (archived && job.deliveredAt)),
+  );
+  const finalized =
+    job.state === "closed" ||
+    Boolean(
+      archived &&
+      job.accepted &&
+      job.finalizedAt &&
+      job.finalizedAt === job.closedAt,
+    );
   return [
     {
       key: "open",
@@ -71,15 +90,11 @@ export function requestProgress(job, link, activity = [], client = false) {
     {
       key: "work",
       label: "Work completed",
-      done: Boolean(
-        job.accepted &&
-        ["work_completed", "delivered", "closed"].includes(job.state),
-      ),
+      done: completed,
       detail:
         job.state === "in_progress"
           ? "Work is in progress"
-          : job.accepted &&
-              ["work_completed", "delivered", "closed"].includes(job.state)
+          : completed
             ? "Provider reported completion"
             : "Awaiting provider completion",
     },
@@ -98,25 +113,41 @@ export function requestProgress(job, link, activity = [], client = false) {
     {
       key: "delivery",
       label: "Delivery",
-      done: Boolean(
-        job.accepted && ["delivered", "closed"].includes(job.state),
-      ),
+      done: delivered,
       detail: job.deliveryAccepted
         ? "Client acknowledged receipt"
-        : job.state === "closed"
+        : finalized
           ? "Delivery recorded · provider closure"
-          : job.state === "delivered"
+          : delivered
             ? "Sent · client acknowledgment pending"
             : "Delivery not recorded",
     },
     {
       key: "final",
       label: "Finalized",
-      done: job.state === "closed",
-      detail:
-        job.state === "closed"
-          ? "Closed · record retained"
-          : "Closure and follow-up pending",
+      done: finalized,
+      detail: finalized
+        ? "Closed · record retained"
+        : "Closure and follow-up pending",
     },
   ];
+}
+
+// Compatibility for archived records written before finalizedAt was recorded.
+// Use the complete verified event history, never the bounded UI activity feed.
+export function recordedFinalizations(events) {
+  const finalized = new Map();
+  for (const event of events)
+    if (event.action === "close")
+      finalized.set(
+        event.jobId,
+        Math.max(finalized.get(event.jobId) || 0, event.at),
+      );
+  return finalized;
+}
+export function withRecordedFinalization(job, finalized) {
+  if (job.state !== "archived" || job.finalizedAt || !job.closedAt) return job;
+  if (finalized.get(job.id) === job.closedAt)
+    return { ...job, finalizedAt: job.closedAt };
+  return job;
 }

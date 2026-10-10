@@ -7,6 +7,10 @@ import {
 } from "./google-auth.js";
 import { hasPurchase, paymentMode } from "./purchase-access.js";
 import { boundedText } from "./request-body.js";
+import {
+  withRecordedFinalization,
+  recordedFinalizations,
+} from "../src/request-progress.js";
 import { CoordinationGoogle } from "./coordination-google.js";
 import {
   CoordinationEngine,
@@ -877,8 +881,11 @@ export async function handleCoordination({ request, env, params = {} }) {
         .bind(connection.id)
         .all();
       const enrolledIDs = new Set(enrolled.results.map((r) => r.id));
+      const finalized = recordedFinalizations(snapshot.events.values());
       const view = {
-        jobs: [...snapshot.heads.values()].filter((j) => enrolledIDs.has(j.id)),
+        jobs: [...snapshot.heads.values()]
+          .filter((j) => enrolledIDs.has(j.id))
+          .map((job) => withRecordedFinalization(job, finalized)),
         templates: [...(snapshot.templates?.values() || [])],
         activity: activityFor(snapshot),
         archives: snapshot.rows[3]
