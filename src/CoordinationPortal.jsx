@@ -1061,12 +1061,21 @@ export default function CoordinationPortal({
                   {selectedJob &&
                     selectedJob.state !== "archived" &&
                     (!selectedJob.archiveAt ||
-                      selectedJob.archiveAt > Date.now()) && (
+                      selectedJob.archiveAt > Date.now()) &&
+                    (selectedJob.source === "public-form" &&
+                    !selectedJob.emailVerified ? (
+                      <p>
+                        The prospect received a private status link after
+                        submitting this request. Share your public form link or
+                        QR above to collect another request. Email confirmation
+                        was not required for this submission.
+                      </p>
+                    ) : (
                       <ProjectInvitation
                         jobId={selectedJob.id}
                         link={links.find((l) => l.jobId === selectedJob.id)}
                       />
-                    )}
+                    ))}
                 </section>
               </aside>
               <div>
@@ -1137,8 +1146,14 @@ export default function CoordinationPortal({
                       })
                     }
                     archive={archives.find((a) => a.jobId === selectedJob.id)}
-                    invite={() =>
-                      perform("provider/invite", { jobId: selectedJob.id })
+                    invite={
+                      selectedJob.source === "public-form" &&
+                      !selectedJob.emailVerified
+                        ? undefined
+                        : () =>
+                            perform("provider/invite", {
+                              jobId: selectedJob.id,
+                            })
                     }
                     inviteAvailable={
                       status.delivery?.email !== false &&
@@ -2350,8 +2365,10 @@ function JobPanel({
                 {job.state === "archived" && (
                   <p>
                     This archived history is available to the provider. To
-                    resume corrections, enter a reason and reopen the job; send
-                    a fresh client sign-in link when ready.
+                    resume corrections, enter a reason and reopen the job.
+                    {invite
+                      ? " Send a fresh client sign-in link when ready."
+                      : " The prospect uses the private status link received after submission."}
                   </p>
                 )}
               </div>

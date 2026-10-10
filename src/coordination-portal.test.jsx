@@ -612,6 +612,39 @@ test("an exhausted email allowance explains resumption and disables invites whil
     false,
   );
 });
+test("public requests offer email sign-in only after the prospect verifies, preserving private invitation recovery", async (t) => {
+  t.after(cleanup);
+  for (const email of ["", "unverified@example.com"]) {
+    const job = fixture();
+    job.source = "public-form";
+    job.emailVerified = false;
+    job.clientEmail = email;
+    const ui = render(<Portal api={providerAPI(job)} />);
+    fireEvent.click(
+      await ui.findByRole("button", { name: /Office.*Confirmed/ }),
+    );
+    assert.equal(ui.queryByLabelText("Private project link"), null);
+    assert.ok(ui.getByText(/prospect received a private status link/));
+    fireEvent.click(ui.getByRole("button", { name: "Progress", exact: true }));
+    assert.equal(
+      ui.queryByRole("button", { name: "Send a fresh client sign-in link" }),
+      null,
+    );
+    cleanup();
+  }
+  const job = fixture();
+  job.source = "public-form";
+  job.emailVerified = true;
+  const ui = render(<Portal api={providerAPI(job)} />);
+  fireEvent.click(await ui.findByRole("button", { name: /Office.*Confirmed/ }));
+  assert.ok(ui.getByLabelText("Private project link"));
+  fireEvent.click(ui.getByRole("button", { name: "Progress", exact: true }));
+  assert.equal(
+    ui.getByRole("button", { name: "Send a fresh client sign-in link" })
+      .disabled,
+    false,
+  );
+});
 test("client can supply all original reference and document links while provider-only fields stay private", async () => {
   const job = fixture();
   const ui = render(
