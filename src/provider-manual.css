@@ -34,6 +34,11 @@
     system-ui,
     sans-serif;
   overscroll-behavior: contain;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.provider-manual::-webkit-scrollbar {
+  display: none;
 }
 .provider-manual::backdrop {
   background: #050c14b8;
