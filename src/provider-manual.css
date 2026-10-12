@@ -1,0 +1,427 @@
+.provider-manual-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font:
+    600 14px/1.3 Inter,
+    system-ui,
+    sans-serif;
+  cursor: pointer;
+}
+.provider-manual-trigger svg {
+  color: var(--green);
+  flex-shrink: 0;
+}
+.provider-manual {
+  box-sizing: border-box;
+  width: min(980px, calc(100% - 48px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--background);
+  color: var(--text);
+  font:
+    400 15px/1.6 Inter,
+    system-ui,
+    sans-serif;
+  overscroll-behavior: contain;
+}
+.provider-manual::backdrop {
+  background: #050c14b8;
+}
+.provider-manual *,
+.provider-manual *::before,
+.provider-manual *::after {
+  box-sizing: border-box;
+}
+.provider-manual button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font:
+    600 14px/1.4 Inter,
+    system-ui,
+    sans-serif;
+  cursor: pointer;
+}
+.provider-manual button:hover,
+.provider-manual summary:hover,
+.provider-manual-trigger:hover {
+  background: var(--hover);
+}
+.provider-manual :is(button, summary):focus-visible,
+.provider-manual-trigger:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.provider-manual summary:focus-visible {
+  outline-offset: -3px;
+  border-radius: 8px;
+}
+.manual-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--background);
+}
+.manual-header > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.manual-header > div > svg {
+  color: var(--green);
+  flex-shrink: 0;
+}
+.manual-header strong {
+  font-size: 16px;
+}
+.manual-header strong span {
+  padding-left: 12px;
+  margin-left: 12px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+.manual-header > button {
+  flex-shrink: 0;
+  width: 44px;
+  padding: 10px;
+  background: transparent;
+}
+.manual-content {
+  padding: 36px 36px 20px;
+}
+.manual-intro {
+  max-width: 680px;
+  margin-bottom: 28px;
+}
+.manual-intro h1 {
+  margin: 0 0 16px;
+  font-size: clamp(28px, 4vw, 38px);
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+  color: var(--text);
+}
+.provider-manual p {
+  margin: 0 0 16px;
+  color: var(--text);
+}
+.provider-manual .manual-context {
+  font-size: 14px;
+  color: var(--muted);
+}
+.provider-manual .manual-primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--on-accent);
+}
+.provider-manual .manual-primary:hover {
+  background: var(--accent-hover);
+}
+.manual-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.manual-toolbar > div {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.manual-toolbar button {
+  padding: 8px 10px;
+  font-size: 13px;
+  background: transparent;
+}
+.manual-stages,
+.manual-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.manual-stages > li + li {
+  margin-top: 12px;
+}
+.manual-stage {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: clip;
+  scroll-margin-top: 96px;
+}
+.manual-stage[open] {
+  border-color: var(--green);
+}
+.provider-manual summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  list-style: none;
+  cursor: pointer;
+}
+.provider-manual summary::-webkit-details-marker {
+  display: none;
+}
+.manual-stage > summary {
+  min-height: 96px;
+  padding: 20px;
+}
+.manual-number {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  color: var(--green);
+  font-size: 19px;
+  font-weight: 700;
+}
+.manual-stage[open] > summary .manual-number {
+  color: var(--on-accent);
+  background: var(--green);
+  border-color: var(--green);
+}
+.manual-stage-title {
+  flex: 1;
+  min-width: 0;
+}
+.manual-stage h2 {
+  margin: 0 0 4px;
+  font-size: 19px;
+  line-height: 1.3;
+  color: var(--text);
+}
+.manual-stage-title > span {
+  color: var(--muted);
+  font-size: 14px;
+}
+.manual-chevron {
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+details[open] > summary > .manual-chevron {
+  transform: rotate(180deg);
+}
+.manual-stage-body {
+  padding: 0 20px 20px 78px;
+}
+.manual-step {
+  border-top: 1px solid var(--line);
+}
+.manual-step > summary {
+  min-height: 64px;
+  padding: 16px 4px;
+  gap: 12px;
+}
+.manual-step-icon {
+  flex-shrink: 0;
+  color: var(--blue);
+}
+.manual-step h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--text);
+}
+.manual-step-body {
+  padding: 0 8px 12px 38px;
+}
+.manual-where {
+  font-size: 13px;
+  color: var(--blue) !important;
+}
+.manual-step-body p > strong {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.015em;
+  margin-bottom: 4px;
+}
+.manual-benefit {
+  padding-left: 14px;
+  border-left: 3px solid var(--green);
+}
+.manual-tip {
+  font-size: 13px;
+  color: var(--muted) !important;
+}
+.manual-example {
+  margin: 20px 0;
+  padding: 16px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--background);
+}
+.manual-example figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.manual-example-rows {
+  display: grid;
+  gap: 14px;
+}
+.manual-example-rows > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.manual-example-rows svg {
+  flex-shrink: 0;
+  color: var(--green);
+  margin-top: 2px;
+}
+.manual-example-rows strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.manual-example-rows span > span {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.manual-stage-end {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.manual-stage-end > p {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+}
+.manual-stage-end > p > svg {
+  flex-shrink: 0;
+  color: var(--green);
+  margin-top: 3px;
+}
+.manual-stage-end strong {
+  display: block;
+  color: var(--green);
+  font-size: 12px;
+}
+.manual-stage-end button {
+  text-align: left;
+}
+.manual-footer {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+.manual-footer > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.manual-footer p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.manual-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 640px) {
+  .provider-manual {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .manual-header {
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    gap: 8px;
+  }
+  .manual-header strong span {
+    display: block;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    font-size: 12px;
+  }
+  .manual-content {
+    padding: 24px 16px calc(16px + env(safe-area-inset-bottom));
+  }
+  .manual-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .manual-stage > summary {
+    min-height: 92px;
+    padding: 16px 12px;
+    gap: 12px;
+  }
+  .manual-number {
+    width: 34px;
+    height: 34px;
+    font-size: 17px;
+  }
+  .manual-stage h2 {
+    font-size: 17px;
+  }
+  .manual-stage-title > span {
+    font-size: 13px;
+  }
+  .manual-stage-body {
+    padding: 0 14px 18px;
+  }
+  .manual-step-body {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .manual-step h3 {
+    font-size: 15px;
+  }
+  .manual-example {
+    padding: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .manual-chevron {
+    transition: none;
+  }
+}

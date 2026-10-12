@@ -10,6 +10,8 @@ import IntakeTemplateSettings from "./IntakeTemplateSettings.jsx";
 import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
 import ProspectIntake from "./ProspectIntake.jsx";
 import RequestProgress from "./RequestProgress.jsx";
+import ThemeSwitch from "./ThemeSwitch.jsx";
+import ProviderManualButton from "./ProviderManual.jsx";
 import QRCode from "qrcode";
 import { estimateMoney } from "./capture-estimate.js";
 import { activeIntakeQuestions } from "./intake-templates.js";
@@ -478,7 +480,11 @@ export default function CoordinationPortal({
         <span>
           {client ? brand || "Your project portal" : "Client requests"}
         </span>
-        {!client && <a href="/">Field workspace</a>}
+        <div className="coord-header-tools">
+          {!client && <ProviderManualButton />}
+          <ThemeSwitch />
+          {!client && <a href="/">Field workspace</a>}
+        </div>
         {client && verified && (
           <button
             onClick={async () => {

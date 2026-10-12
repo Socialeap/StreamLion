@@ -1,0 +1,69 @@
+:root {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  color-scheme: light;
+  --background: #f3f6f8;
+  --surface: #ffffff;
+  --surface-raised: #edf2f5;
+  --sidebar: #ffffff;
+  --text: #182a34;
+  --muted: #506571;
+  --green: #176047;
+  --accent-hover: #124d39;
+  --accent-soft: #e5f3ed;
+  --on-accent: #ffffff;
+  --line: #d6e1e8;
+  --line-strong: #9bafb8;
+  --control-line: #768d99;
+  --hover: #e8f0f4;
+  --focus: #176047;
+  --blue: #236191;
+  --blue-soft: #e4f0fa;
+  --warning: #805015;
+  --warning-soft: #fff3de;
+  --warning-line: #b59563;
+  --violet: #6d47a8;
+  --violet-soft: #f0eafb;
+  --danger: #a12b32;
+  --danger-soft: #fff0f0;
+  --danger-line: #ca8589;
+  --icon-on: #ffffff;
+  --shadow: 0 8px 24px #1d354908;
+  color: var(--text);
+  background: var(--background);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #101923;
+  --surface: #182633;
+  --surface-raised: #203242;
+  --sidebar: #121f2b;
+  --text: #edf4f6;
+  --muted: #b0c1cb;
+  --green: #7bd6b3;
+  --accent-hover: #9ce5c8;
+  --accent-soft: #18392f;
+  --on-accent: #0c251d;
+  --line: #354b5d;
+  --line-strong: #587184;
+  --control-line: #608094;
+  --hover: #273c4d;
+  --focus: #91e5c4;
+  --blue: #8dc8f8;
+  --blue-soft: #233e55;
+  --warning: #f1c27c;
+  --warning-soft: #3c3020;
+  --warning-line: #9d7e4d;
+  --violet: #c9afff;
+  --violet-soft: #352a4a;
+  --danger: #ffb8b8;
+  --danger-soft: #432b31;
+  --danger-line: #b87880;
+  --icon-on: #102331;
+  --shadow: 0 8px 24px #00000014;
+}

@@ -139,4 +139,32 @@ test("an app update cannot reload an editor or unfinished field capture", async 
     globalThis.fetch = original;
   }
 });
+test("the header manual preserves an unfinished project and remains available from Ask", async (t) => {
+  t.after(cleanup);
+  dom.window.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  dom.window.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+  const ui = render(<App />);
+  await ui.findByRole("heading", { name: "Projects" });
+  fireEvent.click(ui.getAllByRole("button", { name: "Create project" })[0]);
+  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Manual continuity test" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Open provider manual" }));
+  assert.ok(ui.getByRole("dialog"));
+  fireEvent.click(ui.getByRole("button", { name: "Close provider manual" }));
+  assert.equal(
+    ui.getByLabelText("Project name").value,
+    "Manual continuity test",
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Back to projects" }));
+  fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
+  fireEvent.click(ui.getByRole("button", { name: "Open provider manual" }));
+  assert.ok(ui.getByRole("dialog"));
+  fireEvent.click(ui.getByRole("button", { name: "Close provider manual" }));
+});
 test.after(() => dom.window.close());
