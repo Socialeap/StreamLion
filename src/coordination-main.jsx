@@ -2,8 +2,10 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import CoordinationPortal from "./CoordinationPortal.jsx";
 import "./coordination.css";
+import { preferredTheme, applyTheme } from "./theme.js";
 import { registerSW } from "virtual:pwa-register";
 import { offerUpdate } from "./updates.js";
+applyTheme(preferredTheme());
 const updateSW = registerSW({
   onNeedRefresh() {
     offerUpdate(() => updateSW(true));

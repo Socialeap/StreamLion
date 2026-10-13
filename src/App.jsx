@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Jobs from "./Jobs";
 import ThemeSwitch from "./ThemeSwitch.jsx";
+import ProviderManualButton from "./ProviderManual.jsx";
 import { googleSignInFailure } from "./google-signin-errors.js";
 import Notes from "./Notes";
 import Measurements from "./MeasurementCapture.jsx";
@@ -972,7 +973,13 @@ export default function App() {
         )}
       </aside>
       <main>
-        <div className="app-utility">{page !== "Ask" && <ThemeSwitch />}</div>
+        <header
+          className="app-utility"
+          aria-label="Workspace help and appearance"
+        >
+          <ProviderManualButton />
+          {page !== "Ask" && <ThemeSwitch />}
+        </header>
         {newerVersion && (
           <section className="sync-bar" aria-label="App update">
             <span className={page === "Ask" ? "sr-only" : undefined}>
