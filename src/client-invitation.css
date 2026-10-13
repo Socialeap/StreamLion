@@ -1,0 +1,159 @@
+.coord-invite-flow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+.coord-invite-step {
+  min-width: 0;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.coord-invite-step legend {
+  max-width: 100%;
+  padding: 0 8px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+.coord-step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--green);
+  font-size: 14px;
+  vertical-align: middle;
+}
+.coord-invite-step > p,
+.coord-invite-finish p {
+  font-size: 14px;
+}
+.coord-invite-step > :last-child {
+  margin-bottom: 0;
+}
+.coord-invite-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+.coord-invite-fields > p {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+.coord-invite-finish {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.coord-invite-finish h3 {
+  margin-bottom: 12px;
+}
+.coord-invite-finish .coord-step-number {
+  background: var(--surface);
+}
+.coord-invite-finish p {
+  max-width: 660px;
+  margin-bottom: 8px;
+}
+.coord-invite-finish .coord-small {
+  font-size: 12px;
+  margin-bottom: 0;
+}
+.coord-invite-finish a {
+  display: inline-block;
+  margin-top: 12px;
+}
+.coord-invite-submit {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.coord-invite-submit button {
+  width: 100%;
+}
+.coord-public-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.coord-public-form {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--background);
+  overflow-wrap: anywhere;
+}
+.coord-public-form:only-child {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.coord-public-form:only-child .coord-project-link {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-left: 24px;
+  border-left: 1px solid var(--line);
+}
+.coord-projects .coord-job-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.coord-projects .coord-job-list button {
+  overflow-wrap: anywhere;
+}
+#coord-public-forms,
+#coord-selected-request {
+  scroll-margin-top: 20px;
+}
+.coord-request-sharing .coord-project-link {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+@media (max-width: 800px) {
+  .coord-invite-flow,
+  .coord-public-form-grid,
+  .coord-public-form:only-child {
+    grid-template-columns: 1fr;
+  }
+  .coord-invite-finish {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .coord-public-form:only-child .coord-project-link {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+  .coord-projects .coord-job-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 500px) {
+  .coord-invite-step,
+  .coord-invite-finish,
+  .coord-public-form {
+    padding: 16px;
+  }
+  .coord-invite-step legend {
+    font-size: 16px;
+  }
+  .coord-invite-fields,
+  .coord-projects .coord-job-list {
+    grid-template-columns: 1fr;
+  }
+}
