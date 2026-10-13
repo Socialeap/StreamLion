@@ -1,5 +1,6 @@
 @import "./theme.css";
 @import "./provider-manual.css";
+@import "./client-invitation.css";
 
 :root {
   font-family:
@@ -197,11 +198,6 @@ h3 {
   background: var(--surface);
   box-shadow: var(--shadow);
   margin-bottom: 18px;
-}
-.coord-layout {
-  display: grid;
-  grid-template-columns: 310px minmax(0, 1fr);
-  gap: 24px;
 }
 .coord-alert,
 .coord-notice {
@@ -420,9 +416,6 @@ h3 {
   .theme-switch .theme-label { display: none; }
   .theme-switch button { width: 44px; min-height: 44px; padding: 10px; }
   .coord-header-tools .provider-manual-trigger > span { display: none; }
-  .coord-layout {
-    grid-template-columns: 1fr;
-  }
   .coord-heading {
     align-items: flex-start;
   }

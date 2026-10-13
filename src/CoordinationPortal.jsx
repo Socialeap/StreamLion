@@ -434,6 +434,11 @@ export default function CoordinationPortal({
     }
   }
   const selectedJob = jobs.find((j) => j.id === selected);
+  const visibleForms =
+    createdInvitation?.form &&
+    !forms.some((f) => f.id === createdInvitation.form.id)
+      ? [createdInvitation.form, ...forms]
+      : forms;
   function selectRequest(id) {
     setSelected(id);
     const url = new URL(window.location.href);
@@ -789,184 +794,246 @@ export default function CoordinationPortal({
                 ))}
               </section>
             )}
-            <div className="coord-layout">
-              <aside>
-                <section className="coord-card">
-                  <h2>Invite a client</h2>
-                  <p>
-                    Share a reusable public estimate and work-order form by link
-                    or QR on your website, social media, ads, messages or
-                    business cards. No prospect email is needed. You can
-                    optionally choose a private email invitation.
-                  </p>
-                  <form
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      const result = await perform("provider/create", {
-                        operation: operation(),
-                        email: shareLink && status.publicForms ? "" : email,
-                        title,
-                        contactName,
-                        companyName,
-                        ...(status.publicForms && shareLink
-                          ? { publicForm: true, verificationRequired }
-                          : status.shareLinks
-                            ? { shareLink }
-                            : {}),
-                        ...(selectedTemplate === "preset:tm-spatial"
-                          ? { preset: "tm-spatial" }
-                          : selectedTemplate
-                            ? {
-                                template: {
-                                  id: selectedTemplate,
-                                  version:
-                                    templates.find(
-                                      (t) => t.id === selectedTemplate,
-                                    ).revision + 1,
-                                },
-                              }
-                            : {}),
-                      });
-                      if (result?.form) {
-                        setCreatedInvitation(result);
-                        selectRequest(null);
-                        setMessage(
-                          "Public form ready. Share this reusable link anywhere; each submission creates a separate request.",
-                        );
-                      } else if (result) {
-                        selectRequest(result.jobId);
-                        setCreatedInvitation({
-                          ...result,
-                          title,
-                          email,
-                          contactName,
-                          companyName,
-                        });
-                        setPrepareBrief(false);
-                        setMessage(
-                          result.shareLink
-                            ? "Request link ready. Share it by text, DM, email or QR. Waiting for the prospect to open and submit."
-                            : "Invitation queued. Starting details are retained below.",
-                        );
-                      }
-                    }}
-                  >
-                    {(status.shareLinks ||
-                      status.publicForms !== undefined) && (
-                      <label>
-                        Invitation method
-                        <select
-                          value={shareLink ? "share" : "email"}
-                          disabled={busy || Boolean(createdInvitation)}
-                          onChange={(e) =>
-                            setShareLink(e.target.value === "share")
+            <section
+              className="coord-card coord-invite"
+              aria-labelledby="coord-invite-title"
+            >
+              <h2 id="coord-invite-title">Invite a client</h2>
+              <p>
+                Choose an invitation, set the details, then create and share.
+                Use a public form for new prospects or a private email for a
+                known client.
+              </p>
+              <form
+                className="coord-invite-flow"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const result = await perform("provider/create", {
+                    operation: operation(),
+                    email: shareLink && status.publicForms ? "" : email,
+                    title,
+                    contactName,
+                    companyName,
+                    ...(status.publicForms && shareLink
+                      ? { publicForm: true, verificationRequired }
+                      : status.shareLinks
+                        ? { shareLink }
+                        : {}),
+                    ...(selectedTemplate === "preset:tm-spatial"
+                      ? { preset: "tm-spatial" }
+                      : selectedTemplate
+                        ? {
+                            template: {
+                              id: selectedTemplate,
+                              version:
+                                templates.find((t) => t.id === selectedTemplate)
+                                  .revision + 1,
+                            },
                           }
-                        >
-                          <option value="share">
-                            Public form · share link or QR
-                          </option>
-                          <option value="email">Invite a known email</option>
-                        </select>
-                      </label>
-                    )}
+                        : {}),
+                  });
+                  if (result?.form) {
+                    setCreatedInvitation(result);
+                    selectRequest(null);
+                    setMessage(
+                      "Public form ready. Share this reusable link anywhere; each submission creates a separate request.",
+                    );
+                  } else if (result) {
+                    selectRequest(result.jobId);
+                    setCreatedInvitation({
+                      ...result,
+                      title,
+                      email,
+                      contactName,
+                      companyName,
+                    });
+                    setPrepareBrief(false);
+                    setMessage(
+                      result.shareLink
+                        ? "Request link ready. Share it by text, DM, email or QR. Waiting for the prospect to open and submit."
+                        : "Invitation queued. Starting details are retained below.",
+                    );
+                  }
+                }}
+              >
+                <fieldset className="coord-invite-step">
+                  <legend>
+                    <span className="coord-step-number">1</span> Choose your
+                    invitation
+                  </legend>
+                  <p>
+                    Choose how clients reach you and which questions they will
+                    answer.
+                  </p>
+                  {(status.shareLinks || status.publicForms !== undefined) && (
                     <label>
-                      Service & intake
+                      Invitation method
                       <select
-                        value={selectedTemplate}
+                        value={shareLink ? "share" : "email"}
                         disabled={busy || Boolean(createdInvitation)}
-                        onChange={(e) => setSelectedTemplate(e.target.value)}
+                        onChange={(e) =>
+                          setShareLink(e.target.value === "share")
+                        }
                       >
-                        <option value="">Standard work order</option>
-                        <option value="preset:tm-spatial">
-                          Transcendence Media · spatial capture estimate
+                        <option value="share">
+                          Public form · share link or QR
                         </option>
-                        {createdInvitation &&
-                          selectedJob?.intake &&
-                          selectedJob.intake.id !== "intake-tm-spatial" && (
-                            <option value={selectedJob.intake.id}>
-                              {selectedJob.intake.name} · version{" "}
-                              {selectedJob.intake.version} (this request)
-                            </option>
-                          )}
-                        {templates
-                          .filter(
-                            (t) =>
-                              !(
-                                createdInvitation &&
-                                t.id === selectedJob?.intake?.id
-                              ),
-                          )
-                          .map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.config.name} · version {t.revision + 1}
-                            </option>
-                          ))}
+                        <option value="email">Invite a known email</option>
                       </select>
                     </label>
-                    {shareLink && status.publicForms && (
-                      <label className="coord-check">
+                  )}
+                  <label>
+                    Service & intake
+                    <select
+                      value={selectedTemplate}
+                      disabled={busy || Boolean(createdInvitation)}
+                      onChange={(e) => setSelectedTemplate(e.target.value)}
+                    >
+                      <option value="">Standard work order</option>
+                      <option value="preset:tm-spatial">
+                        Transcendence Media · spatial capture estimate
+                      </option>
+                      {createdInvitation &&
+                        selectedJob?.intake &&
+                        selectedJob.intake.id !== "intake-tm-spatial" && (
+                          <option value={selectedJob.intake.id}>
+                            {selectedJob.intake.name} · version{" "}
+                            {selectedJob.intake.version} (this request)
+                          </option>
+                        )}
+                      {templates
+                        .filter(
+                          (t) =>
+                            !(
+                              createdInvitation &&
+                              t.id === selectedJob?.intake?.id
+                            ),
+                        )
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.config.name} · version {t.revision + 1}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </fieldset>
+                <fieldset className="coord-invite-step">
+                  <legend>
+                    <span className="coord-step-number">2</span>{" "}
+                    {shareLink && status.publicForms !== undefined
+                      ? "Set form access"
+                      : "Add client details"}
+                  </legend>
+                  <p>
+                    {shareLink && status.publicForms !== undefined
+                      ? "Anyone with your public link can open the form. Each submission creates a separate request."
+                      : shareLink && status.shareLinks
+                        ? "Add any starting details you already know. The prospect can provide the rest when they open your link."
+                        : "Enter the client’s email for a private invitation. Add any starting details you already know."}
+                  </p>
+                  {shareLink && status.publicForms && (
+                    <label className="coord-check">
+                      <input
+                        type="checkbox"
+                        checked={verificationRequired}
+                        disabled={busy || Boolean(createdInvitation)}
+                        onChange={(e) =>
+                          setVerificationRequired(e.target.checked)
+                        }
+                      />
+                      Require email confirmation before submission
+                    </label>
+                  )}
+                  {shareLink && status.publicForms && (
+                    <p className="coord-field-help">
+                      Email confirmation asks the client to verify their address
+                      before submitting. Leave it off to accept requests without
+                      email.
+                    </p>
+                  )}
+                  {status.publicForms === false && shareLink && (
+                    <p role="status">
+                      Public forms await deployment activation. Your prospect
+                      email is not required to share a public form.
+                    </p>
+                  )}
+                  {(!shareLink || status.publicForms === undefined) && (
+                    <div className="coord-invite-fields">
+                      <label>
+                        Project name
                         <input
-                          type="checkbox"
-                          checked={verificationRequired}
-                          disabled={busy || Boolean(createdInvitation)}
-                          onChange={(e) =>
-                            setVerificationRequired(e.target.checked)
-                          }
+                          value={title}
+                          disabled={Boolean(createdInvitation)}
+                          maxLength={1000}
+                          onChange={(e) => setTitle(e.target.value)}
                         />
-                        Require email confirmation before submission
                       </label>
-                    )}
-                    {status.publicForms === false && shareLink && (
-                      <p role="status">
-                        Public forms await deployment activation. Your prospect
-                        email is not required to share a public form.
+
+                      <label>
+                        Client email
+                        <input
+                          type="email"
+                          required={!shareLink}
+                          disabled={Boolean(createdInvitation)}
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Contact name · optional
+                        <input
+                          maxLength={1000}
+                          value={contactName}
+                          disabled={Boolean(createdInvitation)}
+                          onChange={(e) => setContactName(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Company · optional
+                        <input
+                          maxLength={1000}
+                          value={companyName}
+                          disabled={Boolean(createdInvitation)}
+                          onChange={(e) => setCompanyName(e.target.value)}
+                        />
+                      </label>
+                      <p className="coord-small">
+                        Project name can wait until agreement.
+                        {shareLink && " Client email can also be left blank."}
                       </p>
+                    </div>
+                  )}
+                </fieldset>
+                <div
+                  className="coord-invite-finish"
+                  aria-labelledby="coord-invite-finish-title"
+                >
+                  <div>
+                    <h3 id="coord-invite-finish-title">
+                      <span className="coord-step-number">3</span>{" "}
+                      {createdInvitation
+                        ? "Your invitation is ready"
+                        : "Create and share"}
+                    </h3>
+                    <p>
+                      {createdInvitation?.form
+                        ? "Your reusable link and QR sharing options are in Your public forms below."
+                        : createdInvitation
+                          ? "Your request is ready below. Share its link, or review the invitation status before preparing the brief."
+                          : shareLink
+                            ? "Create your link, then copy it or show its QR code. Share it through your usual channels."
+                            : "Create the request and queue the private email invitation. Your client verifies their email to open it."}
+                    </p>
+                    <p className="coord-small">
+                      Creating a form or request uses no project credits.
+                    </p>
+                    {createdInvitation?.form && (
+                      <a href="#coord-public-forms">
+                        Go to your link and QR code ↓
+                      </a>
                     )}
-                    {(!shareLink || status.publicForms === undefined) && (
-                      <>
-                        <label>
-                          Project name
-                          <input
-                            value={title}
-                            disabled={Boolean(createdInvitation)}
-                            maxLength={1000}
-                            onChange={(e) => setTitle(e.target.value)}
-                          />
-                        </label>
-                        <p className="coord-small">
-                          Project name can wait until agreement. In share-link
-                          mode, client email can also be left blank.
-                        </p>
-                        <label>
-                          Client email
-                          <input
-                            type="email"
-                            required={!shareLink}
-                            disabled={Boolean(createdInvitation)}
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                          />
-                        </label>
-                        <label>
-                          Contact name · optional
-                          <input
-                            maxLength={1000}
-                            value={contactName}
-                            disabled={Boolean(createdInvitation)}
-                            onChange={(e) => setContactName(e.target.value)}
-                          />
-                        </label>
-                        <label>
-                          Company · optional
-                          <input
-                            maxLength={1000}
-                            value={companyName}
-                            disabled={Boolean(createdInvitation)}
-                            onChange={(e) => setCompanyName(e.target.value)}
-                          />
-                        </label>
-                      </>
-                    )}
+                  </div>
+                  <div className="coord-invite-submit">
                     {!createdInvitation && (
                       <button
                         disabled={
@@ -989,6 +1056,7 @@ export default function CoordinationPortal({
                         disabled={busy}
                         onClick={() => {
                           setCreatedInvitation(null);
+                          setMessage("");
                           selectRequest(null);
                           setTitle("");
                           setEmail("");
@@ -1000,91 +1068,142 @@ export default function CoordinationPortal({
                         Start another invitation
                       </button>
                     )}
-                  </form>
-                  <p className="coord-small">
-                    Creating a form or request uses no project credits.
-                  </p>
-                  {createdInvitation?.form &&
-                    !forms.some((f) => f.id === createdInvitation.form.id) && (
-                      <ProjectInvitation
-                        jobId={createdInvitation.form.id}
-                        link={{ ...createdInvitation.form, reusable: true }}
-                      />
-                    )}
-                  {forms.length > 0 && (
-                    <section aria-label="Your public forms">
-                      <h3>Your public forms</h3>
-                      {forms.map((form) => (
-                        <div key={form.id} className="coord-project-link">
-                          <h4>
-                            {form.intake?.name || "Public work-order form"}
-                          </h4>
-                          <p className="coord-small">
-                            {form.openedAt
-                              ? `First form open: ${date(form.openedAt)} · visitor unverified`
-                              : "Waiting for first form open"}{" "}
-                            · {form.requestCount || 0} submitted requests
-                          </p>
-                          <label className="coord-check">
-                            <input
-                              type="checkbox"
-                              checked={form.active}
-                              disabled={busy}
-                              onChange={(e) =>
-                                perform("provider/form", {
-                                  formId: form.id,
-                                  active: e.target.checked,
-                                  verificationRequired:
-                                    form.verificationRequired,
-                                })
-                              }
-                            />
-                            Public form available
-                          </label>
-                          <label className="coord-check">
-                            <input
-                              type="checkbox"
-                              checked={form.verificationRequired}
-                              disabled={busy}
-                              onChange={(e) =>
-                                perform("provider/form", {
-                                  formId: form.id,
-                                  active: form.active,
-                                  verificationRequired: e.target.checked,
-                                })
-                              }
-                            />
-                            Require email confirmation
-                          </label>
-                          <ProjectInvitation
-                            jobId={form.id}
-                            link={{ ...form, reusable: true }}
+                  </div>
+                </div>
+              </form>
+            </section>
+            {visibleForms.length > 0 && (
+              <section
+                className="coord-card"
+                id="coord-public-forms"
+                aria-label="Your public forms"
+              >
+                <h2>Your public forms</h2>
+                <p>
+                  Copy a saved link, show its QR code or update who can submit.
+                  Reuse a form whenever you need a new request.
+                </p>
+                <div className="coord-public-form-grid">
+                  {visibleForms.map((form) => (
+                    <article key={form.id} className="coord-public-form">
+                      <div>
+                        <h3>{form.intake?.name || "Public work-order form"}</h3>
+                        <p className="coord-small">
+                          {form.openedAt
+                            ? `First form open: ${date(form.openedAt)} · visitor unverified`
+                            : "Waiting for first form open"}{" "}
+                          · {form.requestCount || 0} submitted requests
+                        </p>
+                        <label className="coord-check">
+                          <input
+                            type="checkbox"
+                            checked={form.active}
+                            disabled={busy}
+                            onChange={(e) =>
+                              perform("provider/form", {
+                                formId: form.id,
+                                active: e.target.checked,
+                                verificationRequired: form.verificationRequired,
+                              })
+                            }
                           />
-                        </div>
-                      ))}
+                          Public form available
+                        </label>
+                        <label className="coord-check">
+                          <input
+                            type="checkbox"
+                            checked={form.verificationRequired}
+                            disabled={busy}
+                            onChange={(e) =>
+                              perform("provider/form", {
+                                formId: form.id,
+                                active: form.active,
+                                verificationRequired: e.target.checked,
+                              })
+                            }
+                          />
+                          Require email confirmation
+                        </label>
+                      </div>
+                      <ProjectInvitation
+                        jobId={form.id}
+                        link={{ ...form, reusable: true }}
+                      />
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+            <section
+              className="coord-card coord-projects"
+              aria-labelledby="coord-projects-title"
+            >
+              <h2 id="coord-projects-title">Your projects</h2>
+              <p>
+                Select a request to review the client’s answers, agree the scope
+                and confirm the appointment.
+              </p>
+              <label className="coord-check">
+                <input
+                  type="checkbox"
+                  checked={showClosed}
+                  onChange={(e) => setShowClosed(e.target.checked)}
+                />
+                Include closed projects
+              </label>
+              <div className="coord-job-list">
+                {jobs
+                  .filter((j) => showClosed || !j.closedAt)
+                  .map((j) => (
+                    <button
+                      key={j.id}
+                      className={j.id === selected ? "selected" : ""}
+                      onClick={() => {
+                        selectRequest(j.id);
+                        setPrepareBrief(false);
+                        // Move keyboard and screen-reader users to the brief below the list.
+                        setTimeout(() => {
+                          const detail = document.getElementById(
+                            "coord-selected-request",
+                          );
+                          detail?.focus({ preventScroll: true });
+                          detail?.scrollIntoView?.({ block: "start" });
+                        }, 0);
+                      }}
+                    >
+                      <strong>{j.fields.title || "Untitled request"}</strong>
+                      <span>{states[j.state]}</span>
+                    </button>
+                  ))}
+                {!jobs.length && <p>Your first request starts here.</p>}
+              </div>
+            </section>
+            {selectedJob && (
+              <div id="coord-selected-request" tabIndex={-1}>
+                {selectedJob.state !== "archived" &&
+                  (!selectedJob.archiveAt ||
+                    selectedJob.archiveAt > Date.now()) && (
+                    <section
+                      className="coord-card coord-request-sharing"
+                      aria-label="Selected request sharing"
+                    >
+                      <h3>Client access for this request</h3>
+                      {selectedJob.source === "public-form" &&
+                      !selectedJob.emailVerified ? (
+                        <p>
+                          The prospect received a private status link after
+                          submitting this request. Share your public form link
+                          or QR above to collect another request. Email
+                          confirmation was not required for this submission.
+                        </p>
+                      ) : (
+                        <ProjectInvitation
+                          jobId={selectedJob.id}
+                          link={links.find((l) => l.jobId === selectedJob.id)}
+                        />
+                      )}
                     </section>
                   )}
-                  {selectedJob &&
-                    selectedJob.state !== "archived" &&
-                    (!selectedJob.archiveAt ||
-                      selectedJob.archiveAt > Date.now()) &&
-                    (selectedJob.source === "public-form" &&
-                    !selectedJob.emailVerified ? (
-                      <p>
-                        The prospect received a private status link after
-                        submitting this request. Share your public form link or
-                        QR above to collect another request. Email confirmation
-                        was not required for this submission.
-                      </p>
-                    ) : (
-                      <ProjectInvitation
-                        jobId={selectedJob.id}
-                        link={links.find((l) => l.jobId === selectedJob.id)}
-                      />
-                    ))}
-                </section>
-              </aside>
-              <div>
                 {selectedJob &&
                 links.some((l) => l.jobId === selectedJob.id && !l.claimedAt) &&
                 !prepareBrief &&
@@ -1171,46 +1290,9 @@ export default function CoordinationPortal({
                     }
                     price={status.projectMicros}
                   />
-                ) : (
-                  <section className="coord-card">
-                    <h2>A complete brief before you travel</h2>
-                    <p>
-                      Select a request to review scope, confirm the appointment
-                      and identify missing information.
-                    </p>
-                  </section>
-                )}
+                ) : null}
               </div>
-            </div>
-            <section className="coord-card">
-              <h2>Your projects</h2>
-              <label className="coord-check">
-                <input
-                  type="checkbox"
-                  checked={showClosed}
-                  onChange={(e) => setShowClosed(e.target.checked)}
-                />
-                Include closed projects
-              </label>
-              <div className="coord-job-list">
-                {jobs
-                  .filter((j) => showClosed || !j.closedAt)
-                  .map((j) => (
-                    <button
-                      key={j.id}
-                      className={j.id === selected ? "selected" : ""}
-                      onClick={() => {
-                        selectRequest(j.id);
-                        setPrepareBrief(false);
-                      }}
-                    >
-                      <strong>{j.fields.title || "Untitled request"}</strong>
-                      <span>{states[j.state]}</span>
-                    </button>
-                  ))}
-                {!jobs.length && <p>Your first request starts here.</p>}
-              </div>
-            </section>
+            )}
             <details className="coord-card coord-guide">
               <summary>How client requests work</summary>
               <RequestGuide />
