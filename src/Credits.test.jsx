@@ -24,6 +24,27 @@ const packs = [
   { id: "medium", amount: 2500, creditsMicros: 25000000 },
   { id: "large", amount: 5000, creditsMicros: 50000000 },
 ];
+test("approved live credit QA shows pack choices with an explicit real-payment notice", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url) =>
+    Response.json(
+      url.endsWith("config")
+        ? { enabled: true, mode: "live", checkoutMode: "owner_qa", packs }
+        : {
+            enabled: true,
+            connected: true,
+            purchased: true,
+            subject: "owner",
+            account: "owner@example.com",
+            balanceMicros: 0,
+          },
+    ),
+  );
+  t.after(cleanup);
+  const ui = render(<Credits />);
+  await act(async () => {});
+  assert.ok(ui.getByRole("button", { name: "800 credits for $10.00" }));
+  assert.match(ui.getByRole("note").textContent, /real money/);
+});
 test("top-up options are gated by verified availability, Google identity and app entitlement", async (t) => {
   let config = { enabled: false },
     account = { enabled: false };

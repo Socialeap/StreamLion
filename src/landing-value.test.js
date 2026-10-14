@@ -24,6 +24,8 @@ test("launch pricing requires a valid live quote and an available slot", () => {
     undefined,
     {},
     { ...liveQuote, enabled: false },
+    { ...liveQuote, checkoutMode: "paused" },
+    { ...liveQuote, checkoutMode: "owner_qa" },
     { ...liveQuote, mode: "test" },
     { ...liveQuote, amount: "2996" },
     { ...liveQuote, currency: "eur" },

@@ -159,9 +159,23 @@ export default function Credits() {
       )}
       {!config && !error && <p role="status">Checking credit options…</p>}
       {config?.enabled === false && (
-        <p>
-          Credit purchases are not open yet. Your saved-detail voice lookup
-          remains included in StreamLion.
+        <>
+          <p>
+            Credit purchases are not open yet. Your saved-detail voice lookup
+            remains included in StreamLion.
+          </p>
+          {!account?.connected && (
+            <a href="/api/google/start?returnTo=credits">
+              Sign in to restore or check access
+            </a>
+          )}
+        </>
+      )}
+      {config?.enabled && config.checkoutMode === "owner_qa" && (
+        <p role="note">
+          Checkout is available for your approved QA account. Other accounts
+          cannot start a purchase.
+          {config.mode === "live" && " Live Stripe checkout uses real money."}
         </p>
       )}
       {config?.enabled &&

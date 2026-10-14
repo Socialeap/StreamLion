@@ -131,6 +131,88 @@ test("payment verification failure does not mount the workspace; retry restores 
   assert.ok(ui.getByText("Private workspace"));
   cleanup();
 });
+test("paused sales keep Google restoration available without checkout buttons", async (t) => {
+  window.history.replaceState(null, "", "/api/purchase");
+  t.mock.method(globalThis, "fetch", async (url) =>
+    response(
+      url.endsWith("config")
+        ? { ...config, enabled: false, checkoutMode: "owner_qa" }
+        : { enabled: true, required: true, connected: false, purchased: false },
+    ),
+  );
+  t.after(cleanup);
+  const ui = render(<Purchase />);
+  await act(async () => {});
+  assert.ok(
+    ui.getByRole("link", { name: /Sign in to restore or check access/ }),
+  );
+  assert.equal(
+    ui.queryByRole("button", { name: "Continue to secure checkout" }),
+    null,
+  );
+});
+test("approved live owner QA shows checkout with an explicit real-payment notice", async (t) => {
+  window.history.replaceState(null, "", "/api/purchase");
+  t.mock.method(globalThis, "fetch", async (url) =>
+    response(
+      url.endsWith("config")
+        ? { ...config, mode: "live", checkoutMode: "owner_qa" }
+        : {
+            enabled: true,
+            required: true,
+            connected: true,
+            purchased: false,
+            subject: "owner",
+            account: "owner@example.com",
+          },
+    ),
+  );
+  t.after(cleanup);
+  const ui = render(<Purchase />);
+  await act(async () => {});
+  assert.ok(ui.getByRole("button", { name: "Continue to secure checkout" }));
+  assert.match(ui.getByRole("note").textContent, /real money/);
+});
+test("Core return confirmation works while new checkout is paused or its quote is unavailable", async (t) => {
+  for (const unavailable of [false, true]) {
+    window.history.replaceState(
+      null,
+      "",
+      "/api/purchase?session_id=cs_test_pending",
+    );
+    let confirmed = 0,
+      checkoutCalls = 0;
+    t.mock.method(globalThis, "fetch", async (url) => {
+      if (url.endsWith("checkout")) checkoutCalls++;
+      if (url.endsWith("confirm")) {
+        confirmed++;
+        return response({ purchased: true, status: "paid" });
+      }
+      if (url.endsWith("config"))
+        return unavailable
+          ? response({ error: "Quote unavailable" }, 503)
+          : response({ ...config, enabled: false, checkoutMode: "paused" });
+      return response({
+        enabled: true,
+        required: true,
+        connected: true,
+        purchased: false,
+        subject: "buyer",
+        account: "buyer@example.com",
+      });
+    });
+    let restored = 0;
+    const ui = render(<Purchase onPurchased={() => restored++} />);
+    await act(async () => {});
+    assert.equal(confirmed, 1);
+    assert.equal(restored, 1);
+    assert.ok(ui.getByRole("link", { name: "Open workspace" }));
+    assert.equal(ui.queryByRole("alert"), null);
+    assert.equal(checkoutCalls, 0);
+    assert.equal(window.location.search, "");
+    cleanup();
+  }
+});
 test("malformed verification never grants access and optional storage failure never blocks a paid buyer", async (t) => {
   t.mock.method(globalThis, "fetch", async () => response({}));
   const ui = render(

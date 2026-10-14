@@ -1,6 +1,11 @@
 import Stripe from "stripe";
 import { getSession, hash, googleConfigurationReady } from "./google-auth.js";
 import {
+  checkoutAccess,
+  checkoutQuoteAccess,
+  CHECKOUT_PAUSED,
+} from "./checkout-access.js";
+import {
   paymentMode,
   licenseRequired,
   hasPurchase,
@@ -609,8 +614,10 @@ export async function handlePurchase({ request, env, params }) {
         mode,
       );
       const launch = catalog.launch && used.count < LAUNCH_PLACES;
+      const access = await checkoutQuoteAccess(request, env);
       return json({
-        enabled: true,
+        enabled: access.allowed,
+        checkoutMode: access.mode,
         required,
         mode,
         currency: "usd",
@@ -637,6 +644,8 @@ export async function handlePurchase({ request, env, params }) {
         request.headers.get("X-StreamLion-Account") !== identity.google_subject)
     )
       return json({ error: "Your account changed. Reopen this page." }, 403);
+    if (path === "checkout" && !checkoutAccess(env, identity).allowed)
+      return json(CHECKOUT_PAUSED, 403);
     await preflight(env, stripe);
     if (path === "checkout" && request.method === "POST")
       return json(await createCheckout(env, stripe, identity, config));

@@ -86,6 +86,8 @@ Activation spend ceiling **$0**: no real purchase/refund, real model request, se
 
 ## Acceptance and live approval
 
+The independent [checkout pause/owner QA gate](checkout-staging.md) also applies to credit checkout. `owner_qa` never bypasses credit-sales readiness, a paid Core entitlement or AI cost/budget approval. Signed webhooks, confirmation and existing balances remain outside that gate. Do not enable credit sales or AI spending merely to exercise this control; synthetic local tests cover it without provider execution.
+
 1. Read-only health: `node scripts/verify-credits.mjs https://streamlion.transcendencemedia.com test`, the purchase verifier and release verifier. These create no Checkout/model request. Check exact merged release SHA separately.
 2. With a synthetic, signed-in Google account, perform a core test purchase and a credit top-up using test card data; inspect the same order in Stripe, HTTP 200 signed webhook and wallet readback. Repeat delivery/out-of-order events, refresh/close/reopen, cancel/retry, changed selected pack and return while sales are paused. No duplicate grant/payment. A different Google account gets no access to the order or balance.
 3. Test partial/full refund, unresolved/won dispute and refund after simulated spent credits; debt blocks spending and old completion cannot restore refunded credit. Do not manually edit balances to pass acceptance. Test charges must never fund live provider calls or pilot balances.

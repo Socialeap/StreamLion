@@ -54,6 +54,8 @@ For a later live AI launch, the handler requires `STREAMLION_AI_CREDITS_MODE=liv
 
 ### Stripe routes, credentials and prices
 
+New checkout now has an independent [pause and owner QA gate](checkout-staging.md). `STREAMLION_CHECKOUT_MODE` accepts `paused`, `owner_qa` or `open`. Absent defaults preserve test checkout but **pause live checkout**. Owner QA uses exact authenticated Google subjects in the private `STREAMLION_CHECKOUT_QA_SUBJECTS` JSON allowlist; malformed controls fail closed. The gate covers Core and credit session creation/pending URL reuse, never confirmation, status, signed webhooks or existing access. No live mode, credential, QA list or open-sales setting is changed by this PR. Future staging can retain `paused`/`owner_qa` while reconciliation stays active; setting `open` still needs separate public-sales authorization.
+
 Use the implemented HTTPS endpoints:
 
 - `https://streamlion.transcendencemedia.com/api/purchase/webhook`
@@ -90,6 +92,8 @@ node scripts/verify-credits.mjs https://streamlion.transcendencemedia.com test
 ```
 
 Replace `APPROVED_MERGED_SHA` with the exact approved 40-character SHA. Use `live` instead of `test` only after the separately approved live configuration gate. These public GET checks do not perform a purchase or AI call, and their success does not prove payment settlement, an AI answer or device acceptance. Confirm the landing's sales and coordination copy accurately reflects the effective gated state; hiding the offer in test mode is intentional.
+
+The purchase/credit scripts above require `enabled:true` and therefore intentionally fail for closed staging. Follow [closed/QA configuration expectations](checkout-staging.md#review-and-deployment-gates) instead; do not open sales or weaken checks to obtain a green result. The public landing hides the offer in owner QA even when its authenticated owner is eligible on the direct purchase page.
 
 ## Gate 5 — owner and device acceptance
 
