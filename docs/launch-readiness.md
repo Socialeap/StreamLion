@@ -1,6 +1,6 @@
 # StreamLion launch readiness — October 8, 2026
 
-This is the current readiness matrix. Source verification, deployed state, authenticated acceptance, physical devices, commercial activation and scale remain separate gates. The three-day completion deadline is October 11.
+This is the dated October 8 readiness and acceptance snapshot, including the then-planned October 11 deadline. For current release procedures and the October 14 Gate 1 optimization, use [launch-and-scale-release-runbook.md](launch-and-scale-release-runbook.md). Historical deployment IDs and observations below are not fresh live receipts. Source verification, deployed state, authenticated acceptance, physical devices, commercial activation and scale remain separate gates.
 
 **Decision: restricted test pilot active; paid public launch HOLD; scale HOLD.** Client coordination is implemented and has passed live synthetic lifecycle, versioned-intake and independent-workbook archive recovery checks. It was paused after the earlier test, which explained the empty provider page. The test policy was reactivated on October 8. Providers must explicitly authorize their selected Google workspace before invitations can be created. The owner approved two private synthetic QA workbooks for the remaining recovery checks; those temporary grants are currently active and must both be revoked, with the original workbook/folder restored, after the authorized checks finish. Google sign-in alone does not grant that background authorization.
 

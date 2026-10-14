@@ -23,5 +23,6 @@ jobs:
       - run: npm run build
       - run: npx wrangler pages functions build --outdir=/tmp/streamlion-functions --compatibility-flags=nodejs_compat
       - run: npx wrangler deploy --dry-run --config ops/wrangler-coordination.jsonc --outdir /tmp/streamlion-coordination-worker
+      - run: npx wrangler deploy --dry-run --config ops/wrangler-cleanup.jsonc --outdir /tmp/streamlion-cleanup-worker
       - run: npm run verify:capacity
       - run: npm audit --audit-level=high

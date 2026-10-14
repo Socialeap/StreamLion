@@ -2,6 +2,8 @@
 
 This implements the first optimization stage of the approved backend plan. Google Sheets/Drive remain authoritative. Cloudflare D1 stores operational metadata, encrypted recovery/outboxes and the existing financial ledger. No project-content cache, paid service, new credential, live send, AI invocation or automatic deletion is introduced.
 
+The October 14 Gate 1 follow-up is documented in [launch-and-scale-release-runbook.md](launch-and-scale-release-runbook.md). Its synthetic real-engine/adapter regression reduces fresh activation from nine to six full snapshots, with four append writes. Raw append response echoes extend request-local state only after validation; projection heads are refreshed after remote event requests to preserve manual-edit checks, and full history is verified before finishing the project charge and again before completing the journal. Recovery starts fresh, the connection-wide writer lock remains, and event chains are grouped in one pass. This is source/test evidence pending review and deployment, not a production throughput claim. No new migration or configuration change is required for this follow-up; the historical `0011` activation instructions below are not instructions to replay that migration.
+
 ## Implemented contracts
 
 1. **Independent readiness.** Existing authenticated projects, commands, uploads, recovery and archives remain available when email is disabled or unconfigured. New client requests, provider creation/invitations and renewed email links require a configured, enabled email transport and fail before creating challenges when unavailable. Already-issued, unexpired challenges can still be consumed. All coordination schemas, active policy, Google configuration, matching payment/credit mode and live authorization remain required. Push is optional. Client reads also recheck the provider's current Core purchase.
@@ -26,9 +28,9 @@ These defaults are committed in Pages production vars. The dedicated Worker is a
 | `RESEND_MONTHLY_LIMIT`           | `500`   | Existing sender validation; shared account usage requires separate review |
 | `ENABLE_CLIENT_COORDINATION`     | `true`  | Approved test pilot; active policy and runtime readiness remain required  |
 | `ENABLE_RESEND_EMAIL`            | `true`  | Approved allowlisted pilot; configured sender/key and ceilings required   |
-| `ENABLE_WEB_PUSH`                | `false` | Explicit owner-authorized device-alert activation                         |
+| `ENABLE_WEB_PUSH`                | `true`  | Committed flag; credentials and owner/device acceptance remain separate   |
 
-The sender/API key/webhook, Google configuration, VAPID keys, approved test recipients and policies remain as documented in [notifications-activation.md](notifications-activation.md). The efficiency schema requires no new secret; the signed cron relay separately requires `COORDINATION_SCHEDULER_KEY`. The approved 20/500 pilot ceiling is restricted to `info@transcendencemedia.com`; other recipients and general release require separate approval. No subscription, automatic recharge, new checkout or pricing change is implemented.
+The sender/API key/webhook, Google configuration, VAPID keys, approved test recipients and policies remain as documented in [notifications-activation.md](notifications-activation.md). The efficiency schema requires no new secret; the signed cron relay separately requires `COORDINATION_SCHEDULER_KEY`. Preserve the effective `RESEND_TEST_RECIPIENTS` list; inbox examples in historical documentation do not establish that list. Recipient expansion, higher allowances and general release require separate approval. No subscription, automatic recharge, new checkout or pricing change is implemented.
 
 ## Exact migration and activation procedure
 
