@@ -10,6 +10,8 @@
 
 **Spec:** Owner instruction on October 14, 2026: implement safe Gate 1 optimizations and correct the release runbook; preserve the writer lock and pilot modes; validate recovery and open a review PR; do not merge or change live settings. The corrected operational requirements are recorded in [the release runbook](../../launch-and-scale-release-runbook.md).
 
+**Review ruling:** Retain a fresh authoritative read before each projection after the preceding remote event request. Independent review reproduced a manual edit that otherwise caused a new Projects fork. The regression was observed failing, then passing with the restored precheck. This changes the original four-snapshot target to six; preserving valid manual history takes precedence over eliminating those two reads.
+
 ## Global constraints
 
 - Preserve `streamlion_coordination_one_writer_v1`, sealed journal identities, pilot modes, existing policy prices, email quotas, and live settings.
@@ -28,7 +30,7 @@
 
 **Files:** Create `functions/api/coordination-scale.test.js`; update the synthetic append receipts in `test/archive-fixture.js` and the injected adapter in `functions/api/client-coordination.test.js` only as required by the new interface.
 
-- [ ] Add real-engine/real-adapter synthetic tests: activation uses four full snapshots and four appends; completed replay uses zero; each lost acknowledgement recovers cold with one charge and blocks another job until recovery.
+- [ ] Add real-engine/real-adapter synthetic tests: activation uses six full snapshots and four appends; completed replay uses zero; each lost acknowledgement recovers cold with one charge and blocks another job until recovery.
 - [ ] Add tests for missing/corrupt append echoes, stale heads before journal execution, and tampering before the charge checkpoint or final reconciliation.
 - [ ] Run the new suite and confirm the expected amplification/interface failures before production edits.
 

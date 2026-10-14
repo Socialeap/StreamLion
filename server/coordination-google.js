@@ -512,7 +512,10 @@ export class CoordinationGoogle {
   }
   async projection(revision, allowedHead, context) {
     if (!revision) return;
-    const snapshot = context?.snapshot || (await this.snapshot());
+    // Manual Sheets edits do not enter our writer gate. Recheck after the
+    // preceding remote event append, before a projection can create a fork.
+    const snapshot = await this.snapshot();
+    if (context) context.snapshot = snapshot;
     const found = snapshot.projects.revisions.find(
       (r) => r.revisionId === revision.revisionId,
     );

@@ -176,7 +176,7 @@ async function fixture(t) {
 test("activation reuses verified snapshots while preserving both completion checkpoints", async (t) => {
   const f = await fixture(t);
   await f.engine.command("confirm-a", f.job.id, f.command, { role: "client" });
-  assert.deepEqual(f.counts, { snapshots: 4, appends: 4 });
+  assert.deepEqual(f.counts, { snapshots: 6, appends: 4 });
   assert.equal(f.head().state, "confirmed");
   f.counts.snapshots = f.counts.appends = 0;
   await f.fresh().command("confirm-a", f.job.id, f.command, { role: "client" });
@@ -332,7 +332,7 @@ test("trimmed trailing blank values and quoted Sheets ranges remain valid", asyn
     return receipt;
   });
   await f.engine.command("confirm-a", f.job.id, f.command, { role: "client" });
-  assert.deepEqual(f.counts, { snapshots: 4, appends: 4 });
+  assert.deepEqual(f.counts, { snapshots: 6, appends: 4 });
 });
 
 for (const tamperAfter of [2, 4]) {
@@ -402,6 +402,51 @@ test("the journal execution rechecks a head changed after command planning", asy
     /changed before saving/,
   );
   assert.equal(f.counts.appends, 0);
+});
+
+test("a manual Projects edit during the event request is rejected before a conflicting projection is appended", async (t) => {
+  const f = await fixture(t);
+  f.afterAppend(async (receipt) => {
+    if (f.counts.appends === 1) {
+      const revision = {
+        ...f.job.fields,
+        recordId: f.job.id,
+        revisionId: "manual-edit",
+        parentRevisionId: "",
+        updatedAt: new Date().toISOString(),
+        reviewState: "draft",
+      };
+      const { rowFor, PROJECT_HEADERS } = await import("../../src/workbook.js");
+      f.rows[0].push(rowFor(revision, PROJECT_HEADERS));
+    }
+    return receipt;
+  });
+  await assert.rejects(
+    () =>
+      f.engine.command("confirm-a", f.job.id, f.command, { role: "client" }),
+    /Field brief changed outside coordination/,
+  );
+  assert.equal(f.counts.appends, 1);
+  assert.equal(f.rows[0].length, 2);
+  const snapshot = await f.fresh().google.snapshot();
+  assert.equal(snapshot.projects.heads[0].revisionId, "manual-edit");
+  await assert.rejects(
+    () =>
+      f.fresh().command("confirm-a", f.job.id, f.command, { role: "client" }),
+    /Field brief changed outside coordination/,
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT state FROM streamlion_coordination_operations_v1 WHERE id='confirm-a'",
+      )
+      .get().state,
+    "pending",
+  );
+  assert.equal(
+    f.sql.prepare("SELECT state FROM streamlion_shared_spends_v1").get().state,
+    "reserved",
+  );
 });
 
 test("append requests return raw echoed values for verification", async () => {
