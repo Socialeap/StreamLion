@@ -31,14 +31,8 @@ export default function Purchase({ onPurchased }) {
         onPurchased?.();
         return;
       }
-      if (configResult.status === "rejected") throw configResult.reason;
-      const c = configResult.value;
-      setConfig(c);
-      if (!c.enabled) {
-        setAccount(null);
-        return;
-      }
       setAccount(a);
+      // Existing payments must recover independently of new checkout availability.
       if (sessionId && a.connected) {
         const receipt = await purchaseRequest("confirm", {
           method: "POST",
@@ -57,12 +51,19 @@ export default function Purchase({ onPurchased }) {
               : "Your payment is still being confirmed. Check again in a moment; you will not be charged again.",
         );
         if (receipt.purchased) {
+          setConfig({ enabled: true, required: a.required, mode: a.mode });
           window.history.replaceState(null, "", window.location.pathname);
           onPurchased?.();
+          return;
         }
-      } else if (a.purchased) onPurchased?.();
+      }
+      if (configResult.status === "rejected") throw configResult.reason;
+      setConfig(configResult.value);
     } catch (e) {
-      if (generation === epoch.current) setError(e.message);
+      if (generation === epoch.current) {
+        setConfig(null);
+        setError(e.message);
+      }
     } finally {
       if (generation === epoch.current) setBusy(false);
     }
@@ -146,11 +147,30 @@ export default function Purchase({ onPurchased }) {
       )}
       {!config && !error && <p role="status">Checking purchase options…</p>}
       {config?.enabled === false && (
-        <p>
-          Sales are not open yet.{" "}
-          <a href="/api/welcome">Return to StreamLion</a>.
-        </p>
+        <>
+          <p>
+            New purchases are paused. Existing purchases can still be restored
+            or confirmed.
+          </p>
+          <a href="/api/google/start?returnTo=purchase">
+            {account?.connected
+              ? "Use a different Google account"
+              : "Sign in to restore or check access"}
+          </a>
+          <p>
+            <a href="/api/welcome">Return to StreamLion</a>.
+          </p>
+        </>
       )}
+      {config?.enabled &&
+        config.checkoutMode === "owner_qa" &&
+        !account?.purchased && (
+          <p role="note">
+            Checkout is available for your approved QA account. Other accounts
+            cannot start a purchase.
+            {config.mode === "live" && " Live Stripe checkout uses real money."}
+          </p>
+        )}
       {config?.enabled && (
         <>
           <ol className="purchase-steps" aria-label="Purchase steps">

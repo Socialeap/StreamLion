@@ -280,6 +280,95 @@ test("30 percent markup uses exact integer ceiling; unknown cost fails closed", 
   assert.throws(() => creditPrice(0));
   assert.throws(() => creditPrice(5999));
 });
+test("checkout pause blocks credit sessions and pending URL reuse without changing balances", async (t) => {
+  const f = fixture(t),
+    cookie = await f.login();
+  f.license();
+  const first = await f.request("checkout", {
+    method: "POST",
+    cookie,
+    body: { packId: "small" },
+  });
+  assert.equal(first.status, 200);
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  assert.equal(
+    (await (await f.request("config", { cookie })).json()).enabled,
+    false,
+  );
+  const before = f.sql
+    .prepare("SELECT * FROM streamlion_credit_orders_v1")
+    .all();
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Paused checkout must not contact Stripe");
+  });
+  const paused = await f.request("checkout", {
+    method: "POST",
+    cookie,
+    body: { packId: "small" },
+  });
+  assert.equal(paused.status, 403);
+  assert.equal((await paused.json()).url, undefined);
+  assert.deepEqual(
+    f.sql.prepare("SELECT * FROM streamlion_credit_orders_v1").all(),
+    before,
+  );
+  assert.equal((await creditAccount(f.db, "test", "a")).balance_micros, 0);
+  assert.equal(f.creates(), 1);
+});
+test("credit owner QA cannot be impersonated and never overrides independent sales readiness", async (t) => {
+  const f = fixture(t),
+    owner = await f.login(),
+    other = await f.login("b");
+  f.license();
+  f.license("b");
+  f.env.STREAMLION_CHECKOUT_MODE = "owner_qa";
+  f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = '["a"]';
+  assert.equal((await (await f.request("config")).json()).enabled, false);
+  assert.equal(
+    (await (await f.request("config", { cookie: owner })).json()).enabled,
+    true,
+  );
+  for (const account of ["a", "b"])
+    assert.equal(
+      (
+        await f.request("checkout", {
+          method: "POST",
+          cookie: other,
+          subject: "b",
+          account,
+          body: { packId: "small", subject: "a" },
+        })
+      ).status,
+      403,
+    );
+  f.env.STREAMLION_AI_CREDIT_SALES_ENABLED = "false";
+  assert.equal(
+    (await (await f.request("config", { cookie: owner })).json()).enabled,
+    false,
+  );
+  assert.equal(
+    (
+      await f.request("checkout", {
+        method: "POST",
+        cookie: owner,
+        body: { packId: "small" },
+      })
+    ).status,
+    503,
+  );
+  assert.equal(f.creates(), 0);
+  f.env.STREAMLION_AI_CREDIT_SALES_ENABLED = "true";
+  assert.equal(
+    (
+      await f.request("checkout", {
+        method: "POST",
+        cookie: owner,
+        body: { packId: "small" },
+      })
+    ).status,
+    200,
+  );
+});
 test("credit endpoints reject oversized and malformed UTF-8 bodies with client status codes", async (t) => {
   const f = fixture(t),
     cookie = await f.login();
@@ -582,6 +671,8 @@ test("test funds cannot invoke any paid AI provider", async (t) => {
 test("signed webhooks grant once, preserve current refunds, and reject unsigned/wrong-mode events", async (t) => {
   const f = fixture(t),
     s = f.manualOrder();
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = "malformed";
   const intent = f.pay(s.id);
   const deliver = async (event) => {
     const body = JSON.stringify(event),
@@ -608,6 +699,35 @@ test("signed webhooks grant once, preserve current refunds, and reject unsigned/
   assert.equal((await deliver({ ...event, livemode: true })).status, 400);
   assert.equal((await deliver(event)).status, 200);
   assert.equal((await deliver(event)).status, 200);
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    10000000,
+  );
+  intent.latest_charge.disputed = true;
+  assert.equal(
+    (
+      await deliver({
+        ...event,
+        id: "evt_dispute",
+        type: "charge.dispute.created",
+        data: { object: { payment_intent: intent.id } },
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await creditAccount(f.db, "test", "a")).balance_micros, 0);
+  f.setDispute("won");
+  assert.equal(
+    (
+      await deliver({
+        ...event,
+        id: "evt_dispute_won",
+        type: "charge.dispute.closed",
+        data: { object: { payment_intent: intent.id } },
+      })
+    ).status,
+    200,
+  );
   assert.equal(
     (await creditAccount(f.db, "test", "a")).balance_micros,
     10000000,

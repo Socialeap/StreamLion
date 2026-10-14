@@ -7,6 +7,11 @@ import {
   validateCheckout,
 } from "./stripe-purchase.js";
 import { getSession } from "./google-auth.js";
+import {
+  checkoutAccess,
+  checkoutQuoteAccess,
+  CHECKOUT_PAUSED,
+} from "./checkout-access.js";
 import { hasPurchase, paymentMode } from "./purchase-access.js";
 import { boundedText, RequestBodyError } from "./request-body.js";
 import {
@@ -444,8 +449,10 @@ export async function handleCredits({ request, env, params }) {
       await limited(env, "credit-quote:global", 200);
       await creditPreflight(env, stripe);
       const packs = await catalog(env, stripe, mode);
+      const access = await checkoutQuoteAccess(request, env);
       return json({
-        enabled: await salesReady(env, mode),
+        enabled: access.allowed && (await salesReady(env, mode)),
+        checkoutMode: access.mode,
         mode,
         markupPercent: 30,
         packs: packs.map(({ id, amount, creditsMicros }) => ({
@@ -467,6 +474,8 @@ export async function handleCredits({ request, env, params }) {
         request.headers.get("X-StreamLion-Account") !== identity.google_subject)
     )
       return json({ error: "Your account changed. Reopen this page." }, 403);
+    if (path === "checkout" && !checkoutAccess(env, identity).allowed)
+      return json(CHECKOUT_PAUSED, 403);
     await creditPreflight(env, stripe);
     if (path === "status") {
       const wallet = await creditAccount(

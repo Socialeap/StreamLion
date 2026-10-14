@@ -6,8 +6,9 @@ import { createHmac } from "node:crypto";
 import { handlePurchase, reconcile } from "../../server/stripe-purchase.js";
 import { hash, handleGoogle } from "../../server/google-auth.js";
 import { hasPurchase } from "../../server/purchase-access.js";
-function fixture(t, { launch = true } = {}) {
+function fixture(t, { launch = true, mode = "test" } = {}) {
   const sql = new DatabaseSync(":memory:");
+  t.after(() => sql.close());
   for (const name of [
     "0001_google_sessions",
     "0002_google_request_limits",
@@ -35,10 +36,11 @@ function fixture(t, { launch = true } = {}) {
     GOOGLE_CLIENT_SECRET: "synthetic-google-secret",
     VITE_GOOGLE_CLIENT_ID: "synthetic.apps.googleusercontent.com",
     GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64url"),
-    STREAMLION_PAYMENTS_MODE: "test",
+    STREAMLION_PAYMENTS_MODE: mode,
+    ...(mode === "live" ? { STREAMLION_LIVE_PAYMENTS_APPROVED: "true" } : {}),
     STREAMLION_REQUIRE_LICENSE: "true",
     STREAMLION_REFUND_DAYS: "7",
-    STRIPE_SECRET_KEY: "sk_test_synthetic" + crypto.randomUUID(),
+    STRIPE_SECRET_KEY: `sk_${mode}_synthetic` + crypto.randomUUID(),
     STRIPE_WEBHOOK_SECRET: "whsec_synthetic",
     STRIPE_ACCOUNT_ID: "acct_synthetic",
     STRIPE_PRODUCT_ID: "prod_streamlion",
@@ -58,7 +60,7 @@ function fixture(t, { launch = true } = {}) {
     Object.assign(price, {
       active: true,
       type: "one_time",
-      livemode: false,
+      livemode: mode === "live",
       currency: "usd",
       product,
     });
@@ -99,7 +101,7 @@ function fixture(t, { launch = true } = {}) {
         id = `cs_test_${creates}`;
       const session = {
         id,
-        livemode: false,
+        livemode: mode === "live",
         mode: "payment",
         status: "open",
         payment_status: "unpaid",
@@ -154,12 +156,13 @@ function fixture(t, { launch = true } = {}) {
       origin = "https://app.example",
       body,
       headers = {},
+      query = "",
     } = {},
   ) {
     return handlePurchase({
       env,
       params: { path: [path] },
-      request: new Request("https://app.example/api/purchase/" + path, {
+      request: new Request("https://app.example/api/purchase/" + path + query, {
         method,
         headers: {
           Cookie: cookie ? `__Host-streamlion-session=${cookie}` : "",
@@ -188,7 +191,7 @@ function fixture(t, { launch = true } = {}) {
     const session = sessions.get(order.checkout_session),
       intent = {
         id: "pi_" + order.order_id.replaceAll("-", ""),
-        livemode: false,
+        livemode: mode === "live",
         status: "succeeded",
         metadata: { app: "streamlion", order_id: order.order_id },
         latest_charge: {
@@ -213,7 +216,7 @@ function fixture(t, { launch = true } = {}) {
     {
       id = "evt_" + crypto.randomUUID().replaceAll("-", ""),
       valid = true,
-      livemode = false,
+      livemode = mode === "live",
     } = {},
   ) {
     const body = JSON.stringify({ id, type, livemode, data: { object } }),
@@ -245,6 +248,219 @@ function fixture(t, { launch = true } = {}) {
     },
   };
 }
+test("unconfigured live checkout is paused without changing payment mode or entitlement enforcement", async (t) => {
+  const f = fixture(t, { mode: "live" });
+  const config = await (await f.request("config")).json();
+  assert.equal(config.enabled, false);
+  assert.equal(config.checkoutMode, "paused");
+  assert.equal(config.mode, "live");
+  const cookie = await f.login();
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie })).status,
+    403,
+  );
+  assert.equal(f.creates, 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    0,
+  );
+  assert.equal(f.env.STREAMLION_REQUIRE_LICENSE, "true");
+});
+test("pausing Core blocks new sessions and pending URL reuse before provider or order writes", async (t) => {
+  const f = fixture(t),
+    { cookie, order } = await f.checkout();
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Paused checkout must not contact Stripe");
+  });
+  const before = f.sql.prepare("SELECT * FROM streamlion_purchases_v1").all();
+  for (const subject of ["account-a", "account-b"]) {
+    const result = await f.request("checkout", {
+      method: "POST",
+      subject,
+      cookie: subject === "account-a" ? cookie : await f.login(subject),
+    });
+    assert.equal(result.status, 403);
+    const body = await result.json();
+    assert.equal(body.code, "checkout_paused");
+    assert.equal(body.url, undefined);
+  }
+  assert.deepEqual(
+    f.sql.prepare("SELECT * FROM streamlion_purchases_v1").all(),
+    before,
+  );
+  assert.equal(f.sessions.get(order.checkout_session).status, "open");
+});
+test("owner QA uses the authenticated subject, never email, account header or query claims", async (t) => {
+  const f = fixture(t);
+  f.env.STREAMLION_CHECKOUT_MODE = "owner_qa";
+  f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = '["account-a"]';
+  const owner = await f.login(),
+    other = await f.login("account-b");
+  // Same display email is not an authorization credential.
+  f.sql
+    .prepare(
+      "UPDATE streamlion_google_sessions_v1 SET email='account-a@example.com'",
+    )
+    .run();
+  for (const cookie of [undefined, other]) {
+    const config = await (await f.request("config", { cookie })).json();
+    assert.equal(config.enabled, false);
+    assert.equal(config.checkoutMode, "owner_qa");
+    assert.equal(JSON.stringify(config).includes("account-a"), false);
+  }
+  assert.equal(
+    (await (await f.request("config", { cookie: owner })).json()).enabled,
+    true,
+  );
+  for (const subject of ["account-a", "account-b"]) {
+    assert.equal(
+      (
+        await f.request("checkout", {
+          method: "POST",
+          subject,
+          cookie: other,
+          body: '{"subject":"account-a"}',
+          query: "?subject=account-a&owner_qa=true",
+          headers: { "X-StreamLion-QA": "true" },
+        })
+      ).status,
+      403,
+    );
+  }
+  assert.equal(
+    (
+      await f.request("checkout", {
+        method: "POST",
+        cookie: owner,
+        origin: "https://evil.example",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(f.creates, 0);
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie: owner })).status,
+    200,
+  );
+  assert.equal(f.creates, 1);
+  assert.equal(f.env.STREAMLION_PAYMENTS_MODE, "test");
+  f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = '["account-b"]';
+  assert.equal(
+    (await (await f.request("config", { cookie: owner })).json()).enabled,
+    false,
+  );
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie: owner })).status,
+    403,
+  );
+  assert.equal(f.creates, 1);
+});
+test("invalid checkout controls and malformed owner allowlists fail closed", async (t) => {
+  const f = fixture(t),
+    cookie = await f.login();
+  for (const [mode, subjects] of [
+    ["", '["account-a"]'],
+    ["OPEN", '["account-a"]'],
+    ["typo", '["account-a"]'],
+    ["owner_qa", undefined],
+    ["owner_qa", "account-a"],
+    ["owner_qa", "[]"],
+    ["owner_qa", '["account-a",null]'],
+    ["owner_qa", '["account-a","*"]'],
+    ["owner_qa", '["account-a@example.com"]'],
+    ["owner_qa", JSON.stringify(Array(11).fill("account-a"))],
+    ["owner_qa", '["' + "a".repeat(5000) + '"]'],
+  ]) {
+    f.env.STREAMLION_CHECKOUT_MODE = mode;
+    f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = subjects;
+    assert.equal(
+      (await (await f.request("config", { cookie })).json()).enabled,
+      false,
+    );
+    assert.equal(
+      (await f.request("checkout", { method: "POST", cookie })).status,
+      403,
+    );
+  }
+  assert.equal(f.creates, 0);
+});
+test("explicitly open live checkout still requires live payment approval", async (t) => {
+  const f = fixture(t, { mode: "live" }),
+    cookie = await f.login();
+  f.env.STREAMLION_CHECKOUT_MODE = "open";
+  f.env.STREAMLION_LIVE_PAYMENTS_APPROVED = "false";
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie })).status,
+    503,
+  );
+  assert.equal(f.creates, 0);
+  f.env.STREAMLION_LIVE_PAYMENTS_APPROVED = "true";
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie })).status,
+    200,
+  );
+});
+for (const mode of ["test", "live"])
+  test(`Core ${mode} confirmation, restoration and signed refunds survive pause and QA revocation`, async (t) => {
+    const f = fixture(t, { mode });
+    f.env.STREAMLION_CHECKOUT_MODE = "open";
+    const { cookie, order } = await f.checkout();
+    const session = f.paid(order);
+    f.env.STREAMLION_CHECKOUT_MODE = "owner_qa";
+    f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = '["account-b"]';
+    const confirm = await f.request("confirm", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ sessionId: session.id }),
+    });
+    assert.equal(confirm.status, 200);
+    assert.equal((await confirm.json()).purchased, true);
+    assert.equal(
+      (await (await f.request("status", { cookie })).json()).purchased,
+      true,
+    );
+    f.env.STREAMLION_CHECKOUT_MODE = "paused";
+    assert.equal(
+      (await f.event("checkout.session.completed", session)).status,
+      200,
+    );
+    f.paid(order, { dispute: true });
+    assert.equal(
+      (
+        await f.event("charge.dispute.created", {
+          payment_intent: session.payment_intent.id,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(await hasPurchase(f.env, "account-a"), false);
+    f.paid(order);
+    assert.equal(
+      (
+        await f.event("charge.dispute.closed", {
+          payment_intent: session.payment_intent.id,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(await hasPurchase(f.env, "account-a"), true);
+    f.paid(order, { refund: order.amount });
+    assert.equal(
+      (
+        await f.event("charge.refunded", {
+          payment_intent: session.payment_intent.id,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await f.event("checkout.session.completed", session)).status,
+      200,
+    );
+    assert.equal(await hasPurchase(f.env, "account-a"), false);
+    assert.equal(f.creates, 1);
+  });
 test('the app purchase endpoint ignores AI top-up completions rather than retrying a foreign order',async t=>{
   const f=fixture(t);
   assert.equal((await f.event('checkout.session.completed',{id:'cs_test_credit',metadata:{app:'streamlion',kind:'ai_credits',order_id:'credit-only'}})).status,200);

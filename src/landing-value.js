@@ -7,6 +7,7 @@ export const VALUE_TASKS = ["brief", "readings", "handover"];
 export function confirmedPurchaseQuote(config) {
   if (
     !config?.enabled ||
+    (config.checkoutMode !== undefined && config.checkoutMode !== "open") ||
     config.mode !== "live" ||
     ![config.amount, config.standardAmount].every(
       (n) => Number.isSafeInteger(n) && n > 0,
