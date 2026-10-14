@@ -848,22 +848,25 @@ export class CoordinationEngine {
           );
       }
       if (plan.archive) await this.google.archive(last.job, id, plan.archive);
-      await this.google.event(first);
-      await this.google.projection(
-        plan.projection,
-        plan.finalProjection?.revisionId,
-      );
-      if (plan.activation) {
-        await finishProject(
-          this.db,
-          this.connection.mode,
-          this.connection.google_subject,
-          last.jobId,
-          "complete",
+      await this.google.withWriteSnapshot(async (writer) => {
+        await writer.event(first);
+        await writer.projection(
+          plan.projection,
+          plan.finalProjection?.revisionId,
         );
-        await this.google.event(last);
-        await this.google.projection(plan.finalProjection);
-      }
+        if (plan.activation) {
+          await writer.verify();
+          await finishProject(
+            this.db,
+            this.connection.mode,
+            this.connection.google_subject,
+            last.jobId,
+            "complete",
+          );
+          await writer.event(last);
+          await writer.projection(plan.finalProjection);
+        }
+      });
       if (plan.revokeSessions)
         await this.db.batch([
           this.db

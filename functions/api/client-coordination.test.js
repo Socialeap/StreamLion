@@ -134,6 +134,13 @@ function googleFixture() {
     templates,
     revisions,
     failProjection: false,
+    async withWriteSnapshot(callback) {
+      return callback({
+        event: (event) => this.event(event),
+        projection: (revision) => this.projection(revision),
+        verify: async () => {},
+      });
+    },
     snapshot: async () => ({
       events,
       heads,

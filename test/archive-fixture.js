@@ -4,6 +4,7 @@ import {
   PROJECT_HEADERS,
   NOTE_HEADERS,
   makeRevision,
+  columnName,
 } from "../src/workbook.js";
 import {
   CoordinationGoogle,
@@ -133,15 +134,26 @@ export function archiveGoogleFixture(
   let writes = 0,
     loseAck = false;
   google.privateFolder = google.privateWorkbook = async () => {};
-  google.append = async (tab, values) =>
-    rows[
-      [
-        "Projects",
-        "Observations",
-        "CoordinationEvents",
-        "ArchiveIndex",
-      ].indexOf(tab)
-    ].push(values);
+  google.append = async (tab, values) => {
+    const row =
+      rows[
+        [
+          "Projects",
+          "Observations",
+          "CoordinationEvents",
+          "ArchiveIndex",
+        ].indexOf(tab)
+      ].push(values);
+    const range = `${tab}!A${row}:${columnName(values.length - 1)}${row}`;
+    return {
+      spreadsheetId: connection.workbook_id,
+      updates: {
+        updatedRows: 1,
+        updatedRange: range,
+        updatedData: { range, values: [[...values]] },
+      },
+    };
+  };
   google.json = async (url, options) => {
     if (url.endsWith("?fields=sheets.properties"))
       return {

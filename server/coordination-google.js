@@ -248,6 +248,9 @@ export class CoordinationGoogle {
       query.append("ranges", name);
     const data = await this.json(this.sheet("/values:batchGet?" + query));
     const rows = data.valueRanges.map((r) => r.values || []);
+    return this.parseSnapshot(rows);
+  }
+  async parseSnapshot(rows) {
     for (const [i, headers] of [
       PROJECT_HEADERS,
       NOTE_HEADERS,
@@ -315,11 +318,14 @@ export class CoordinationGoogle {
         throw new CoordinationError("Conflicting duplicate event.", 409);
       events.set(event.id, event);
     }
-    const heads = new Map();
-    for (const id of new Set([...events.values()].map((e) => e.jobId))) {
-      const chain = [...events.values()]
-        .filter((e) => e.jobId === id)
-        .sort((a, b) => a.revision - b.revision);
+    const heads = new Map(),
+      chains = new Map();
+    for (const event of events.values()) {
+      if (!chains.has(event.jobId)) chains.set(event.jobId, []);
+      chains.get(event.jobId).push(event);
+    }
+    for (const [id, chain] of chains) {
+      chain.sort((a, b) => a.revision - b.revision);
       if (
         chain.some(
           (e, i) =>
@@ -350,21 +356,121 @@ export class CoordinationGoogle {
     return { rows, projects, notes, events, heads, templates };
   }
   async append(tab, values) {
-    await this.json(
+    return this.json(
       this.sheet(
         "/values/" +
           encodeURIComponent(tab + "!A:ZZ") +
-          ":append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
+          ":append?valueInputOption=RAW&insertDataOption=INSERT_ROWS&includeValuesInResponse=true&responseValueRenderOption=UNFORMATTED_VALUE",
       ),
       { method: "POST", body: JSON.stringify({ values: [values] }) },
     );
   }
-  async event(event) {
-    let snapshot = await this.snapshot();
+  // Enter only after acquiring the durable journal. No state is reused across
+  // requests/recovery attempts, and a response echo never replaces full-history
+  // reconciliation at the financial and operation completion checkpoints.
+  async withWriteSnapshot(callback) {
+    const context = {
+      snapshot: await this.snapshot(),
+      events: new Map(),
+      projections: new Map(),
+    };
+    const result = await callback({
+      event: (event) => this.event(event, context),
+      projection: (revision, allowedHead) =>
+        this.projection(revision, allowedHead, context),
+      verify: () => this.verifyWrites(context),
+    });
+    await this.verifyWrites(context);
+    return result;
+  }
+  async verifyWrites(context) {
+    const snapshot = await this.snapshot();
+    for (const event of context.events.values())
+      if (stableJSON(snapshot.events.get(event.id)) !== stableJSON(event))
+        throw new CoordinationError(
+          "Save outcome is unverified. Retry the same operation.",
+          503,
+        );
+    for (const { revision, allowedHead } of context.projections.values()) {
+      const found = snapshot.projects.revisions.find(
+        (r) => r.revisionId === revision.revisionId,
+      );
+      const head = snapshot.projects.heads.find(
+        (r) => r.recordId === revision.recordId,
+      )?.revisionId;
+      if (
+        stableJSON(found) !== stableJSON(revision) ||
+        (head !== revision.revisionId && head !== allowedHead)
+      )
+        throw new CoordinationError(
+          "Field brief save is unverified. Retry the same operation.",
+          503,
+        );
+    }
+    context.snapshot = snapshot;
+  }
+  async appendVerified(tab, values, context) {
+    const index = [
+      "Projects",
+      "Observations",
+      "CoordinationEvents",
+      "ArchiveIndex",
+    ].indexOf(tab);
+    const rows = context.snapshot.rows[index];
+    if (!rows || rows.length >= 10000)
+      throw new CoordinationError(
+        "Workbook history reached its limit. Stop for a reviewed workbook rollover.",
+        409,
+      );
+    const response = await this.append(tab, values);
+    const update = response?.updates,
+      echo = update?.updatedData;
+    const range = update?.updatedRange?.match(
+      new RegExp(
+        "^(?:" + tab + "|'" + tab + "')!A([1-9]\\d*):([A-Z]+)([1-9]\\d*)$",
+      ),
+    );
+    const lastColumn = range?.[2]
+      .split("")
+      .reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
+    const returned = echo?.values?.[0];
+    if (
+      response?.spreadsheetId !== this.connection.workbook_id ||
+      (update?.spreadsheetId !== undefined &&
+        update.spreadsheetId !== this.connection.workbook_id) ||
+      update?.updatedRows !== 1 ||
+      !range ||
+      Number(range[1]) !== rows.length + 1 ||
+      range[1] !== range[3] ||
+      lastColumn > values.length ||
+      echo?.range !== update.updatedRange ||
+      (echo?.majorDimension !== undefined && echo.majorDimension !== "ROWS") ||
+      !Array.isArray(echo?.values) ||
+      echo.values.length !== 1 ||
+      !Array.isArray(returned) ||
+      returned.length > values.length ||
+      returned.length > lastColumn ||
+      values.some(
+        (value, i) => String(value ?? "") !== String(returned[i] ?? ""),
+      )
+    )
+      throw new CoordinationError(
+        "Save outcome is unverified. Retry the same operation.",
+        503,
+      );
+    context.snapshot = await this.parseSnapshot(
+      context.snapshot.rows.map((r, i) =>
+        i === index ? [...r, [...values]] : r,
+      ),
+    );
+  }
+  async event(event, context) {
+    let snapshot = context?.snapshot || (await this.snapshot());
     const existing = snapshot.events.get(event.id);
     if (existing) {
       if (stableJSON(existing) !== stableJSON(event))
         throw new CoordinationError("Event identity changed.", 409);
+      context?.events.set(event.id, event);
       return;
     }
     if (
@@ -380,7 +486,7 @@ export class CoordinationGoogle {
         "Workbook history reached its limit. Stop for a reviewed workbook rollover; archiving retains the original rows.",
         409,
       );
-    await this.append("CoordinationEvents", [
+    const values = [
       event.id,
       event.jobId,
       event.revision,
@@ -390,7 +496,13 @@ export class CoordinationGoogle {
       event.action,
       stableJSON(event.job),
       await this.signature(event),
-    ]);
+    ];
+    if (context) {
+      await this.appendVerified("CoordinationEvents", values, context);
+      context.events.set(event.id, event);
+      return;
+    }
+    await this.append("CoordinationEvents", values);
     snapshot = await this.snapshot();
     if (stableJSON(snapshot.events.get(event.id)) !== stableJSON(event))
       throw new CoordinationError(
@@ -398,9 +510,9 @@ export class CoordinationGoogle {
         503,
       );
   }
-  async projection(revision, allowedHead) {
+  async projection(revision, allowedHead, context) {
     if (!revision) return;
-    const snapshot = await this.snapshot();
+    const snapshot = context?.snapshot || (await this.snapshot());
     const found = snapshot.projects.revisions.find(
       (r) => r.revisionId === revision.revisionId,
     );
@@ -415,6 +527,7 @@ export class CoordinationGoogle {
           "Field brief changed during recovery. Stop for reviewed reconciliation.",
           409,
         );
+      context?.projections.set(revision.recordId, { revision, allowedHead });
       return;
     }
     if (
@@ -425,6 +538,15 @@ export class CoordinationGoogle {
         "Field brief changed outside coordination. Stop for reviewed recovery.",
         409,
       );
+    if (context) {
+      await this.appendVerified(
+        "Projects",
+        rowFor(revision, PROJECT_HEADERS),
+        context,
+      );
+      context.projections.set(revision.recordId, { revision, allowedHead });
+      return;
+    }
     await this.append("Projects", rowFor(revision, PROJECT_HEADERS));
     const after = await this.snapshot();
     if (
