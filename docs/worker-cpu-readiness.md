@@ -56,14 +56,18 @@ times from this Mac (milliseconds):
 
 These are local Node process CPU measurements, not Cloudflare CPU receipts or
 production capacity guarantees. The Workers Free per-invocation CPU allowance
-cannot be certified by a local timer. Hosted CI was intentionally skipped to
-respect the exhausted Actions budget; local checks do not constitute hosted CI.
+cannot be certified by a local timer. Hosted CI was initially skipped to respect
+the reported exhausted Actions budget. A follow-up commit requests the required
+`verify` run; its current result must be checked on PR #83. Local checks do not
+constitute hosted CI, and a billing-blocked run must not be reported as passing.
 
 ## Release gates — no activation performed
 
-- **Review/merge:** draft PR only. Commit prefixes `[CF-Pages-Skip] [skip ci]`
-  suppress automatic Pages deployment and Actions. No deployment is authorized
-  by this document. Review any future merge/deploy trigger explicitly.
+- **Review/merge:** PR #83 is ready for review; no merge is authorized. The initial
+  commit used `[CF-Pages-Skip] [skip ci]`. The follow-up retains `[CF-Pages-Skip]`
+  while omitting the Actions skip marker so required `verify` can report.
+  No deployment is authorized by this document. Review any future merge/deploy
+  trigger explicitly.
 - **Migration/settings/subscription:** none required. No D1 schema/data, secrets,
   providers, quotas, cron frequency or subscription settings change.
 - **Backend/frontend deployment:** a later owner-authorized Cloudflare Pages
