@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { enterWorkspace } from "./test-workspace.js";
 import React from "react";
 import { JSDOM } from "jsdom";
 import test from "node:test";
@@ -55,6 +56,7 @@ test("offline Google site copy opens project home and keeps new field notes pinn
     Observations: [],
   });
   let ui = render(<App />);
+  await enterWorkspace(ui);
   fireEvent.click(
     await ui.findByRole(
       "button",
@@ -88,6 +90,7 @@ test("offline Google site copy opens project home and keeps new field notes pinn
   );
   cleanup();
   ui = render(<App />);
+  await enterWorkspace(ui);
   fireEvent.click(
     await ui.findByRole(
       "button",
@@ -122,6 +125,7 @@ test("offline Google site copy opens project home and keeps new field notes pinn
   });
   cleanup();
   ui = render(<App />);
+  await enterWorkspace(ui);
   fireEvent.click(
     await ui.findByRole(
       "button",
@@ -143,6 +147,7 @@ test("offline Google site copy opens project home and keeps new field notes pinn
   cleanup();
   localStorage.setItem("streamlion-selected-workbook-v1", "different-book");
   ui = render(<App />);
+  await enterWorkspace(ui);
   await ui.findByRole("heading", { name: "Projects" });
   assert.equal(ui.queryByText("Synthetic site copy"), null);
   assert.equal(

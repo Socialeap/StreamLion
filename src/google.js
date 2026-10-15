@@ -248,6 +248,26 @@ export async function forgetGoogleConnection() {
   }
   disconnectGoogle();
 }
+export async function signOutGoogleSession() {
+  if (persistentSession) {
+    const generation = session;
+    const response = await fetch("/api/google/signout", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "X-StreamLion-Account": persistentSession.subject },
+    });
+    if (generation !== session)
+      throw new Error(
+        "Google account changed. Reopen StreamLion before signing out.",
+      );
+    if (!response.ok)
+      throw new Error(
+        "Could not sign out. Your records and drafts are kept; retry when connected.",
+      );
+  }
+  disconnectGoogle();
+}
 export function startPersistentGoogle() {
   window.location.assign("/api/google/start");
 }

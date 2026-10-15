@@ -18,11 +18,9 @@ import {
 import Jobs from "./Jobs";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import ProviderManualButton from "./ProviderManual.jsx";
-import WorkspaceSetup, {
-  DEVICE_SETUP_KEY,
-  deviceSetupChosen,
-  hasDeviceDrafts,
-} from "./WorkspaceSetup.jsx";
+import { DEVICE_SETUP_KEY } from "./WorkspaceSetup.jsx";
+import WelcomeScreen from "./WelcomeScreen.jsx";
+import LicenseGate from "./LicenseGate.jsx";
 import AccountStatus from "./AccountStatus.jsx";
 import InstallApp from "./InstallApp.jsx";
 import { googleSignInFailure } from "./google-signin-errors.js";
@@ -64,6 +62,7 @@ import {
   googleAccount,
   reserveFieldFileId,
   retainFieldFile,
+  signOutGoogleSession,
 } from "./google";
 import { makeRevision, toLocalNote, validateNote } from "./workbook";
 import { legacyFields, PROJECT_FIELDS } from "./project-schema";
@@ -111,7 +110,13 @@ export default function App() {
   const [noteEpoch, setNoteEpoch] = useState(0);
   const [restoreError, setRestoreError] = useState("");
   const [checkingConnection, setCheckingConnection] = useState(true);
-  const [deviceChosen, setDeviceChosen] = useState(deviceSetupChosen);
+  const [welcomeOpen, setWelcomeOpen] = useState(
+    () =>
+      !["connected", "expired", "cancelled", "failed"].includes(
+        new URLSearchParams(window.location.search).get("google"),
+      ),
+  );
+  const [animateWelcome, setAnimateWelcome] = useState(true);
   const restoreEpoch = useRef(0);
   const editorOpen = !!editing;
   useEffect(() => {
@@ -911,18 +916,55 @@ export default function App() {
       }));
   }
   const disabled = captureBusy || syncBusy || outboxBusy;
-  const existingWork =
-    !!bookId ||
-    local.jobs.length > 0 ||
-    local.notes.length > 0 ||
-    hasDeviceDrafts();
-  const newVisitor = !deviceChosen && !existingWork && !hasGoogleSession();
   const navigate = (p) => {
     refreshDrafts();
     setEditing(null);
     setPage(p);
   };
-  return (
+  function enterWorkspace(destination) {
+    setWelcomeOpen(false);
+    setAnimateWelcome(false);
+    navigate(destination);
+  }
+  async function signOut() {
+    if (disabled || checkingConnection) return;
+    setSyncBusy(true);
+    setError("");
+    try {
+      await signOutGoogleSession();
+      disconnect(true);
+      setWelcomeOpen(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+  if (welcomeOpen)
+    return (
+      <WelcomeScreen
+        ready={ready}
+        checking={checkingConnection}
+        connected={hasGoogleSession()}
+        account={googleAccount()}
+        bookId={bookId}
+        error={restoreError || error}
+        busy={disabled}
+        animate={animateWelcome}
+        onProjects={() => enterWorkspace(bookId ? "Projects" : "Connections")}
+        onConnect={() => enterWorkspace("Connections")}
+        onDevice={() => {
+          try {
+            localStorage.setItem(DEVICE_SETUP_KEY, "device");
+          } catch {
+            /* optional preference */
+          }
+          enterWorkspace("Projects");
+        }}
+        onSignOut={signOut}
+      />
+    );
+  const workspaceContent = (
     <div className={`app${page === "Ask" && !editing ? " app-ask" : ""}`}>
       <aside className="sidebar">
         <div
@@ -1137,20 +1179,6 @@ export default function App() {
             }}
             onRefreshProjects={showProjectsFromGoogle}
             templates={templates}
-          />
-        ) : page === "Projects" && newVisitor && checkingConnection ? (
-          <p role="status">Checking your saved connection…</p>
-        ) : page === "Projects" && newVisitor && !restoreError ? (
-          <WorkspaceSetup
-            onGoogle={() => navigate("Connections")}
-            onDevice={() => {
-              try {
-                localStorage.setItem(DEVICE_SETUP_KEY, "device");
-              } catch {
-                /* optional preference */
-              }
-              setDeviceChosen(true);
-            }}
           />
         ) : page === "Projects" ? (
           <Jobs
@@ -1380,7 +1408,8 @@ export default function App() {
             restoreError={restoreError}
             onWorkbook={connectBook}
             onDisconnect={disconnect}
-            busyCapture={disabled}
+            onSignOut={signOut}
+            busyCapture={disabled || checkingConnection}
             siteCopy={siteCopy}
             onSiteCopy={keepSiteCopy}
             onConnectionBusy={setSyncBusy}
@@ -1408,4 +1437,5 @@ export default function App() {
       </main>
     </div>
   );
+  return <LicenseGate>{workspaceContent}</LicenseGate>;
 }
