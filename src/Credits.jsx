@@ -3,7 +3,6 @@ import { Info, WalletCards, ListChecks, BadgeDollarSign } from "lucide-react";
 import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
 import { creditLabel } from "./managed-ai.js";
 import ProjectValue from "./ProjectValue.jsx";
-import { PROJECT_CREDITS } from "./client-workflow.js";
 import { projectCreditPrice, usd } from "./project-credit-price.js";
 export async function creditRequest(path, { account, ...options } = {}) {
   const response = await fetch("/api/credits/" + path, {
@@ -125,7 +124,7 @@ export default function Credits() {
       setBusy(false);
     }
   }
-  const projectPrice = projectCreditPrice(config?.packs);
+  const projectPrice = projectCreditPrice(config?.packs, config?.projectMicros);
   const firstPack =
     projectPrice !== null
       ? config.packs.reduce(
@@ -165,7 +164,10 @@ export default function Credits() {
           >
             <div>
               <span className="credits-price-label">
-                {PROJECT_CREDITS} credits per confirmed project
+                {Number.isSafeInteger(config?.projectMicros) &&
+                config.projectMicros > 0
+                  ? `${creditLabel(config.projectMicros)} per confirmed project`
+                  : "Project credit charge unavailable"}
               </span>
               <strong>
                 {projectPrice !== null

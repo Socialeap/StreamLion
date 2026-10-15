@@ -53,7 +53,7 @@ test("project value and verified USD cost lead the wallet even while sales are c
     calls.push({ url, method: options.method || "GET" });
     return Response.json(
       url.endsWith("config")
-        ? { enabled: false, mode: "test", packs }
+        ? { enabled: false, mode: "test", projectMicros: 3000000, packs }
         : { enabled: false, connected: false },
     );
   });
@@ -84,7 +84,13 @@ test("approved live credit QA shows pack choices with an explicit real-payment n
   t.mock.method(globalThis, "fetch", async (url) =>
     Response.json(
       url.endsWith("config")
-        ? { enabled: true, mode: "live", checkoutMode: "owner_qa", packs }
+        ? {
+            enabled: true,
+            mode: "live",
+            checkoutMode: "owner_qa",
+            projectMicros: 3000000,
+            packs,
+          }
         : {
             enabled: true,
             connected: true,
@@ -144,7 +150,7 @@ test("top-up options are gated by verified availability, Google identity and app
   });
   assert.ok(ui.getByText(/Credit purchases are not open yet/));
   assert.equal(ui.queryByText("$10.00"), null);
-  config = { enabled: true, mode: "test", packs };
+  config = { enabled: true, mode: "test", projectMicros: 3000000, packs };
   account = { enabled: true, connected: false };
   await act(async () =>
     fireEvent.click(
@@ -189,7 +195,7 @@ test("duplicate clicks do not create another checkout, and server revalidates th
     }
     return Response.json(
       url.endsWith("config")
-        ? { enabled: true, mode: "test", packs }
+        ? { enabled: true, mode: "test", projectMicros: 3000000, packs }
         : {
             enabled: true,
             connected: true,
@@ -263,7 +269,12 @@ test("failed configuration removes stale purchase buttons and keeps the balance 
     url.endsWith("config")
       ? fail
         ? Response.json({ error: "Unavailable" }, { status: 503 })
-        : Response.json({ enabled: true, mode: "test", packs })
+        : Response.json({
+            enabled: true,
+            mode: "test",
+            projectMicros: 3000000,
+            packs,
+          })
       : Response.json({
           enabled: true,
           connected: true,
@@ -290,4 +301,30 @@ test("failed configuration removes stale purchase buttons and keeps the balance 
   assert.equal(ui.queryByText("USD 3.00"), null);
   assert.ok(ui.getByText("800 credits available"));
   assert.ok(ui.getByRole("alert"));
+});
+
+test("active 160-credit policy drives both displayed prices; missing policy has no default", async (t) => {
+  let projectMicros = 2000000;
+  t.mock.method(globalThis, "fetch", async (url) =>
+    Response.json(
+      url.endsWith("config")
+        ? { enabled: false, mode: "test", packs, projectMicros }
+        : { enabled: false, connected: false },
+    ),
+  );
+  t.after(cleanup);
+  const ui = render(<Credits />);
+  await act(async () => {});
+  assert.ok(ui.getByText("160 credits per confirmed project"));
+  assert.ok(ui.getByText("USD 2.00"));
+  assert.equal(ui.queryByText("USD 3.00"), null);
+  projectMicros = null;
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "Refresh balance and payment status" }),
+    ),
+  );
+  assert.ok(ui.getByText("Project credit charge unavailable"));
+  assert.ok(ui.getByText("Dollar estimate unavailable"));
+  assert.equal(ui.queryByText("USD 2.00"), null);
 });

@@ -4,10 +4,10 @@ import { projectCreditPrice } from "./project-credit-price.js";
 import { CREDIT_PACKS } from "../server/stripe-credits.js";
 test("240 project credits equal USD 3.00 across the committed credit catalog", () => {
   for (const pack of CREDIT_PACKS)
-    assert.equal(projectCreditPrice([pack]), 300);
-  assert.equal(projectCreditPrice(CREDIT_PACKS), 300);
+    assert.equal(projectCreditPrice([pack], 3000000), 300);
+  assert.equal(projectCreditPrice(CREDIT_PACKS, 3000000), 300);
   assert.equal(
-    projectCreditPrice([{ amount: 2000, creditsMicros: 10000000 }]),
+    projectCreditPrice([{ amount: 2000, creditsMicros: 10000000 }], 3000000),
     600,
   );
 });
@@ -21,5 +21,11 @@ test("unverified, malformed or inconsistent rates never produce a dollar promise
     [{ amount: NaN, creditsMicros: 100 }],
     [...CREDIT_PACKS, { amount: 1000, creditsMicros: 20000000 }],
   ])
-    assert.equal(projectCreditPrice(packs), null);
+    assert.equal(projectCreditPrice(packs, 3000000), null);
+});
+
+test("active project policy determines price; missing policy never uses a default", () => {
+  assert.equal(projectCreditPrice(CREDIT_PACKS, 2000000), 200);
+  for (const charge of [undefined, null, 0, -1, NaN, "3000000"])
+    assert.equal(projectCreditPrice(CREDIT_PACKS, charge), null);
 });

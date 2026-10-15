@@ -750,3 +750,29 @@ test("signed webhooks grant once, preserve current refunds, and reject unsigned/
   );
   assert.equal((await creditAccount(f.db, "test", "a")).balance_micros, 0);
 });
+
+test("public credit config uses only the active coordination policy in the current mode", async (t) => {
+  const f = fixture(t);
+  assert.equal((await (await f.request("config")).json()).projectMicros, null);
+  f.sql.exec(
+    "CREATE TABLE streamlion_coordination_policy_v1(mode TEXT PRIMARY KEY, active INTEGER, project_micros INTEGER)",
+  );
+  f.sql.exec(
+    "INSERT INTO streamlion_coordination_policy_v1 VALUES('test',1,2000000),('live',1,3000000)",
+  );
+  assert.equal(
+    (await (await f.request("config")).json()).projectMicros,
+    2000000,
+  );
+  f.sql.exec(
+    "UPDATE streamlion_coordination_policy_v1 SET project_micros=3000000 WHERE mode='test'",
+  );
+  assert.equal(
+    (await (await f.request("config")).json()).projectMicros,
+    3000000,
+  );
+  f.sql.exec(
+    "UPDATE streamlion_coordination_policy_v1 SET active=0 WHERE mode='test'",
+  );
+  assert.equal((await (await f.request("config")).json()).projectMicros, null);
+});

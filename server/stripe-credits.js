@@ -117,6 +117,22 @@ async function catalog(env, stripe, mode) {
     }),
   );
 }
+async function projectCharge(env, mode) {
+  try {
+    const policy = await env.GOOGLE_SESSIONS.prepare(
+      "SELECT project_micros FROM streamlion_coordination_policy_v1 WHERE mode=? AND active=1",
+    )
+      .bind(mode)
+      .first();
+    return Number.isSafeInteger(policy?.project_micros) &&
+      policy.project_micros > 0
+      ? policy.project_micros
+      : null;
+  } catch {
+    // Older/missing coordination schemas must not invent an advertised charge.
+    return null;
+  }
+}
 async function salesReady(env, mode) {
   if (env.STREAMLION_AI_CREDIT_SALES_ENABLED !== "true") return false;
   if (mode === "test") return true; // Fake test funds never authorize provider spending.
@@ -455,6 +471,7 @@ export async function handleCredits({ request, env, params }) {
         checkoutMode: access.mode,
         mode,
         markupPercent: 30,
+        projectMicros: await projectCharge(env, mode),
         packs: packs.map(({ id, amount, creditsMicros }) => ({
           id,
           amount,

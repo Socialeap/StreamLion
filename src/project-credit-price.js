@@ -1,10 +1,8 @@
-import { CREDIT_UNIT, PROJECT_CREDITS } from "./client-workflow.js";
-
 // Derive the USD equivalent from the public pack catalog, not AI markup or a
 // hard-coded exchange rate. Hide the estimate if the catalog cannot verify it.
-export function projectCreditPrice(packs) {
+export function projectCreditPrice(packs, projectMicros) {
   if (!Array.isArray(packs) || !packs.length) return null;
-  const projectMicros = PROJECT_CREDITS * CREDIT_UNIT;
+  if (!Number.isSafeInteger(projectMicros) || projectMicros <= 0) return null;
   const amounts = packs.map((pack) => {
     if (!pack || typeof pack !== "object" || Array.isArray(pack)) return NaN;
     if (
