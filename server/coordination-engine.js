@@ -1,4 +1,5 @@
 import { hash, seal, unseal } from "./google-auth.js";
+import { base64Bytes } from "./base64.js";
 import { CoordinationGoogle } from "./coordination-google.js";
 import {
   grantStarter,
@@ -672,7 +673,7 @@ export class CoordinationEngine {
       throw new CoordinationError("Upload a PDF, JPEG or PNG up to 512 KiB.");
     let bytes;
     try {
-      bytes = Uint8Array.from(atob(data.content), (c) => c.charCodeAt(0));
+      bytes = base64Bytes(data.content);
     } catch {
       throw new CoordinationError("Invalid file.");
     }

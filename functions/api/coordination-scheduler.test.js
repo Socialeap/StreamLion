@@ -284,6 +284,8 @@ test("scheduler authentication and atomic claims work in the actual Workers runt
     write: false,
     format: "esm",
     platform: "browser",
+    // Workerd supplies native Node compatibility modules, as in Pages.
+    external: ["node:buffer"],
     target: "es2022",
   });
   const mf = new Miniflare(

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "description": "Run server endpoints only; serve public shells and assets without a Function invocation.",
+  "include": [
+    "/api",
+    "/api/*",
+    "/mcp",
+    "/mcp/",
+    "/mcp-extension",
+    "/mcp-extension/",
+    "/.well-known/*"
+  ],
+  "exclude": [
+    "/api/welcome",
+    "/api/welcome/",
+    "/api/welcome.html",
+    "/api/purchase",
+    "/api/purchase/",
+    "/api/purchase.html",
+    "/api/credits",
+    "/api/credits/",
+    "/api/credits.html",
+    "/api/client-portal",
+    "/api/client-portal/",
+    "/api/client-portal.html",
+    "/api/client-requests",
+    "/api/client-requests/",
+    "/api/client-requests.html",
+    "/api/terms",
+    "/api/terms/",
+    "/api/terms.html",
+    "/api/privacy",
+    "/api/privacy/",
+    "/api/privacy.html",
+    "/api/support",
+    "/api/support/",
+    "/api/support.html"
+  ]
+}

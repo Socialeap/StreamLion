@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { googleFetch } from "../../server/google-auth.js";
 import {
@@ -7,6 +8,48 @@ import {
   boundedBytes,
   RequestBodyError,
 } from "../../server/request-body.js";
+
+test("native base64 conversion preserves large payloads in the actual Workers runtime", async () => {
+  const source = readFileSync(
+    new URL("../../server/base64.js", import.meta.url),
+    "utf8",
+  );
+  const mf = new Miniflare(
+    convertV4MiniflareOptions({
+      modules: true,
+      compatibilityDate: "2026-09-23",
+      compatibilityFlags: ["nodejs_compat"],
+      script: `${source}
+      export default { async fetch() {
+        const bytes = new Uint8Array(700000);
+        for (let i = 0; i < bytes.length; i++) bytes[i] = i % 256;
+        const encoded = base64url(bytes);
+        const decoded = base64urlBytes(encoded);
+        const standard = base64Bytes(encoded.replaceAll('-', '+').replaceAll('_', '/'));
+        let invalidRejected = false;
+        try { base64urlBytes(encoded + '!'); } catch { invalidRejected = true; }
+        return Response.json({
+          length: decoded.length,
+          equal: bytes.every((byte, i) => byte === decoded[i] && byte === standard[i]),
+          invalidRejected
+        });
+      }}
+    `,
+    }),
+  );
+  try {
+    assert.deepEqual(
+      await (await mf.dispatchFetch("http://localhost")).json(),
+      {
+        length: 700000,
+        equal: true,
+        invalidRejected: true,
+      },
+    );
+  } finally {
+    await mf.dispose();
+  }
+});
 
 test("Google fetch works in workerd and rejects redirects without forwarding credentials", async () => {
   // Execute the production helper with Workers' actual Request and AbortSignal.
