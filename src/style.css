@@ -949,6 +949,13 @@ fieldset .form-row {gap:0 18px;}
   border-block: 1px solid var(--border, #dde5e0);
 }
 .google-folder h3 { margin-top: 0; }
+.google-folder-details { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--accent-soft); overflow-wrap: anywhere; min-width: 0; }
+.google-folder-details .hint { margin: 8px 0; }
+.google-folder-name { display: block; font-size: 20px; }
+.google-folder-details dl { margin: 16px 0; }
+.google-folder-details dt { font-weight: 600; margin-bottom: 6px; }
+.google-folder-details dd { margin: 0; }
+.google-folder-details a { display: block; margin-bottom: 16px; }
 
 .voice-shell { padding: 0; border: 0; margin: 0; min-width: 0; }
 .home-section { margin: 0; min-width: 0; }

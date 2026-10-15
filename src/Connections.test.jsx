@@ -123,3 +123,69 @@ test("Connections lets the user retry a failed Google config request", async () 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("Connections shows folder name, location and exact address; refresh reports restricted parents without losing selection", async (t) => {
+  const google = await import("./google.js");
+  google.disconnectGoogle();
+  let restricted = false;
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method || "GET" });
+    if (url === "/api/google/session")
+      return Response.json({
+        enabled: true,
+        connected: true,
+        subject: "folder-owner",
+        account: "owner@example.com",
+        bookId: "book-a",
+        folderId: "folder-a",
+      });
+    if (url === "/api/google-config")
+      return Response.json({
+        clientId: "synthetic",
+        apiKey: "synthetic",
+        appId: "123",
+      });
+    const path = new URL(
+      String(url),
+      "https://streamlion.transcendencemedia.com",
+    ).searchParams.get("path");
+    const id = path?.split("/").pop().split("?")[0];
+    const files = {
+      "folder-a": {
+        id: "folder-a",
+        name: "Capture projects",
+        parents: ["parent-a"],
+      },
+      "parent-a": { id: "parent-a", name: "TM", parents: ["my-root"] },
+      root: { id: "my-root", name: "My Drive" },
+    };
+    if (restricted && id !== "folder-a")
+      return Response.json({}, { status: 404 });
+    return Response.json({
+      mimeType: "application/vnd.google-apps.folder",
+      ...files[id],
+    });
+  });
+  t.after(() => {
+    cleanup();
+    google.disconnectGoogle();
+  });
+  await google.restoreGoogleSession();
+  const ui = render(<Connections bookId="book-a" googleConnected />);
+  assert.ok(await ui.findByText("Capture projects"));
+  assert.ok(ui.getByText("My Drive / TM / Capture projects"));
+  assert.ok(
+    ui.getByRole("link", {
+      name: "https://drive.google.com/drive/folders/folder-a",
+    }),
+  );
+  restricted = true;
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Refresh folder details" })),
+  );
+  assert.ok(await ui.findByText("Known location (partial)"));
+  assert.ok(ui.getByText("Capture projects"));
+  assert.equal(google.googleFolderId(), "folder-a");
+  assert(calls.every((c) => c.method === "GET"));
+});
