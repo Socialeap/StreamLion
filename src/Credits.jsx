@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Info, WalletCards } from "lucide-react";
+import { Info, WalletCards, ListChecks, BadgeDollarSign } from "lucide-react";
 import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
 import { creditLabel } from "./managed-ai.js";
+import ProjectValue from "./ProjectValue.jsx";
+import { projectCreditPrice, usd } from "./project-credit-price.js";
 export async function creditRequest(path, { account, ...options } = {}) {
   const response = await fetch("/api/credits/" + path, {
     credentials: "same-origin",
@@ -122,6 +124,15 @@ export default function Credits() {
       setBusy(false);
     }
   }
+  const projectPrice = projectCreditPrice(config?.packs, config?.projectMicros);
+  const firstPack =
+    projectPrice !== null
+      ? config.packs.reduce(
+          (first, pack) =>
+            !first || pack.amount < first.amount ? pack : first,
+          null,
+        )
+      : null;
   return (
     <>
       <AppHeader
@@ -129,15 +140,105 @@ export default function Credits() {
         connected={!!account?.connected}
         checking={!account && !error}
       />
-      <main className="purchase-content">
-        <section className="purchase-card" aria-labelledby="credits-title">
-          <h1 id="credits-title">Credits for client work and AI</h1>
-          <p>
-            One prepaid wallet for confirmed client jobs and the optional AI
-            Project Assistant. Add credits when you need them. No subscription
-            or automatic recharge.
+      <main className="purchase-content credits-content">
+        <section
+          className="purchase-card credits-card"
+          aria-labelledby="credits-title"
+        >
+          <div id="credits-value" className="credits-intro">
+            <p className="credits-eyebrow">
+              Credits for shared capture projects
+            </p>
+            <h1 id="credits-title">
+              One shared brief. Less time chasing details.
+            </h1>
+            <p>
+              Agree what needs capturing, keep instructions and changes
+              together, and give your client one place to follow the work.
+            </p>
+          </div>
+          <section
+            id="credits-project-price"
+            className="credits-project-price"
+            aria-label="Typical project cost"
+          >
+            <div>
+              <span className="credits-price-label">
+                {Number.isSafeInteger(config?.projectMicros) &&
+                config.projectMicros > 0
+                  ? `${creditLabel(config.projectMicros)} per confirmed project`
+                  : "Project credit charge unavailable"}
+              </span>
+              <strong>
+                {projectPrice !== null
+                  ? usd(projectPrice)
+                  : config || error
+                    ? "Dollar estimate unavailable"
+                    : "Checking dollar equivalent…"}
+              </strong>
+              <span>Typical project credit usage · paid by the provider</span>
+            </div>
+            <p>
+              One project charge after both sides approve the current brief.
+              Clients use their invited project portal free.
+            </p>
+            {config?.mode === "test" ? (
+              <p className="credits-availability">
+                Test mode · test credits have no cash value.
+                {config.enabled === false && " Purchases are closed."}
+              </p>
+            ) : config?.enabled === false ? (
+              <p className="credits-availability">Purchases are closed.</p>
+            ) : null}
+          </section>
+          <p className="credits-price-note">
+            This is credit usage from your wallet, not a separate project
+            checkout.
+            {projectPrice !== null && firstPack && (
+              <>
+                {" "}
+                Packs start at {creditLabel(firstPack.creditsMicros)} for{" "}
+                {usd(firstPack.amount)}.
+              </>
+            )}{" "}
+            The app purchase is separate. Your actual project charge is shown
+            before you approve it.
           </p>
+          <section id="credits-benefits">
+            <ProjectValue />
+          </section>
+          <section
+            id="credits-included"
+            className="credits-included"
+            aria-label="What the project charge covers"
+          >
+            <h2>What the project charge covers</h2>
+            <ul>
+              <li>
+                A shared brief with capture areas, expected outputs and site
+                instructions.
+              </li>
+              <li>
+                Review and approval by both sides, with changes kept in the
+                project history.
+              </li>
+              <li>
+                A private client portal for saved updates, progress and delivery
+                links.
+              </li>
+            </ul>
+            <p>
+              For a renovation team, designer, property manager or owner, that
+              means clearer instructions before the visit and less searching for
+              the latest information afterward.
+            </p>
+          </section>
           <section id="credits-wallet" aria-label="Credit wallet">
+            <h2>Your credit wallet</h2>
+            <p>
+              Add credits when you need them. No subscription or automatic
+              recharge.
+            </p>
             {(config?.mode || account?.mode) === "test" && (
               <p className="purchase-test" role="note">
                 Stripe test checkout. Test credits have no monetary value and
@@ -229,14 +330,14 @@ export default function Credits() {
             )}
           </section>
           <section id="credit-uses" aria-labelledby="credit-uses-title">
-            <h2 id="credit-uses-title">What uses credits?</h2>
+            <h2 id="credit-uses-title">When are credits used?</h2>
             <p>
-              When client coordination is available, creating a request uses no
-              project credits. The provider sees and authorizes the job charge
-              before agreement. That charge applies once, after both sides
-              approve the current brief. Clients use their invited portal free.
-              Reopening or recovering the same job does not add a second job
-              charge. <a href="/api/client-requests">Open client requests</a>.
+              Creating a request uses no project credits. The provider reviews
+              and authorizes the charge before both sides approve the brief. One
+              project charge applies when that agreement is complete. Reopening
+              or recovering the same job does not add a second job charge.
+              Client access follows the access and archive dates shown in the
+              project. <a href="/api/client-requests">See client requests</a>.
             </p>
             <p>
               Optional AI answers show their credit charge before you ask.
@@ -262,6 +363,14 @@ export default function Credits() {
       </main>
       <SectionNavigation
         sections={[
+          { id: "credits-value", label: "Value", icon: ListChecks },
+          {
+            id: "credits-project-price",
+            label: "Project cost",
+            icon: BadgeDollarSign,
+          },
+          { id: "credits-benefits", label: "Benefits", icon: ListChecks },
+          { id: "credits-included", label: "Included", icon: Info },
           { id: "credits-wallet", label: "Wallet", icon: WalletCards },
           { id: "credit-uses", label: "Credit uses", icon: Info },
         ]}
