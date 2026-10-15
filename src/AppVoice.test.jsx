@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { enterWorkspace } from "./test-workspace.js";
 import React from "react";
 import { JSDOM } from "jsdom";
 import test from "node:test";
@@ -60,6 +61,7 @@ test("Project home and Ask route voice activity into the app update gate", async
       notes: [],
     });
     const ui = render(<App />);
+    await enterWorkspace(ui);
     fireEvent.click(
       await ui.findByRole(
         "button",

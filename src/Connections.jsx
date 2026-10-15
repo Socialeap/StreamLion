@@ -30,6 +30,7 @@ export default function Connections({
   onRefresh,
   onWorkbook,
   onDisconnect,
+  onSignOut,
   busyCapture,
   onRestore,
   restoreError,
@@ -229,6 +230,17 @@ export default function Connections({
             </p>
           )}
         {googleAccount() && <p>Connected as {googleAccount()}</p>}
+        {connected && onSignOut && (
+          <div>
+            <button disabled={busy || busyCapture} onClick={onSignOut}>
+              Sign out on this device
+            </button>
+            <p className="hint">
+              Keeps your records, drafts, other devices and background
+              coordination access.
+            </p>
+          </div>
+        )}
         {restoreError && (
           <div role="alert">
             <p>{restoreError}</p>

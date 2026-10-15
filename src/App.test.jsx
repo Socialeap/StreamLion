@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { enterWorkspace } from "./test-workspace.js";
 import React from "react";
 import { JSDOM } from "jsdom";
 import test from "node:test";
@@ -33,8 +34,7 @@ globalThis.fetch = async () =>
 test("saving a draft keeps its editor and updates the same project on later saves", async () => {
   localStorage.clear();
   const ui = render(<App />);
-  await ui.findByRole("heading", { name: "Set up StreamLion" });
-  fireEvent.click(ui.getByRole("button", { name: "Continue on this device" }));
+  await enterWorkspace(ui);
   await ui.findByRole("heading", { name: "Projects" });
   fireEvent.click(ui.getAllByRole("button", { name: "Create project" })[0]);
   fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
@@ -112,6 +112,7 @@ test("an app update cannot reload an editor or unfinished field capture", async 
     new Response(JSON.stringify({ enabled: false, connected: false }));
   try {
     const ui = render(<App />);
+    await enterWorkspace(ui);
     await ui.findByRole("heading", { name: "Projects" });
     let applied = 0;
     await act(() =>
@@ -153,6 +154,7 @@ test("the header manual preserves an unfinished project and remains available fr
     this.removeAttribute("open");
   };
   const ui = render(<App />);
+  await enterWorkspace(ui);
   await ui.findByRole("heading", { name: "Projects" });
   fireEvent.click(ui.getAllByRole("button", { name: "Create project" })[0]);
   fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));

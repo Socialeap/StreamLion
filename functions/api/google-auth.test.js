@@ -121,6 +121,198 @@ function fixture() {
   return { db, env, session, request };
 }
 
+test("browser sign-out removes only its session and preserves background grants and other devices", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Sign-out must not call Google or another provider");
+  });
+  const { db, session, request } = fixture();
+  const id = await session();
+  await session({ id: "b".repeat(43) });
+  await session({ id: "c".repeat(43), subject: "account-b" });
+  db.exec(`
+    CREATE TABLE streamlion_coordination_connections_v1 (id TEXT PRIMARY KEY, google_subject TEXT, credentials TEXT, revoked INTEGER);
+    CREATE TABLE streamlion_coordination_jobs_v1 (id TEXT PRIMARY KEY, connection_id TEXT);
+    CREATE TABLE streamlion_coordination_sessions_v1 (id TEXT PRIMARY KEY, job_id TEXT, revoked INTEGER);
+    INSERT INTO streamlion_coordination_connections_v1 VALUES ('grant-a','account-a','encrypted-background-credentials',0);
+    INSERT INTO streamlion_coordination_jobs_v1 VALUES ('job-a','grant-a');
+    INSERT INTO streamlion_coordination_sessions_v1 VALUES ('client-a','job-a',0);
+  `);
+  const otherSessions = db
+    .prepare(
+      "SELECT * FROM streamlion_google_sessions_v1 WHERE session_hash != ? ORDER BY session_hash",
+    )
+    .all(await hash(id));
+  const response = await request("signout", { method: "POST", cookie: id });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { connected: false });
+  assert.match(
+    response.headers.get("Set-Cookie"),
+    /__Host-streamlion-session=; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=0/,
+  );
+  assert.equal((await request("session", { cookie: id })).status, 200);
+  assert.deepEqual(await (await request("session", { cookie: id })).json(), {
+    enabled: true,
+    connected: false,
+  });
+  assert.deepEqual(
+    db
+      .prepare(
+        "SELECT * FROM streamlion_google_sessions_v1 ORDER BY session_hash",
+      )
+      .all(),
+    otherSessions,
+  );
+  assert.equal(
+    db
+      .prepare("SELECT credentials FROM streamlion_coordination_connections_v1")
+      .get().credentials,
+    "encrypted-background-credentials",
+  );
+  assert.equal(
+    db
+      .prepare("SELECT revoked FROM streamlion_coordination_connections_v1")
+      .get().revoked,
+    0,
+  );
+  assert.equal(
+    db.prepare("SELECT revoked FROM streamlion_coordination_sessions_v1").get()
+      .revoked,
+    0,
+  );
+  assert.equal(
+    (await request("signout", { method: "POST", cookie: id })).status,
+    200,
+    "Sign-out is safe to retry",
+  );
+});
+
+test("browser sign-out rejects cross-origin requests and a switched account without deleting a session", async () => {
+  const { db, session, request } = fixture();
+  const id = await session();
+  assert.equal(
+    (
+      await request("signout", {
+        method: "POST",
+        cookie: id,
+        origin: "https://other.example",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request("signout", {
+        method: "POST",
+        cookie: id,
+        account: "account-b",
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    db.prepare("SELECT count(*) AS n FROM streamlion_google_sessions_v1").get()
+      .n,
+    1,
+  );
+});
+
+for (const [subject, corrupt, expected, dropped = false] of [
+  ["account-a", false, "book-a"],
+  ["account-b", false, ""],
+  ["account-a", true, ""],
+  ["account-a", false, "book-a", true],
+])
+  test(`signed-out selection restores only to the verified same account (${subject}, corrupt=${corrupt}, dropped=${dropped})`, async (t) => {
+    const f = fixture();
+    const id = await f.session();
+    f.db.exec("UPDATE streamlion_google_sessions_v1 SET folder_id='folder-a'");
+    const restored = await f.request("session", { cookie: id });
+    const signedOut = await f.request("signout", {
+      method: "POST",
+      cookie: id,
+    });
+    // A lost sign-out response must recover from the bookmark already delivered
+    // with the successful session check, even when the delete is retried.
+    if (dropped)
+      assert.equal(
+        (await f.request("signout", { method: "POST", cookie: id })).status,
+        200,
+      );
+    const bookmark = (dropped ? restored : signedOut).headers
+      .getSetCookie()
+      .find((value) => value.startsWith("__Host-streamlion-workspace="));
+    assert(
+      bookmark,
+      "Remember selection separately from the deleted authorization session",
+    );
+    assert(!bookmark.includes("account-a") && !bookmark.includes("book-a"));
+    assert.match(bookmark, /Secure; HttpOnly; SameSite=Lax/);
+    const selectionCookie = corrupt
+      ? "__Host-streamlion-workspace=corrupt"
+      : bookmark.split(";")[0];
+    const status = await handleGoogle({
+      env: f.env,
+      params: { path: ["session"] },
+      request: new Request("https://app.example/api/google/session", {
+        headers: { Cookie: selectionCookie },
+      }),
+    });
+    assert.deepEqual(
+      await status.json(),
+      { enabled: true, connected: false },
+      "A bookmark never authorizes access",
+    );
+    const start = await f.request("start");
+    const flowCookie = start.headers.getSetCookie()[0].split(";")[0];
+    const flow = await unseal(f.env, flowCookie.split("=")[1], "oauth-flow");
+    t.mock.method(
+      globalThis,
+      "fetch",
+      async (url) =>
+        new Response(
+          JSON.stringify(
+            String(url).includes("/token")
+              ? {
+                  access_token: "synthetic-new-access",
+                  refresh_token: "synthetic-new-refresh",
+                  expires_in: 3600,
+                  scope:
+                    "openid email https://www.googleapis.com/auth/drive.file",
+                }
+              : {
+                  sub: subject,
+                  email: "synthetic@example.com",
+                  email_verified: true,
+                },
+          ),
+        ),
+    );
+    const callback = await handleGoogle({
+      env: f.env,
+      params: { path: ["callback"] },
+      request: new Request(
+        `https://app.example/api/google/callback?state=${flow.state}&code=synthetic`,
+        { headers: { Cookie: `${flowCookie}; ${selectionCookie}` } },
+      ),
+    });
+    assert.equal(callback.status, 303);
+    const saved = f.db
+      .prepare("SELECT * FROM streamlion_google_sessions_v1")
+      .get();
+    assert.equal(saved.google_subject, subject);
+    assert.equal(saved.workbook_id, expected);
+    assert.equal(saved.folder_id, expected ? "folder-a" : "");
+    assert(
+      callback.headers
+        .getSetCookie()
+        .some(
+          (value) =>
+            value.startsWith("__Host-streamlion-workspace=;") &&
+            value.includes("Max-Age=0"),
+        ),
+    );
+  });
+
 test("vault encryption binds ciphertext to its session and never stores plaintext credentials", async () => {
   const { env, db, session } = fixture();
   await session();

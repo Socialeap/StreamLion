@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { enterWorkspace } from "./test-workspace.js";
 import React from "react";
 import { JSDOM } from "jsdom";
 import test from "node:test";
@@ -84,6 +85,7 @@ test("opening the app restores the backend's workbook, overriding an old device-
   globalThis.fetch = workbookFetch(paths);
   try {
     const ui = render(<App />);
+    await enterWorkspace(ui);
     await ui.findByRole("button", { name: "Automatically restored job" });
     assert.equal(
       localStorage.getItem("streamlion-selected-workbook-v1"),
@@ -111,6 +113,7 @@ test("a transient startup error can be retried without asking the user to author
       : fetchWorkbook(url, options);
   try {
     const ui = render(<App />);
+    await enterWorkspace(ui);
     fireEvent.click(
       await ui.findByRole("button", { name: "Connections", exact: true }),
     );
@@ -143,12 +146,20 @@ test("a transient startup error can be retried without asking the user to author
     localStorage.clear();
   }
 });
-test("a remembered Google project reopens after its workbook has been verified", async () => {
+test("a remembered Google project remains available after explicit Projects entry", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = workbookFetch([]);
   localStorage.setItem("streamlion-last-project:server-book", "saved-project");
   try {
     const ui = render(<App />);
+    await enterWorkspace(ui);
+    await ui.findByRole("heading", { name: "Projects", exact: true });
+    fireEvent.click(
+      ui.getByRole("button", {
+        name: "Automatically restored job",
+        exact: true,
+      }),
+    );
     await ui.findByRole("heading", { name: "Automatically restored job" });
     cleanup();
   } finally {
@@ -168,6 +179,7 @@ test("a failed Google refresh replaces the success status, preserves records and
   };
   try {
     const ui = render(<App />);
+    await enterWorkspace(ui);
     await ui.findByRole("button", { name: "Automatically restored job" });
     await ui.findByText("Google records refreshed", { exact: true });
     assert.equal(
@@ -213,6 +225,7 @@ test("working pages keep drafts while Google refresh lives in Connections", asyn
       : read(url, options);
   try {
     const ui = render(<App />);
+    await enterWorkspace(ui);
     await ui.findByRole("button", { name: "Automatically restored job" });
     assert.equal(
       ui.queryByRole("button", { name: "Refresh from Google" }),
@@ -302,6 +315,7 @@ test("a remembered archived project leaves the restored workbook on the Projects
   localStorage.setItem("streamlion-last-project:server-book", "saved-project");
   try {
     const ui = render(<App />);
+    await enterWorkspace(ui);
     await ui.findByText("Google records refreshed", { exact: true });
     // Google and the device workspace load independently. Await the final view.
     await ui.findByRole("heading", { name: "Projects", exact: true });

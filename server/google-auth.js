@@ -3,6 +3,7 @@ import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
 import { managedAppend } from "./coordination-engine.js";
 const SESSION = "__Host-streamlion-session";
+const WORKSPACE = "__Host-streamlion-workspace";
 const FLOW = "__Host-streamlion-oauth";
 const SCOPE = "openid email https://www.googleapis.com/auth/drive.file";
 const MAX_AGE = 90 * 86400;
@@ -99,6 +100,19 @@ function cookie(request, name) {
 }
 function setCookie(name, value, age) {
   return `${name}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${age}`;
+}
+async function workspaceCookie(env, row) {
+  const bookmark = await seal(
+    env,
+    {
+      subject: row.google_subject,
+      bookId: row.workbook_id || "",
+      folderId: row.folder_id || "",
+      expiresAt: Date.now() + MAX_AGE * 1000,
+    },
+    "workspace-selection",
+  );
+  return setCookie(WORKSPACE, bookmark, MAX_AGE);
 }
 const headers = {
   "Content-Type": "application/json",
@@ -486,10 +500,35 @@ export async function handleGoogle({ request, env, params }) {
         },
         sessionHash,
       );
+      // A signed-out bookmark has no authorization power. Use it only after
+      // Google has independently verified the exact same account identity.
+      let bookmark = null;
+      try {
+        const saved = await unseal(
+          env,
+          cookie(request, WORKSPACE),
+          "workspace-selection",
+        );
+        if (
+          saved.subject === identity.sub &&
+          saved.expiresAt > Date.now() &&
+          typeof saved.bookId === "string" &&
+          /^[\w-]{0,100}$/.test(saved.bookId) &&
+          typeof saved.folderId === "string" &&
+          /^[\w-]{0,100}$/.test(saved.folderId)
+        )
+          bookmark = saved;
+      } catch {
+        /* absent, expired or tampered bookmarks cannot select a workspace */
+      }
       const folder =
-        previous?.google_subject === identity.sub ? previous.folder_id : "";
+        previous?.google_subject === identity.sub
+          ? previous.folder_id
+          : bookmark?.folderId || "";
       const workbook =
-        previous?.google_subject === identity.sub ? previous.workbook_id : "";
+        previous?.google_subject === identity.sub
+          ? previous.workbook_id
+          : bookmark?.bookId || "";
       const statements = [
         env.GOOGLE_SESSIONS.prepare(
           "INSERT INTO streamlion_google_sessions_v1 (session_hash, google_subject, email, credentials, workbook_id, expires_at, folder_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -519,14 +558,18 @@ export async function handleGoogle({ request, env, params }) {
           returnPath +
           (returnPath.includes("?") ? "&" : "?") +
           "google=connected",
-        [clearFlow, setCookie(SESSION, id, MAX_AGE)],
+        [
+          clearFlow,
+          setCookie(SESSION, id, MAX_AGE),
+          setCookie(WORKSPACE, "", 0),
+        ],
       );
     }
     const row = await getSession(request, env);
     if (route === "session" && request.method === "GET") {
       if (!row) return json({ enabled: true, connected: false });
       await accessToken(env, row);
-      return json({
+      const response = json({
         enabled: true,
         connected: true,
         account: row.email,
@@ -534,6 +577,37 @@ export async function handleGoogle({ request, env, params }) {
         bookId: row.workbook_id,
         folderId: row.folder_id,
       });
+      // Deliver recovery metadata before sign-out is offered, so a lost
+      // sign-out acknowledgment cannot strand the workbook-scoped drafts.
+      response.headers.append("Set-Cookie", await workspaceCookie(env, row));
+      return response;
+    }
+    if (route === "signout" && request.method === "POST") {
+      // Browser sign-out is deliberately separate from provider disconnect:
+      // revoke only this cookie's session, never background grants or other devices.
+      if (
+        row &&
+        request.headers.get("X-StreamLion-Account") !== row.google_subject
+      )
+        return json(
+          {
+            error:
+              "Google account changed. Reopen StreamLion before signing out.",
+          },
+          401,
+        );
+      // Encrypt before deleting: a failure keeps the existing session usable.
+      const bookmark = row ? await workspaceCookie(env, row) : null;
+      if (row)
+        await env.GOOGLE_SESSIONS.prepare(
+          "DELETE FROM streamlion_google_sessions_v1 WHERE session_hash = ?",
+        )
+          .bind(row.session_hash)
+          .run();
+      const response = json({ connected: false });
+      response.headers.set("Set-Cookie", setCookie(SESSION, "", 0));
+      if (bookmark) response.headers.append("Set-Cookie", bookmark);
+      return response;
     }
     if (!row) return json({ error: "Reconnect Google to continue." }, 401);
     if (request.headers.get("X-StreamLion-Account") !== row.google_subject)
@@ -572,6 +646,7 @@ export async function handleGoogle({ request, env, params }) {
         .run();
       const response = json({ connected: false });
       response.headers.set("Set-Cookie", setCookie(SESSION, "", 0));
+      response.headers.append("Set-Cookie", setCookie(WORKSPACE, "", 0));
       return response;
     }
     // Sign-in/status/disconnect stay accessible so unpaid buyers can authenticate
@@ -639,7 +714,15 @@ export async function handleGoogle({ request, env, params }) {
         .bind(bookId, row.session_hash, Date.now())
         .run();
       if (!saved.meta.changes) return json({ error: "Reconnect Google." }, 401);
-      return json(isFolder ? { folderId: bookId } : { bookId });
+      const response = json(isFolder ? { folderId: bookId } : { bookId });
+      response.headers.append(
+        "Set-Cookie",
+        await workspaceCookie(env, {
+          ...row,
+          [isFolder ? "folder_id" : "workbook_id"]: bookId,
+        }),
+      );
+      return response;
     }
     if (route === "picker-token" && request.method === "POST")
       return json({ accessToken: await accessToken(env, row) });
