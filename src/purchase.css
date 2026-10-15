@@ -1,3 +1,4 @@
+@import "./project-value.css";
 .purchase-shell {
   min-height: 100vh;
   min-height: 100dvh;
@@ -138,6 +139,92 @@
 .credit-balance {
   font-size: 22px;
   font-weight: 700;
+}
+.credits-card {
+  width: min(100%, 960px);
+  padding: clamp(24px, 4vw, 44px);
+}
+.credits-intro {
+  max-width: 680px;
+}
+.credits-intro h1 {
+  font-size: clamp(30px, 4vw, 44px);
+  letter-spacing: -1.2px;
+}
+.purchase-card .credits-eyebrow {
+  color: var(--green);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  font-weight: 750;
+  margin: 0 0 14px;
+}
+.credits-project-price {
+  margin-top: 24px;
+  padding: 24px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 24px;
+}
+.credits-project-price div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.credits-project-price strong {
+  font-size: clamp(28px, 4vw, 38px);
+  letter-spacing: -1px;
+  line-height: 1.15;
+  color: var(--green);
+}
+.credits-price-label {
+  font-size: 16px;
+  font-weight: 700;
+}
+.credits-project-price div > span:last-child {
+  font-size: 13px;
+  color: var(--muted);
+}
+.credits-project-price p {
+  margin: 0;
+  font-size: 15px;
+}
+.credits-project-price .credits-availability {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.credits-price-note {
+  font-size: 13px;
+}
+.credits-included {
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+}
+.credits-included ul {
+  padding-left: 22px;
+  line-height: 1.6;
+}
+.credits-included li + li {
+  margin-top: 10px;
+}
+.credits-card #credits-wallet,
+.credits-card #credit-uses {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 640px) {
+  .credits-project-price {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 20px;
+  }
 }
 .credit-packs {
   display: grid;

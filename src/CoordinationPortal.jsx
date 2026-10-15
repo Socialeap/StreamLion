@@ -11,6 +11,7 @@ import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
 import ProspectIntake from "./ProspectIntake.jsx";
 import RequestProgress from "./RequestProgress.jsx";
 import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
+import ProjectValue from "./ProjectValue.jsx";
 import {
   ArchiveRestore,
   Bell,
@@ -703,8 +704,8 @@ export default function CoordinationPortal({
           <div>
             <p className="eyebrow">
               {client
-                ? "Everything your provider needs"
-                : "Your client, connected"}
+                ? "Your capture project, in one place"
+                : "Clear instructions. Fewer follow-ups."}
             </p>
             <h1>
               {selectedJob
@@ -715,8 +716,8 @@ export default function CoordinationPortal({
             </h1>
             <p>
               {client
-                ? "A free, private place to clarify scope, share instructions and follow progress."
-                : "One current brief, agreed by both sides and ready for the field."}
+                ? "Agree the work with your provider, keep changes with the project, and follow saved progress and delivery links."
+                : "Keep client instructions, agreed changes and progress in one shared project record."}
             </p>
           </div>
           {!client && status?.connected && (
@@ -727,10 +728,11 @@ export default function CoordinationPortal({
               <span>
                 {status.projectMicros / CREDIT_UNIT} per confirmed job
               </span>
-              <a href="/api/credits">Top up credits</a>
+              <a href="/api/credits">Project cost &amp; benefits</a>
             </div>
           )}
         </div>
+        {!selectedJob && <ProjectValue client={client} compact />}
         {error && (
           <div role="alert" className="coord-alert">
             {error}
