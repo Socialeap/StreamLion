@@ -36,8 +36,8 @@
     );
     return response;
   }
-  // Imported before Workbox registers its routes. respondWith claims only
-  // same-origin built stylesheets; all other requests retain their normal routes.
+  // Imported before Workbox registers its routes. Claim only built stylesheets
+  // and explicitly prevent a later listener from responding to the same event.
   self.addEventListener("fetch", (event) => {
     const request = event.request,
       url = new URL(request.url);
@@ -48,6 +48,7 @@
       !/^\/assets\/[\w-]+\.css$/.test(url.pathname)
     )
       return;
+    event.stopImmediatePropagation();
     event.respondWith(stylesheet(request));
   });
 })();

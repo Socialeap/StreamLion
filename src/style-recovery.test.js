@@ -67,6 +67,7 @@ function fixture({ cached, network = css, extra = {} } = {}) {
       respondWith: (p) => {
         result = p;
       },
+      stopImmediatePropagation: () => {},
     });
     return result;
   }
@@ -140,4 +141,70 @@ test("API requests, scripts, navigation, other origins and writes keep their exi
   ])
     assert.equal(await f.dispatch(request), undefined);
   assert.deepEqual(f.counts(), { fetched: 0, writes: 0 });
+});
+
+test("explicit CSS ownership skips the actual Workbox listener while API routing remains available", async (t) => {
+  const previousSelf = globalThis.self,
+    previousLocation = globalThis.location;
+  const target = new EventTarget();
+  target.location = new URL("https://app.example/sw.js");
+  target.__WB_DISABLE_DEV_LOGS = true;
+  globalThis.self = target;
+  globalThis.location = target.location;
+  t.after(() => {
+    globalThis.self = previousSelf;
+    globalThis.location = previousLocation;
+  });
+  runInNewContext(source, {
+    self: target,
+    URL,
+    Response,
+    caches: {
+      keys: async () => ["workbox-precache-v2"],
+      open: async () => ({ match: async () => css() }),
+    },
+    fetch: async () => {
+      throw Error("cached CSS must not fetch");
+    },
+  });
+  const { Router } = await import("workbox-routing/Router.js");
+  const { Route } = await import("workbox-routing/Route.js");
+  let workboxCalls = 0;
+  const router = new Router();
+  router.registerRoute(
+    new Route(
+      () => true,
+      () => {
+        workboxCalls++;
+        return new Response("Workbox response");
+      },
+    ),
+  );
+  router.addFetchListener();
+  async function dispatch(url, destination) {
+    const request = new Request(url);
+    Object.defineProperty(request, "destination", { value: destination });
+    const event = new Event("fetch");
+    Object.defineProperty(event, "request", { value: request });
+    let response,
+      claims = 0;
+    // Native respondWith also stops propagation. Leave that implicit behavior
+    // out of this adapter so this test verifies the explicit ownership guard.
+    event.respondWith = (value) => {
+      assert.equal(++claims, 1, "only one listener may respond");
+      response = Promise.resolve(value);
+    };
+    target.dispatchEvent(event);
+    assert.equal(claims, 1);
+    return response;
+  }
+  assert.match(await (await dispatch(cssURL, "style")).text(), /color: green/);
+  assert.equal(workboxCalls, 0);
+  assert.equal(
+    await (
+      await dispatch("https://app.example/api/google/session", "fetch")
+    ).text(),
+    "Workbox response",
+  );
+  assert.equal(workboxCalls, 1);
 });
