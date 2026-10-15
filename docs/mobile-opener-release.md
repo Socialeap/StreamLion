@@ -50,8 +50,11 @@ use the static composition. The illustrations are optimized local WebP files
 
 ## Separate release gates
 
-1. Review this PR. Its commit uses `[skip ci] [CF-Pages-Skip]` to suppress hosted
-   Actions and Cloudflare builds; local evidence is not hosted CI evidence.
+1. Review this PR. Initial commits used `[skip ci] [CF-Pages-Skip]` to suppress
+   hosted Actions and Cloudflare builds. The owner subsequently authorized the
+   required `verify` check: the latest commit uses only `[CF-Pages-Skip]`, so
+   GitHub Actions can run while Cloudflare deployment remains suppressed.
+   Verify the hosted result for the current head separately from local evidence.
    Do not merge or deploy under the current authorization.
 2. Obtain explicit merge/release authorization. The diff contains frontend
    assets and a Pages Function auth-handler change. Release the matching Pages
