@@ -15,6 +15,8 @@ test("the installed PWA sends sign-in and policy navigation to their real routes
       request: { mode: "navigate" },
     });
   for (const path of [
+    "/assets/app-synthetic.css",
+    "/assets/app-synthetic.js",
     "/api/google/start",
     "/api/google/callback?state=synthetic",
     "/api/health",

@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 export const navigationFallbackDenylist = [
+  /^\/assets(?:[/?]|$)/,
   /^\/api(?:[/?]|$)/,
   /^\/mcp(?:[/?]|$)/,
   /^\/mcp-extension(?:[/?]|$)/,
@@ -74,7 +75,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        importScripts: ["/notification-sw.js"],
+        importScripts: ["/style-recovery-sw.js", "/notification-sw.js"],
         globPatterns: [
           "**/*.{js,mjs,css,html,svg,png,webp,webmanifest}",
           "fonts/*.ttf",
