@@ -6,6 +6,7 @@ import {
   assertUnchanged,
   validateRevision,
 } from "./workbook.js";
+import { folderLocation } from "./folder-location.js";
 import { folderAdapter } from "./drive-folders.js";
 import { fetchRead } from "./network.js";
 const SCOPE = "https://www.googleapis.com/auth/drive.file";
@@ -117,6 +118,22 @@ export async function restoreGoogleSession() {
 }
 export function googleFolderId() {
   return selectedFolder;
+}
+export async function googleFolderLocation(id = selectedFolder) {
+  const generation = session;
+  const check = () => {
+    assertGoogleGeneration(generation);
+    if (id !== selectedFolder)
+      throw new Error("Selected folder changed. Check its details again.");
+  };
+  const result = await folderLocation(async (...args) => {
+    check();
+    const response = await driveRequest(...args);
+    check();
+    return response;
+  }, id);
+  check();
+  return result;
 }
 export async function rememberGoogleFolder(id) {
   const generation = session;

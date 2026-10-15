@@ -10,6 +10,7 @@ import {
   startPersistentGoogle,
   googleAccount,
   googleFolderId,
+  googleFolderLocation,
   ensureGoogleFolder,
   rememberGoogleFolder,
   moveWorkbookToFolder,
@@ -52,6 +53,41 @@ export default function Connections({
     [googleConfig, setGoogleConfig] = useState(null);
   const connected = hasGoogleSession();
   const [folderId, setFolderId] = useState(googleFolderId());
+  const [folderDetails, setFolderDetails] = useState(null);
+  const [folderDetailsError, setFolderDetailsError] = useState("");
+  const [folderLoading, setFolderLoading] = useState(false);
+  const [folderAttempt, setFolderAttempt] = useState(0);
+  const account = googleAccount();
+  const details =
+    connected &&
+    folderDetails?.id === folderId &&
+    folderDetails.account === account
+      ? folderDetails
+      : null;
+  useEffect(() => {
+    let current = true;
+    setFolderDetails(null);
+    setFolderDetailsError("");
+    setFolderLoading(Boolean(connected && folderId));
+    if (connected && folderId) {
+      googleFolderLocation(folderId)
+        .then((result) => {
+          if (current) setFolderDetails({ ...result, account });
+        })
+        .catch(() => {
+          if (current)
+            setFolderDetailsError(
+              "Couldn’t check this folder’s name and location. Your selection and files are kept.",
+            );
+        })
+        .finally(() => {
+          if (current) setFolderLoading(false);
+        });
+    }
+    return () => {
+      current = false;
+    };
+  }, [connected, folderId, account, folderAttempt]);
   const createdWorkbook = useRef(null);
   useEffect(() => {
     setFolderId(googleFolderId());
@@ -347,15 +383,60 @@ export default function Connections({
                 : "Set up one home for your workbooks and project files. Creating a workbook also sets this up for you."}
             </p>
             {folderId && (
-              <p>
+              <div
+                className="google-folder-details"
+                aria-label="Selected folder details"
+              >
+                {details ? (
+                  <>
+                    <p className="hint">Selected folder</p>
+                    <strong className="google-folder-name">
+                      {details.name}
+                    </strong>
+                    <dl>
+                      <dt>
+                        {details.complete
+                          ? "Location"
+                          : "Known location (partial)"}
+                      </dt>
+                      <dd>
+                        {details.complete ? "" : "… / "}
+                        {details.location}
+                      </dd>
+                    </dl>
+                    {!details.complete && (
+                      <p className="hint">
+                        Google hasn’t shared the full parent-folder path with
+                        StreamLion. Open the folder in Drive to check the
+                        complete location.
+                      </p>
+                    )}
+                  </>
+                ) : folderDetailsError ? (
+                  <p role="status">{folderDetailsError}</p>
+                ) : (
+                  <p role="status">Checking folder name and location…</p>
+                )}
+                <p className="hint">Drive address</p>
                 <a
                   href={`https://drive.google.com/drive/folders/${folderId}`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Open StreamLion folder ↗
+                  https://drive.google.com/drive/folders/{folderId}
                 </a>
-              </p>
+                <button
+                  type="button"
+                  disabled={busy || busyCapture || folderLoading}
+                  onClick={() => setFolderAttempt((n) => n + 1)}
+                >
+                  {folderLoading
+                    ? "Checking folder details…"
+                    : details
+                      ? "Refresh folder details"
+                      : "Retry folder details"}
+                </button>
+              </div>
             )}
             <div className="actions">
               {!folderId && (

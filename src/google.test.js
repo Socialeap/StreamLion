@@ -540,3 +540,44 @@ test("unknown or malformed coordinated conflicts keep private details out of sav
     );
   }
 });
+
+test("folder location read cannot return details after the selected folder or Google account changes", async (t) => {
+  const { googleFolderLocation } = await import("./google.js");
+  let account = "owner-a",
+    folderId = "folder-a",
+    release;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (url === "/api/google/session")
+      return Response.json({
+        enabled: true,
+        connected: true,
+        subject: account,
+        account: account + "@example.com",
+        bookId: "book",
+        folderId,
+      });
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return Response.json({
+      id: "folder-a",
+      name: "Private folder A",
+      mimeType: "application/vnd.google-apps.folder",
+    });
+  });
+  t.after(disconnectGoogle);
+  for (const switchAccount of [false, true]) {
+    disconnectGoogle();
+    account = "owner-a";
+    folderId = "folder-a";
+    await restoreGoogleSession();
+    const pending = googleFolderLocation();
+    const rejected = assert.rejects(pending, /changed/);
+    if (switchAccount) account = "owner-b";
+    folderId = "folder-b";
+    await restoreGoogleSession();
+    release();
+    await rejected;
+    assert.equal(googleFolderId(), "folder-b");
+  }
+});
