@@ -182,6 +182,43 @@ test("a verified returning account opens Projects in one click without OAuth or 
   assert.deepEqual(await loadWorkspace(), records);
 });
 
+test("the compact profile opens Account without exposing the email on Projects or losing a draft", async () => {
+  restoredWorkbook();
+  const key = "streamlion-draft-v1:saved-book:note:",
+    draft = '{"text":"Keep exact 5 3/8 inches"}';
+  localStorage.setItem(key, draft);
+  const ui = render(<App />);
+  await enterWorkspace(ui);
+  await ui.findByRole("heading", { name: "Projects", exact: true });
+  assert.equal(ui.queryByText("qa-a@example.com"), null);
+  fireEvent.click(
+    ui.getByRole("button", { name: /Account: qa-a@example.com/ }),
+  );
+  await ui.findByRole("heading", { name: "Account", exact: true });
+  assert(ui.getByText("qa-a@example.com"));
+  assert(ui.getByRole("link", { name: /Google account security/ }));
+  assert.equal(localStorage.getItem(key), draft);
+});
+
+test("a cross-page Account link opens account settings and Home returns directly to Projects", async () => {
+  window.history.replaceState(null, "", "/?page=Account");
+  const key = "streamlion-draft-v1:local:note:",
+    draft = '{"text":"Keep exact 6 7/16 inches"}';
+  localStorage.setItem(key, draft);
+  const ui = render(<App />);
+  await ui.findByRole("heading", { name: "Account", exact: true });
+  assert(ui.getByRole("button", { name: /Account: Not signed in/ }));
+  const home = await ui.findByRole("button", { name: "Home", exact: true });
+  fireEvent.click(home);
+  await ui.findByRole("heading", { name: "Projects", exact: true });
+  assert(ui.getByRole("navigation", { name: "Main" }));
+  assert.equal(
+    ui.queryByRole("heading", { name: "StreamLion", exact: true }),
+    null,
+  );
+  assert.equal(localStorage.getItem(key), draft);
+});
+
 test("signing out preserves the exact pending operation, workbook selection and device records", async () => {
   restoredWorkbook();
   const key = "streamlion-draft-v1:saved-book:pending-write";
@@ -388,7 +425,7 @@ test("returning device records and unfinished project fields survive opening Acc
   });
   fireEvent.click(ui.getByRole("button", { name: /Account: Not signed in/ }));
   await ui.findByRole("heading", { name: "Connections" });
-  fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
+  fireEvent.click(ui.getByRole("button", { name: "Home", exact: true }));
   fireEvent.click(
     ui.getByRole("button", { name: "Unsaved exact 5 3/8 inches", exact: true }),
   );
@@ -411,7 +448,11 @@ test("a connected account is visible globally while workbook setup is unfinished
   await enterWorkspace(ui);
   await ui.findByRole("button", { name: /Account: qa-a@example.com/ });
   assert(ui.getByRole("heading", { name: "Connections" }));
-  assert(ui.getByText(/Choose a workbook/));
+  assert(
+    ui.getByRole("button", {
+      name: /Account: qa-a@example.com.*Choose a workbook/,
+    }),
+  );
   cleanup();
   disconnectGoogle();
   session = { ...session, subject: "synthetic-b", account: "qa-b@example.com" };
@@ -580,6 +621,8 @@ test("install guidance is available without an install event and never claims in
   const ui = render(<App />);
   await ui.findByRole("heading", { name: "StreamLion", exact: true });
   await enterWorkspace(ui);
+  fireEvent.click(ui.getByRole("button", { name: /Account: Not signed in/ }));
+  await ui.findByRole("heading", { name: "Account", exact: true });
   fireEvent.click(ui.getByText("Install app", { exact: true }));
   assert(ui.getByText(/Chrome on Android/));
   assert(ui.getByText(/Use a regular browser window/));
@@ -589,6 +632,8 @@ test("eligible install prompts require a click, handle dismissal and hide after 
   const ui = render(<App />);
   await ui.findByRole("heading", { name: "StreamLion", exact: true });
   await enterWorkspace(ui);
+  fireEvent.click(ui.getByRole("button", { name: /Account: Not signed in/ }));
+  await ui.findByRole("heading", { name: "Account", exact: true });
   let prompted = 0;
   const event = new window.Event("beforeinstallprompt", { cancelable: true });
   event.prompt = async () => {

@@ -10,8 +10,23 @@ import IntakeTemplateSettings from "./IntakeTemplateSettings.jsx";
 import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
 import ProspectIntake from "./ProspectIntake.jsx";
 import RequestProgress from "./RequestProgress.jsx";
-import ThemeSwitch from "./ThemeSwitch.jsx";
-import ProviderManualButton from "./ProviderManual.jsx";
+import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
+import {
+  ArchiveRestore,
+  Bell,
+  BookOpen,
+  ClipboardList,
+  FileCheck2,
+  FileText,
+  FolderOpen,
+  LayoutDashboard,
+  ListChecks,
+  LogIn,
+  MessageSquare,
+  Send,
+  Settings,
+  ShieldCheck,
+} from "lucide-react";
 import QRCode from "qrcode";
 import { estimateMoney } from "./capture-estimate.js";
 import { activeIntakeQuestions } from "./intake-templates.js";
@@ -69,6 +84,20 @@ const states = {
   archived: "Archived",
 };
 const date = (value) => (value ? new Date(value).toLocaleString() : "");
+const workOrderSections = [
+  { label: "Brief", icon: ClipboardList },
+  { label: "Agreement", icon: FileCheck2 },
+  { label: "Updates", icon: MessageSquare },
+  { label: "Files", icon: FolderOpen },
+  { label: "Progress", icon: ListChecks },
+];
+function openSectionDetails(id) {
+  const section = document.getElementById(id);
+  const details = section?.matches("details")
+    ? section
+    : section?.querySelector("details");
+  if (details) details.open = true;
+}
 export async function coordinationAPI(path, body, subject) {
   const response = await fetch("/api/coordination/" + path, {
     credentials: "same-origin",
@@ -133,6 +162,7 @@ export default function CoordinationPortal({
   const [verified, setVerified] = useState(false),
     [showClosed, setShowClosed] = useState(false),
     [verification, setVerification] = useState("");
+  const [workOrderTab, setWorkOrderTab] = useState("Brief");
   const [access, setAccess] = useState("loading");
   const requestRef = useRef(null);
   const [synthetic, setSynthetic] = useState(false);
@@ -467,6 +497,7 @@ export default function CoordinationPortal({
     selectedJob?.fields.requesterName,
     selectedJob?.fields.companyName,
   ]);
+  useEffect(() => setWorkOrderTab("Brief"), [selectedJob?.id]);
   const operation = () => crypto.randomUUID();
   async function command(job, action, extra = {}) {
     return perform((client ? "client" : "provider") + "/command", {
@@ -475,54 +506,156 @@ export default function CoordinationPortal({
       command: { action, expectedRevision: job.revision, ...extra },
     });
   }
+  const providerReady = !client && status?.connected;
+  const waitingForClient =
+    providerReady &&
+    selectedJob &&
+    links.some((link) => link.jobId === selectedJob.id && !link.claimedAt) &&
+    !prepareBrief &&
+    !selectedJob.submittedAt;
+  const workOrderAvailable = Boolean(
+    selectedJob && (client ? verified : providerReady && !waitingForClient),
+  );
+  const sections = [
+    { id: "coord-overview", label: "Overview", icon: LayoutDashboard },
+    ...(client && prospect && !verified
+      ? [{ id: "coord-intake", label: "Request", icon: ClipboardList }]
+      : []),
+    ...(access !== "ready" && access !== "prospect"
+      ? [
+          {
+            id: "coord-access",
+            label:
+              access === "sign_in" || access === "verification"
+                ? "Sign in"
+                : "Access",
+            icon: LogIn,
+          },
+        ]
+      : []),
+    ...(!client && status && !status.connected
+      ? [{ id: "coord-setup", label: "Setup", icon: Settings }]
+      : []),
+    ...(providerReady
+      ? [
+          { id: "coord-invite", label: "Invite", icon: Send },
+          ...(visibleForms.length
+            ? [{ id: "coord-public-forms", label: "Forms", icon: FileText }]
+            : []),
+          { id: "coord-projects", label: "Projects", icon: FolderOpen },
+          ...(pending.length
+            ? [
+                {
+                  id: "coord-pending",
+                  label: "Pending save",
+                  icon: ArchiveRestore,
+                },
+              ]
+            : []),
+          ...(selectedJob
+            ? [
+                {
+                  id: "coord-selected-request",
+                  label: "Selected request",
+                  icon: ClipboardList,
+                },
+              ]
+            : []),
+        ]
+      : []),
+    ...(workOrderAvailable
+      ? workOrderSections.map(({ label, icon }) => ({
+          id: "coord-work-" + label.toLowerCase(),
+          label,
+          icon,
+          onSelect: () => setWorkOrderTab(label),
+        }))
+      : []),
+    ...(!client &&
+    (providerReady || (access !== "ready" && access !== "loading"))
+      ? [
+          {
+            id: "coord-request-guide",
+            label: "Guide",
+            icon: BookOpen,
+            onSelect: () => openSectionDetails("coord-request-guide"),
+          },
+        ]
+      : []),
+    ...(providerReady || (client && verified)
+      ? [
+          {
+            id: "coord-notifications",
+            label: "Notifications",
+            icon: Bell,
+            onSelect: () => openSectionDetails("coord-notifications"),
+          },
+        ]
+      : []),
+    ...(providerReady
+      ? [
+          {
+            id: "coord-services",
+            label: "Services",
+            icon: Settings,
+            onSelect: () => openSectionDetails("coord-services"),
+          },
+          {
+            id: "coord-recovery",
+            label: "Recovery",
+            icon: ArchiveRestore,
+            onSelect: () => openSectionDetails("coord-recovery"),
+          },
+          {
+            id: "coord-provider-access",
+            label: "Provider access",
+            icon: ShieldCheck,
+          },
+        ]
+      : []),
+    ...(client && verified
+      ? [
+          {
+            id: "coord-client-access",
+            label: "Client access",
+            icon: ShieldCheck,
+          },
+        ]
+      : []),
+  ];
   return (
-    <div className="coord-shell">
-      <header className="coord-header">
-        <a href={client ? "/api/client-portal" : "/"} className="coord-brand">
-          <img src="/lion-mint-192.png" alt="" />
-          StreamLion
-        </a>
-        <span>
-          {client ? brand || "Your project portal" : "Client requests"}
-        </span>
-        <div className="coord-header-tools">
-          {!client && <ProviderManualButton />}
-          <ThemeSwitch />
-          {!client && <a href="/">Field workspace</a>}
-        </div>
-        {client && verified && (
-          <button
-            onClick={async () => {
-              const result = await perform("client/logout", {});
-              if (!result) return;
-              let draftsCleared = true;
-              try {
-                clearCoordinationDrafts(
-                  "client",
-                  "client",
-                  window.localStorage,
+    <div className="coord-shell has-section-navigation">
+      <AppHeader
+        disabled={busy || Boolean(verification)}
+        account={client ? "" : status?.email || ""}
+        accountLabel={
+          client
+            ? verified
+              ? "Client access: private project open"
+              : prospect
+                ? "Client access: work-order request"
+                : "Client access: verify your private link"
+            : undefined
+        }
+        connected={client ? verified : Boolean(status)}
+        checking={access === "loading"}
+        manual={!client}
+        onAccount={
+          client
+            ? () => {
+                const section = document.getElementById(
+                  verified
+                    ? "coord-client-access"
+                    : prospect
+                      ? "coord-intake"
+                      : "coord-access",
                 );
-              } catch {
-                draftsCleared = false;
+                section?.focus({ preventScroll: true });
+                section?.scrollIntoView?.({ block: "start" });
               }
-              setVerified(false);
-              setJobs([]);
-              setActivity([]);
-              setRefreshStatus(null);
-              refreshRef.current = null;
-              setBrand("");
-              setAccess("verification");
-              setMessage(
-                draftsCleared
-                  ? "Signed out. Client drafts were removed from this browser."
-                  : "Signed out. This browser could not clear client drafts. Clear StreamLion site data before sharing this device.",
-              );
-            }}
-          >
-            Sign out
-          </button>
-        )}
-      </header>
+            : undefined
+        }
+      />
       <main>
         {updateAvailable && (
           <p className="coord-notice">
@@ -562,7 +695,11 @@ export default function CoordinationPortal({
             original records.
           </p>
         )}
-        <div className="coord-heading">
+        <div
+          className="coord-heading coord-section"
+          id="coord-overview"
+          tabIndex={-1}
+        >
           <div>
             <p className="eyebrow">
               {client
@@ -605,19 +742,23 @@ export default function CoordinationPortal({
           </div>
         )}
         {client && verified && (
-          <NotificationSettings
-            key={"notifications-" + (client ? selected : status?.subject)}
-            role={client ? "client" : "provider"}
-            subject={status?.subject}
-            api={api}
-          />
+          <div id="coord-notifications" className="coord-section" tabIndex={-1}>
+            <NotificationSettings
+              key={"notifications-" + (client ? selected : status?.subject)}
+              role={client ? "client" : "provider"}
+              subject={status?.subject}
+              api={api}
+            />
+          </div>
         )}
         {client && prospect && !verified && (
-          <ProspectIntake
-            descriptor={prospect}
-            token={prospectToken}
-            api={api}
-          />
+          <div id="coord-intake" className="coord-section" tabIndex={-1}>
+            <ProspectIntake
+              descriptor={prospect}
+              token={prospectToken}
+              api={api}
+            />
+          </div>
         )}
         {requestRef.current && error && (
           <div className="coord-actions">
@@ -642,7 +783,11 @@ export default function CoordinationPortal({
           </div>
         )}
         {client && !verified && access === "verification" && (
-          <section className="coord-card coord-signin">
+          <section
+            className="coord-card coord-signin coord-section"
+            id="coord-access"
+            tabIndex={-1}
+          >
             {verification ? (
               <>
                 <h2>Verify your private link</h2>
@@ -710,12 +855,16 @@ export default function CoordinationPortal({
             />
           )}
         {!client && status && !status.connected && (
-          <section className="coord-card">
+          <section
+            className="coord-card coord-section"
+            id="coord-setup"
+            tabIndex={-1}
+          >
             <h2>Enable your client workspace</h2>
             <p>
               Choose your workbook and private Drive folder in{" "}
-              <a href="/">Connections</a>, then enable background coordination
-              here.
+              <a href="/?page=Connections">Connections</a>, then enable
+              background coordination here.
             </p>
             <form
               onSubmit={async (e) => {
@@ -775,7 +924,11 @@ export default function CoordinationPortal({
               </p>
             )}
             {pending.length > 0 && (
-              <section className="coord-alert">
+              <section
+                className="coord-alert coord-section"
+                id="coord-pending"
+                tabIndex={-1}
+              >
                 <h2>A save needs recovery</h2>
                 <p>
                   Later writes to this workbook are held until its outcome is
@@ -796,6 +949,8 @@ export default function CoordinationPortal({
             )}
             <section
               className="coord-card coord-invite"
+              id="coord-invite"
+              tabIndex={-1}
               aria-labelledby="coord-invite-title"
             >
               <h2 id="coord-invite-title">Invite a client</h2>
@@ -1076,6 +1231,7 @@ export default function CoordinationPortal({
               <section
                 className="coord-card"
                 id="coord-public-forms"
+                tabIndex={-1}
                 aria-label="Your public forms"
               >
                 <h2>Your public forms</h2>
@@ -1136,6 +1292,8 @@ export default function CoordinationPortal({
             )}
             <section
               className="coord-card coord-projects"
+              id="coord-projects"
+              tabIndex={-1}
               aria-labelledby="coord-projects-title"
             >
               <h2 id="coord-projects-title">Your projects</h2>
@@ -1261,6 +1419,8 @@ export default function CoordinationPortal({
                     )}
                     link={links.find((l) => l.jobId === selectedJob.id)}
                     client={false}
+                    tab={workOrderTab}
+                    onTabChange={setWorkOrderTab}
                     busy={busy}
                     command={command}
                     upload={(file) =>
@@ -1293,43 +1453,64 @@ export default function CoordinationPortal({
                 ) : null}
               </div>
             )}
-            <details className="coord-card coord-guide">
+            <details
+              className="coord-card coord-guide coord-section"
+              id="coord-request-guide"
+              tabIndex={-1}
+            >
               <summary>How client requests work</summary>
               <RequestGuide />
             </details>
-            <NotificationSettings
-              role="provider"
-              subject={status.subject}
-              api={api}
-            />
-            <IntakeTemplateSettings
-              templates={templates}
-              busy={busy}
-              recovering={pending.length > 0}
-              save={(body) =>
-                perform("provider/template", {
-                  ...body,
-                  operation: operation(),
-                })
-              }
-            />
-            <ArchiveRecoverySettings
-              busy={busy}
-              recovering={pending.length > 0}
-              capacity={capacity}
-              restore={async (body) => {
-                const result = await perform("provider/archive-restore", body);
-                if (result?.complete) {
-                  setSelected(result.jobId);
-                  setShowClosed(true);
-                  setMessage(
-                    "Archive recovery verified. The job remains archived and client access remains expired.",
-                  );
+            <div
+              id="coord-notifications"
+              className="coord-section"
+              tabIndex={-1}
+            >
+              <NotificationSettings
+                role="provider"
+                subject={status.subject}
+                api={api}
+              />
+            </div>
+            <div id="coord-services" className="coord-section" tabIndex={-1}>
+              <IntakeTemplateSettings
+                templates={templates}
+                busy={busy}
+                recovering={pending.length > 0}
+                save={(body) =>
+                  perform("provider/template", {
+                    ...body,
+                    operation: operation(),
+                  })
                 }
-                return result;
-              }}
-            />
-            <footer className="coord-footer">
+              />
+            </div>
+            <div id="coord-recovery" className="coord-section" tabIndex={-1}>
+              <ArchiveRecoverySettings
+                busy={busy}
+                recovering={pending.length > 0}
+                capacity={capacity}
+                restore={async (body) => {
+                  const result = await perform(
+                    "provider/archive-restore",
+                    body,
+                  );
+                  if (result?.complete) {
+                    setSelected(result.jobId);
+                    setShowClosed(true);
+                    setMessage(
+                      "Archive recovery verified. The job remains archived and client access remains expired.",
+                    );
+                  }
+                  return result;
+                }}
+              />
+            </div>
+            <footer
+              className="coord-footer coord-section"
+              id="coord-provider-access"
+              tabIndex={-1}
+            >
               <span>
                 Background authorization expires {date(status.expiresAt)}.
               </span>
@@ -1349,6 +1530,8 @@ export default function CoordinationPortal({
             activity={activity.filter((e) => e.jobId === selectedJob.id)}
             brand={brand}
             client
+            tab={workOrderTab}
+            onTabChange={setWorkOrderTab}
             busy={busy}
             command={command}
             upload={(file) =>
@@ -1356,12 +1539,57 @@ export default function CoordinationPortal({
             }
           />
         )}
+        {client && verified && (
+          <section
+            className="coord-client-access coord-section"
+            id="coord-client-access"
+            tabIndex={-1}
+            aria-label="Client access"
+          >
+            <span>Private project access</span>
+            <button
+              disabled={busy}
+              onClick={async () => {
+                const result = await perform("client/logout", {});
+                if (!result) return;
+                let draftsCleared = true;
+                try {
+                  clearCoordinationDrafts(
+                    "client",
+                    "client",
+                    window.localStorage,
+                  );
+                } catch {
+                  draftsCleared = false;
+                }
+                setVerified(false);
+                setJobs([]);
+                setActivity([]);
+                setRefreshStatus(null);
+                refreshRef.current = null;
+                setBrand("");
+                setAccess("verification");
+                setMessage(
+                  draftsCleared
+                    ? "Signed out. Client drafts were removed from this browser."
+                    : "Signed out. This browser could not clear client drafts. Clear StreamLion site data before sharing this device.",
+                );
+              }}
+            >
+              Sign out
+            </button>
+          </section>
+        )}
         <footer className="coord-footer">
           <a href="/api/privacy">Privacy</a>
           <a href="/api/terms">Terms</a>
           <a href="mailto:info@transcendencemedia.com">Support</a>
         </footer>
       </main>
+      <SectionNavigation
+        sections={sections}
+        disabled={busy || Boolean(verification)}
+      />
     </div>
   );
 }
@@ -1391,10 +1619,18 @@ function RequestGuide() {
 }
 function CoordinationAccess({ access, client, retry }) {
   if (access === "loading")
-    return <p role="status">Checking client coordination…</p>;
+    return (
+      <p role="status" id="coord-access" tabIndex={-1}>
+        Checking client coordination…
+      </p>
+    );
   const unavailable = access === "unavailable";
   return (
-    <section className="coord-card coord-guide">
+    <section
+      className="coord-card coord-guide coord-section"
+      id="coord-access"
+      tabIndex={-1}
+    >
       <h2>
         {unavailable
           ? "Client coordination is unavailable"
@@ -1425,11 +1661,11 @@ function CoordinationAccess({ access, client, retry }) {
         <a href="/api/purchase">Purchase or restore Core</a>
       )}
       {!client && (
-        <>
+        <div id="coord-request-guide" className="coord-section" tabIndex={-1}>
           <h3>From invitation to completed work</h3>
           <RequestGuide />
-          <a href="/">Open field workspace</a>
-        </>
+          <a href="/?page=Projects">Open field workspace</a>
+        </div>
       )}
     </section>
   );
@@ -1578,6 +1814,8 @@ function JobPanel({
   price,
   archive,
   brand,
+  tab,
+  onTabChange,
 }) {
   const role = client ? "client" : "provider";
   const termLabels = {
@@ -1606,8 +1844,7 @@ function JobPanel({
       return null;
     }
   });
-  const [tab, setTab] = useState("Brief"),
-    [group, setGroup] = useState("Scope"),
+  const [group, setGroup] = useState("Scope"),
     [draft, setDraft] = useState(restored?.fields || job.fields),
     [text, setText] = useState(""),
     [reason, setReason] = useState(""),
@@ -1846,652 +2083,660 @@ function JobPanel({
         </p>
       )}
       <nav className="coord-tabs" aria-label="Project sections">
-        {["Brief", "Agreement", "Updates", "Files", "Progress"].map((t) => (
+        {workOrderSections.map(({ label: t }) => (
           <button
             key={t}
             aria-current={tab === t ? "page" : undefined}
-            onClick={() => setTab(t)}
+            onClick={() => onTabChange(t)}
           >
             {t}
             {t === "Updates" && issues.length ? " · " + issues.length : ""}
           </button>
         ))}
       </nav>
-      {tab === "Brief" && (
-        <>
-          <div className="coord-summary">
-            <div>
-              <span>Location</span>
-              <strong>{job.fields.address || "Address needed"}</strong>
-            </div>
-            <div>
-              <span>Appointment</span>
-              <strong>
-                {job.fields.startLocal
-                  ? job.fields.startLocal.replace("T", " ") +
-                    " · " +
-                    job.fields.timeZone
-                  : "Not confirmed"}
-              </strong>
-            </div>
+      <section
+        id="coord-work-brief"
+        className="coord-work-section coord-section"
+        tabIndex={-1}
+        hidden={tab !== "Brief"}
+        aria-label="Brief"
+      >
+        <div className="coord-summary">
+          <div>
+            <span>Location</span>
+            <strong>{job.fields.address || "Address needed"}</strong>
           </div>
-          {job.intake && (
-            <section className="coord-notice" aria-label="Service intake">
-              <h3>
-                {job.intake.name} · intake version {job.intake.version}
-              </h3>
-              <p>{job.intake.description}</p>
-              <p className="coord-small">
-                Leave an answer blank if it is not known yet. Missing required
-                answers stay on the action list and must be resolved before
-                agreement.
-              </p>
-            </section>
+          <div>
+            <span>Appointment</span>
+            <strong>
+              {job.fields.startLocal
+                ? job.fields.startLocal.replace("T", " ") +
+                  " · " +
+                  job.fields.timeZone
+                : "Not confirmed"}
+            </strong>
+          </div>
+        </div>
+        {job.intake && (
+          <section className="coord-notice" aria-label="Service intake">
+            <h3>
+              {job.intake.name} · intake version {job.intake.version}
+            </h3>
+            <p>{job.intake.description}</p>
+            <p className="coord-small">
+              Leave an answer blank if it is not known yet. Missing required
+              answers stay on the action list and must be resolved before
+              agreement.
+            </p>
+          </section>
+        )}
+        <form onSubmit={save}>
+          <div className="coord-groups" role="group" aria-label="Brief fields">
+            {groups
+              .filter((g) => visibleFields.some((f) => f.group === g))
+              .map((g) => (
+                <button
+                  type="button"
+                  key={g}
+                  aria-pressed={group === g}
+                  onClick={() => setGroup(g)}
+                >
+                  {g}
+                </button>
+              ))}
+          </div>
+          <div className="coord-fields">{fieldNodes}</div>
+          <p role="status" className="coord-draft-status">
+            {busy
+              ? "Saving — waiting for verified readback…"
+              : dirty
+                ? closed
+                  ? "This work order is closed. Unsaved wording remains in this page only."
+                  : draftStorageError
+                    ? "Unsaved changes. Device storage is unavailable; keep this page open until you save."
+                    : "Draft saved on this device. Save current information to share it with the other party."
+                : "Current information is saved in the shared work order."}
+          </p>
+          {canEdit && (
+            <button disabled={busy || !Object.keys(changed).length}>
+              {needsProposal
+                ? "Propose these changes"
+                : "Save current information"}
+            </button>
           )}
-          <form onSubmit={save}>
-            <div
-              className="coord-groups"
-              role="group"
-              aria-label="Brief fields"
-            >
-              {groups
-                .filter((g) => visibleFields.some((f) => f.group === g))
-                .map((g) => (
-                  <button
-                    type="button"
-                    key={g}
-                    aria-pressed={group === g}
-                    onClick={() => setGroup(g)}
-                  >
-                    {g}
-                  </button>
-                ))}
-            </div>
-            <div className="coord-fields">{fieldNodes}</div>
-            <p role="status" className="coord-draft-status">
-              {busy
-                ? "Saving — waiting for verified readback…"
-                : dirty
-                  ? closed
-                    ? "This work order is closed. Unsaved wording remains in this page only."
-                    : draftStorageError
-                      ? "Unsaved changes. Device storage is unavailable; keep this page open until you save."
-                      : "Draft saved on this device. Save current information to share it with the other party."
-                  : "Current information is saved in the shared work order."}
+          {needsProposal && (
+            <p>
+              Agreed scope stays in effect until both sides accept this
+              proposal.
             </p>
-            {canEdit && (
-              <button disabled={busy || !Object.keys(changed).length}>
-                {needsProposal
-                  ? "Propose these changes"
-                  : "Save current information"}
-              </button>
-            )}
-            {needsProposal && (
-              <p>
-                Agreed scope stays in effect until both sides accept this
-                proposal.
-              </p>
-            )}
-          </form>
-          <details>
-            <summary>Current {job.accepted ? "agreed" : "draft"} scope</summary>
-            <p className="coord-pre">
-              {(job.accepted || job.fields).scope || "Scope needed"}
+          )}
+        </form>
+        <details>
+          <summary>Current {job.accepted ? "agreed" : "draft"} scope</summary>
+          <p className="coord-pre">
+            {(job.accepted || job.fields).scope || "Scope needed"}
+          </p>
+          <p className="coord-pre">
+            {(job.accepted || job.fields).deliverables || "Deliverables needed"}
+          </p>
+        </details>
+      </section>
+      <section
+        id="coord-work-agreement"
+        className="coord-work-section coord-section"
+        tabIndex={-1}
+        hidden={tab !== "Agreement"}
+        aria-label="Agreement"
+      >
+        <h2>
+          {job.accepted ? "Your agreed project" : "Review before confirming"}
+        </h2>
+        <dl className="coord-terms">
+          {[
+            "scope",
+            "exclusions",
+            "deliverables",
+            "deliveryDeadline",
+            "startLocal",
+            "timeZone",
+            "offeredFee",
+            "agreedFee",
+            "currency",
+            "paymentTerms",
+            ...(job.intake?.questions || [])
+              .map((q) => q.field)
+              .filter(
+                (k) =>
+                  ![
+                    "scope",
+                    "exclusions",
+                    "deliverables",
+                    "deliveryDeadline",
+                    "startLocal",
+                    "timeZone",
+                    "agreedFee",
+                    "currency",
+                    "paymentTerms",
+                  ].includes(k),
+              ),
+          ]
+            .filter((k) => job.fields[k])
+            .map((k) => (
+              <React.Fragment key={k}>
+                <dt>{termLabels[k]}</dt>
+                <dd>{(job.accepted || job.fields)[k]}</dd>
+              </React.Fragment>
+            ))}
+        </dl>
+        {job.proposal && (
+          <section className="coord-notice">
+            <h3>Proposed revision</h3>
+            <p>
+              Submitted by {job.proposal.author}. Current agreed terms remain
+              active.
             </p>
-            <p className="coord-pre">
-              {(job.accepted || job.fields).deliverables ||
-                "Deliverables needed"}
-            </p>
-          </details>
-        </>
-      )}
-      {tab === "Agreement" && (
-        <>
-          <h2>
-            {job.accepted ? "Your agreed project" : "Review before confirming"}
-          </h2>
-          <dl className="coord-terms">
-            {[
-              "scope",
-              "exclusions",
-              "deliverables",
-              "deliveryDeadline",
-              "startLocal",
-              "timeZone",
-              "offeredFee",
-              "agreedFee",
-              "currency",
-              "paymentTerms",
-              ...(job.intake?.questions || [])
-                .map((q) => q.field)
+            <dl className="coord-terms">
+              {Object.keys(job.proposal.fields)
                 .filter(
                   (k) =>
-                    ![
-                      "scope",
-                      "exclusions",
-                      "deliverables",
-                      "deliveryDeadline",
-                      "startLocal",
-                      "timeZone",
-                      "agreedFee",
-                      "currency",
-                      "paymentTerms",
-                    ].includes(k),
-                ),
-            ]
-              .filter((k) => job.fields[k])
-              .map((k) => (
-                <React.Fragment key={k}>
-                  <dt>{termLabels[k]}</dt>
-                  <dd>{(job.accepted || job.fields)[k]}</dd>
-                </React.Fragment>
-              ))}
-          </dl>
-          {job.proposal && (
-            <section className="coord-notice">
-              <h3>Proposed revision</h3>
-              <p>
-                Submitted by {job.proposal.author}. Current agreed terms remain
-                active.
-              </p>
-              <dl className="coord-terms">
-                {Object.keys(job.proposal.fields)
-                  .filter(
-                    (k) =>
-                      job.proposal.fields[k] !== job.accepted[k] &&
-                      !privateFields.has(k),
-                  )
-                  .map((k) => (
-                    <React.Fragment key={k}>
-                      <dt>{termLabels[k]}</dt>
-                      <dd>{job.proposal.fields[k] || "Removed"}</dd>
-                    </React.Fragment>
-                  ))}
-              </dl>
-              <button
-                disabled={
-                  busy ||
-                  !canEdit ||
-                  (client
-                    ? job.proposal.clientApproved
-                    : job.proposal.providerApproved)
-                }
-                onClick={() =>
-                  command(job, "accept_proposal", {
-                    proposalId: job.proposal.id,
-                  })
-                }
-              >
-                {(
-                  client
-                    ? job.proposal.clientApproved
-                    : job.proposal.providerApproved
+                    job.proposal.fields[k] !== job.accepted[k] &&
+                    !privateFields.has(k),
                 )
-                  ? "Your approval is recorded"
-                  : "Accept proposed revision"}
+                .map((k) => (
+                  <React.Fragment key={k}>
+                    <dt>{termLabels[k]}</dt>
+                    <dd>{job.proposal.fields[k] || "Removed"}</dd>
+                  </React.Fragment>
+                ))}
+            </dl>
+            <button
+              disabled={
+                busy ||
+                !canEdit ||
+                (client
+                  ? job.proposal.clientApproved
+                  : job.proposal.providerApproved)
+              }
+              onClick={() =>
+                command(job, "accept_proposal", {
+                  proposalId: job.proposal.id,
+                })
+              }
+            >
+              {(
+                client
+                  ? job.proposal.clientApproved
+                  : job.proposal.providerApproved
+              )
+                ? "Your approval is recorded"
+                : "Accept proposed revision"}
+            </button>
+            <button
+              disabled={busy || !canEdit}
+              onClick={() => command(job, "reject_proposal")}
+            >
+              Reject proposal
+            </button>
+          </section>
+        )}
+        {!job.accepted && canEdit && (
+          <>
+            <p>
+              Provider: {job.providerApproved ? "approved" : "not yet approved"}{" "}
+              · Client: {job.clientApproved ? "approved" : "not yet approved"}
+            </p>
+            <p>
+              {issues.length
+                ? issues.length +
+                  " item(s) need attention in the brief or updates."
+                : "Required information is complete."}
+            </p>
+            {["draft", "clarification", "submitted"].includes(job.state) && (
+              <button
+                disabled={busy || Object.keys(changed).length > 0}
+                onClick={() => command(job, "submit")}
+              >
+                Submit current request
               </button>
+            )}
+            {!client && (
+              <label className="coord-check">
+                <input
+                  type="checkbox"
+                  checked={authorized}
+                  onChange={(e) => setAuthorized(e.target.checked)}
+                />
+                I authorize {price / CREDIT_UNIT} credits for this job once both
+                sides approve. Later edits and reopening carry no second project
+                charge.
+              </label>
+            )}
+            <button
+              disabled={
+                busy ||
+                issues.length > 0 ||
+                job.state === "draft" ||
+                (!client && !authorized) ||
+                Object.keys(changed).length > 0
+              }
+              onClick={() =>
+                command(
+                  job,
+                  "approve",
+                  client ? {} : { authorizedMicros: price },
+                )
+              }
+            >
+              {client
+                ? "Approve this project"
+                : "Approve & authorize job credits"}
+            </button>
+          </>
+        )}
+      </section>
+      <section
+        id="coord-work-updates"
+        className="coord-work-section coord-section"
+        tabIndex={-1}
+        hidden={tab !== "Updates"}
+        aria-label="Updates"
+      >
+        <h2>What needs attention</h2>
+        {activity.length > 0 && (
+          <details>
+            <summary>Recent project activity</summary>
+            <ol className="coord-activity">
+              {activity.slice(0, 20).map((e) => (
+                <li key={e.id}>
+                  <strong>{e.label}</strong>
+                  <span>
+                    {date(e.at)} · Revision {e.revision}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+        {issues
+          .filter((i) => i.kind === "missing")
+          .map((i) => (
+            <p key={i.field}>{i.label || labels[i.field]} is required.</p>
+          ))}
+        {job.questions.map((q) => (
+          <div className="coord-thread" key={q.id}>
+            <strong>{q.text}</strong>
+            {q.answer ? (
+              <p>{q.answer}</p>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const answer = new FormData(e.currentTarget).get("answer");
+                  await command(job, "answer", {
+                    questionId: q.id,
+                    text: answer,
+                  });
+                }}
+              >
+                <label>
+                  Your answer
+                  <textarea
+                    name="answer"
+                    rows={2}
+                    required
+                    maxLength={2000}
+                    disabled={!canEdit || busy}
+                  />
+                </label>
+                <button disabled={!canEdit || busy}>Send answer</button>
+              </form>
+            )}
+          </div>
+        ))}
+        {job.updates.map((u) => (
+          <div className="coord-thread" key={u.id}>
+            <strong>{u.fields.map((k) => labels[k]).join(", ")} changed</strong>
+            <p>
+              {date(u.at)} ·{" "}
+              {u.acknowledged
+                ? "Provider acknowledged"
+                : "Provider acknowledgment needed"}
+            </p>
+            {!client && !u.acknowledged && (
               <button
                 disabled={busy || !canEdit}
-                onClick={() => command(job, "reject_proposal")}
+                onClick={() => command(job, "acknowledge", { updateId: u.id })}
               >
-                Reject proposal
+                I’ve reviewed this update
               </button>
-            </section>
-          )}
-          {!job.accepted && canEdit && (
-            <>
-              <p>
-                Provider:{" "}
-                {job.providerApproved ? "approved" : "not yet approved"} ·
-                Client: {job.clientApproved ? "approved" : "not yet approved"}
-              </p>
-              <p>
-                {issues.length
-                  ? issues.length +
-                    " item(s) need attention in the brief or updates."
-                  : "Required information is complete."}
-              </p>
-              {["draft", "clarification", "submitted"].includes(job.state) && (
-                <button
-                  disabled={busy || Object.keys(changed).length > 0}
-                  onClick={() => command(job, "submit")}
+            )}
+          </div>
+        ))}
+        {!client && canEdit && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const result = await command(job, "question", { text });
+              if (result) setText("");
+            }}
+          >
+            <label>
+              Ask the client to clarify
+              <textarea
+                value={text}
+                maxLength={2000}
+                required
+                rows={2}
+                onChange={(e) => setText(e.target.value)}
+              />
+            </label>
+            <button disabled={busy}>Send question</button>
+          </form>
+        )}
+        {!issues.length && !job.questions.length && !job.updates.length && (
+          <p>No unresolved updates.</p>
+        )}
+      </section>
+      <section
+        id="coord-work-files"
+        className="coord-work-section coord-section"
+        tabIndex={-1}
+        hidden={tab !== "Files"}
+        aria-label="Files"
+      >
+        <h2>Plans and reference files</h2>
+        <p>
+          PDF, JPEG or PNG, up to 512 KiB each. Files stay in the provider’s
+          private Google Drive.
+        </p>
+        {fileError && <p role="alert">{fileError}</p>}
+        <ul>
+          {job.attachments
+            .filter((a) => !client || a.visibility === "client")
+            .map((a) => (
+              <li key={a.id}>
+                <a
+                  href={
+                    "/api/coordination/" +
+                    role +
+                    "/file?id=" +
+                    encodeURIComponent(a.id) +
+                    (client ? "" : "&job=" + encodeURIComponent(job.id))
+                  }
                 >
-                  Submit current request
+                  {a.name}
+                </a>
+                {!client && (
+                  <span>
+                    {" "}
+                    ·{" "}
+                    {a.visibility === "client"
+                      ? "Shared with client"
+                      : "Provider only"}
+                  </span>
+                )}
+              </li>
+            ))}
+        </ul>
+        {canEdit && (
+          <label>
+            Add a reference file
+            <input
+              type="file"
+              accept="application/pdf,image/jpeg,image/png"
+              disabled={busy}
+              onChange={async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setFileError("");
+                if (file.size > 512 * 1024) {
+                  setFileError("Use a file up to 512 KiB.");
+                  return;
+                }
+                try {
+                  const bytes = new Uint8Array(await file.arrayBuffer());
+                  let content = "";
+                  for (let i = 0; i < bytes.length; i += 8192)
+                    content += String.fromCharCode(...bytes.slice(i, i + 8192));
+                  await upload({
+                    name: file.name,
+                    type: file.type,
+                    content: btoa(content),
+                    expectedRevision: job.revision,
+                    visibility: "client",
+                  });
+                  e.target.value = "";
+                } catch {
+                  setFileError(
+                    "File could not be read. Keep the original and try again.",
+                  );
+                }
+              }}
+            />
+          </label>
+        )}
+        {(job.fields.otherDocuments || job.fields.reference1Url) && (
+          <p className="coord-pre">
+            {job.fields.otherDocuments}
+            <br />
+            {job.fields.reference1Url}
+          </p>
+        )}
+      </section>
+      <section
+        id="coord-work-progress"
+        className="coord-work-section coord-section"
+        tabIndex={-1}
+        hidden={tab !== "Progress"}
+        aria-label="Progress"
+      >
+        <h2>Project status</h2>
+        <p>{states[job.state]}</p>
+        {client && (
+          <div className="coord-notice">
+            <button
+              onClick={() => {
+                try {
+                  downloadClientWorkOrder(job, { brand });
+                  setDownloadNotice(
+                    "Work order download started. Check Downloads or your file manager; shared attachments are downloaded separately from Files.",
+                  );
+                } catch {
+                  setDownloadNotice(
+                    "The download could not start. Keep this page open and try again.",
+                  );
+                }
+              }}
+            >
+              Download work order
+            </button>
+            {downloadNotice && <p role="status">{downloadNotice}</p>}
+          </div>
+        )}
+        <div className="coord-payment">
+          <strong>Provider-reported payment</strong>
+          <p>
+            {job.fields.paidAmount
+              ? job.fields.paidAmount +
+                " " +
+                job.fields.currency +
+                " recorded received" +
+                (job.fields.paidDate ? " on " + job.fields.paidDate : "")
+              : "Payment receipt has not been confirmed."}
+          </p>
+          <span className="coord-small">
+            This is the provider’s record. Bank settlement is not connected.
+          </span>
+        </div>
+        {client && job.state === "delivered" && (
+          <button
+            disabled={busy || job.deliveryAccepted}
+            onClick={() => command(job, "accept_delivery")}
+          >
+            {job.deliveryAccepted
+              ? "Delivery acknowledged"
+              : "Acknowledge delivery"}
+          </button>
+        )}
+        {!client && (
+          <>
+            {["confirmed", "in_progress", "work_completed"].includes(
+              job.state,
+            ) && (
+              <div className="coord-actions">
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    command(job, "progress", { state: "in_progress" })
+                  }
+                >
+                  Mark in progress
                 </button>
-              )}
-              {!client && (
+                <button
+                  disabled={busy || issues.length > 0}
+                  onClick={() =>
+                    command(job, "progress", { state: "work_completed" })
+                  }
+                >
+                  Mark work completed
+                </button>
+                <button
+                  disabled={busy || issues.length > 0}
+                  onClick={() =>
+                    command(job, "progress", { state: "delivered" })
+                  }
+                >
+                  Mark delivered
+                </button>
+              </div>
+            )}
+            <label>
+              {closed ? "Reason to reopen" : "Closure / cancellation reason"}
+              <textarea
+                rows={2}
+                value={reason}
+                maxLength={2000}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </label>
+            {!closed && !job.accepted && (
+              <>
                 <label className="coord-check">
                   <input
                     type="checkbox"
-                    checked={authorized}
-                    onChange={(e) => setAuthorized(e.target.checked)}
+                    checked={notifyDecline}
+                    disabled={busy || !job.fields.requesterEmail}
+                    onChange={(e) => setNotifyDecline(e.target.checked)}
                   />
-                  I authorize {price / CREDIT_UNIT} credits for this job once
-                  both sides approve. Later edits and reopening carry no second
-                  project charge.
+                  Email the decline response{" "}
+                  {job.fields.requesterEmail
+                    ? "(optional)"
+                    : "(no email provided)"}
                 </label>
-              )}
-              <button
-                disabled={
-                  busy ||
-                  issues.length > 0 ||
-                  job.state === "draft" ||
-                  (!client && !authorized) ||
-                  Object.keys(changed).length > 0
-                }
-                onClick={() =>
-                  command(
-                    job,
-                    "approve",
-                    client ? {} : { authorizedMicros: price },
-                  )
-                }
-              >
-                {client
-                  ? "Approve this project"
-                  : "Approve & authorize job credits"}
-              </button>
-            </>
-          )}
-        </>
-      )}
-      {tab === "Updates" && (
-        <>
-          <h2>What needs attention</h2>
-          {activity.length > 0 && (
-            <details>
-              <summary>Recent project activity</summary>
-              <ol className="coord-activity">
-                {activity.slice(0, 20).map((e) => (
-                  <li key={e.id}>
-                    <strong>{e.label}</strong>
-                    <span>
-                      {date(e.at)} · Revision {e.revision}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </details>
-          )}
-          {issues
-            .filter((i) => i.kind === "missing")
-            .map((i) => (
-              <p key={i.field}>{i.label || labels[i.field]} is required.</p>
-            ))}
-          {job.questions.map((q) => (
-            <div className="coord-thread" key={q.id}>
-              <strong>{q.text}</strong>
-              {q.answer ? (
-                <p>{q.answer}</p>
-              ) : (
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    const answer = new FormData(e.currentTarget).get("answer");
-                    await command(job, "answer", {
-                      questionId: q.id,
-                      text: answer,
-                    });
-                  }}
-                >
-                  <label>
-                    Your answer
-                    <textarea
-                      name="answer"
-                      rows={2}
-                      required
-                      maxLength={2000}
-                      disabled={!canEdit || busy}
-                    />
-                  </label>
-                  <button disabled={!canEdit || busy}>Send answer</button>
-                </form>
-              )}
-            </div>
-          ))}
-          {job.updates.map((u) => (
-            <div className="coord-thread" key={u.id}>
-              <strong>
-                {u.fields.map((k) => labels[k]).join(", ")} changed
-              </strong>
-              <p>
-                {date(u.at)} ·{" "}
-                {u.acknowledged
-                  ? "Provider acknowledged"
-                  : "Provider acknowledgment needed"}
-              </p>
-              {!client && !u.acknowledged && (
                 <button
-                  disabled={busy || !canEdit}
+                  disabled={busy}
                   onClick={() =>
-                    command(job, "acknowledge", { updateId: u.id })
+                    command(job, "decline", { reason, notify: notifyDecline })
                   }
                 >
-                  I’ve reviewed this update
+                  Decline request
+                </button>
+                <p className="coord-small">
+                  The client status page will show Declined and any response
+                  above, with access ending in 30 days.
+                </p>
+              </>
+            )}
+            <div className="coord-actions">
+              {job.state === "delivered" && (
+                <button
+                  disabled={
+                    busy ||
+                    issues.length > 0 ||
+                    (!job.deliveryAccepted && !reason.trim())
+                  }
+                  onClick={() => command(job, "close", { reason })}
+                >
+                  Close completed job
                 </button>
               )}
-            </div>
-          ))}
-          {!client && canEdit && (
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const result = await command(job, "question", { text });
-                if (result) setText("");
-              }}
-            >
-              <label>
-                Ask the client to clarify
-                <textarea
-                  value={text}
-                  maxLength={2000}
-                  required
-                  rows={2}
-                  onChange={(e) => setText(e.target.value)}
-                />
-              </label>
-              <button disabled={busy}>Send question</button>
-            </form>
-          )}
-          {!issues.length && !job.questions.length && !job.updates.length && (
-            <p>No unresolved updates.</p>
-          )}
-        </>
-      )}
-      {tab === "Files" && (
-        <>
-          <h2>Plans and reference files</h2>
-          <p>
-            PDF, JPEG or PNG, up to 512 KiB each. Files stay in the provider’s
-            private Google Drive.
-          </p>
-          {fileError && <p role="alert">{fileError}</p>}
-          <ul>
-            {job.attachments
-              .filter((a) => !client || a.visibility === "client")
-              .map((a) => (
-                <li key={a.id}>
-                  <a
-                    href={
-                      "/api/coordination/" +
-                      role +
-                      "/file?id=" +
-                      encodeURIComponent(a.id) +
-                      (client ? "" : "&job=" + encodeURIComponent(job.id))
-                    }
-                  >
-                    {a.name}
-                  </a>
-                  {!client && (
-                    <span>
-                      {" "}
-                      ·{" "}
-                      {a.visibility === "client"
-                        ? "Shared with client"
-                        : "Provider only"}
-                    </span>
-                  )}
-                </li>
-              ))}
-          </ul>
-          {canEdit && (
-            <label>
-              Add a reference file
-              <input
-                type="file"
-                accept="application/pdf,image/jpeg,image/png"
-                disabled={busy}
-                onChange={async (e) => {
-                  const file = e.target.files[0];
-                  if (!file) return;
-                  setFileError("");
-                  if (file.size > 512 * 1024) {
-                    setFileError("Use a file up to 512 KiB.");
-                    return;
-                  }
-                  try {
-                    const bytes = new Uint8Array(await file.arrayBuffer());
-                    let content = "";
-                    for (let i = 0; i < bytes.length; i += 8192)
-                      content += String.fromCharCode(
-                        ...bytes.slice(i, i + 8192),
-                      );
-                    await upload({
-                      name: file.name,
-                      type: file.type,
-                      content: btoa(content),
-                      expectedRevision: job.revision,
-                      visibility: "client",
-                    });
-                    e.target.value = "";
-                  } catch {
-                    setFileError(
-                      "File could not be read. Keep the original and try again.",
-                    );
-                  }
-                }}
-              />
-            </label>
-          )}
-          {(job.fields.otherDocuments || job.fields.reference1Url) && (
-            <p className="coord-pre">
-              {job.fields.otherDocuments}
-              <br />
-              {job.fields.reference1Url}
-            </p>
-          )}
-        </>
-      )}
-      {tab === "Progress" && (
-        <>
-          <h2>Project status</h2>
-          <p>{states[job.state]}</p>
-          {client && (
-            <div className="coord-notice">
-              <button
-                onClick={() => {
-                  try {
-                    downloadClientWorkOrder(job, { brand });
-                    setDownloadNotice(
-                      "Work order download started. Check Downloads or your file manager; shared attachments are downloaded separately from Files.",
-                    );
-                  } catch {
-                    setDownloadNotice(
-                      "The download could not start. Keep this page open and try again.",
-                    );
-                  }
-                }}
-              >
-                Download work order
-              </button>
-              {downloadNotice && <p role="status">{downloadNotice}</p>}
-            </div>
-          )}
-          <div className="coord-payment">
-            <strong>Provider-reported payment</strong>
-            <p>
-              {job.fields.paidAmount
-                ? job.fields.paidAmount +
-                  " " +
-                  job.fields.currency +
-                  " recorded received" +
-                  (job.fields.paidDate ? " on " + job.fields.paidDate : "")
-                : "Payment receipt has not been confirmed."}
-            </p>
-            <span className="coord-small">
-              This is the provider’s record. Bank settlement is not connected.
-            </span>
-          </div>
-          {client && job.state === "delivered" && (
-            <button
-              disabled={busy || job.deliveryAccepted}
-              onClick={() => command(job, "accept_delivery")}
-            >
-              {job.deliveryAccepted
-                ? "Delivery acknowledged"
-                : "Acknowledge delivery"}
-            </button>
-          )}
-          {!client && (
-            <>
-              {["confirmed", "in_progress", "work_completed"].includes(
-                job.state,
-              ) && (
-                <div className="coord-actions">
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      command(job, "progress", { state: "in_progress" })
-                    }
-                  >
-                    Mark in progress
-                  </button>
-                  <button
-                    disabled={busy || issues.length > 0}
-                    onClick={() =>
-                      command(job, "progress", { state: "work_completed" })
-                    }
-                  >
-                    Mark work completed
-                  </button>
-                  <button
-                    disabled={busy || issues.length > 0}
-                    onClick={() =>
-                      command(job, "progress", { state: "delivered" })
-                    }
-                  >
-                    Mark delivered
-                  </button>
-                </div>
+              {canEdit && (
+                <button
+                  disabled={busy || !reason.trim()}
+                  onClick={() => command(job, "cancel", { reason })}
+                >
+                  Cancel job
+                </button>
               )}
-              <label>
-                {closed ? "Reason to reopen" : "Closure / cancellation reason"}
-                <textarea
-                  rows={2}
-                  value={reason}
-                  maxLength={2000}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              </label>
-              {!closed && !job.accepted && (
-                <>
-                  <label className="coord-check">
-                    <input
-                      type="checkbox"
-                      checked={notifyDecline}
-                      disabled={busy || !job.fields.requesterEmail}
-                      onChange={(e) => setNotifyDecline(e.target.checked)}
-                    />
-                    Email the decline response{" "}
-                    {job.fields.requesterEmail
-                      ? "(optional)"
-                      : "(no email provided)"}
-                  </label>
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      command(job, "decline", { reason, notify: notifyDecline })
-                    }
-                  >
-                    Decline request
-                  </button>
-                  <p className="coord-small">
-                    The client status page will show Declined and any response
-                    above, with access ending in 30 days.
-                  </p>
-                </>
+              {closed && (
+                <button
+                  disabled={busy || !reason.trim()}
+                  onClick={() => command(job, "reopen", { reason })}
+                >
+                  Reopen for correction
+                </button>
               )}
-              <div className="coord-actions">
-                {job.state === "delivered" && (
-                  <button
-                    disabled={
-                      busy ||
-                      issues.length > 0 ||
-                      (!job.deliveryAccepted && !reason.trim())
-                    }
-                    onClick={() => command(job, "close", { reason })}
-                  >
-                    Close completed job
-                  </button>
-                )}
-                {canEdit && (
-                  <button
-                    disabled={busy || !reason.trim()}
-                    onClick={() => command(job, "cancel", { reason })}
-                  >
-                    Cancel job
-                  </button>
-                )}
-                {closed && (
-                  <button
-                    disabled={busy || !reason.trim()}
-                    onClick={() => command(job, "reopen", { reason })}
-                  >
-                    Reopen for correction
-                  </button>
-                )}
-                {closed && job.state !== "archived" && (
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      command(job, "extend", {
-                        until: Date.now() + 90 * 86400000,
-                      })
-                    }
-                  >
-                    Extend client access 90 days
-                  </button>
-                )}
-                {closed && job.state !== "archived" && (
-                  <button
-                    disabled={busy || !reason.trim()}
-                    onClick={() => command(job, "archive_early", { reason })}
-                  >
-                    Archive now · end client access
-                  </button>
-                )}
-                {job.state === "archived" && (
-                  <p>
-                    This archived history is available to the provider. To
-                    resume corrections, enter a reason and reopen the job.
-                    {invite
-                      ? " Send a fresh client sign-in link when ready."
-                      : " The prospect uses the private status link received after submission."}
-                  </p>
-                )}
-              </div>
               {closed && job.state !== "archived" && (
-                <p>
-                  Archiving now ends client access immediately, retains the
-                  original records and files, and verifies an archive in your
-                  private Drive folder. Record a reason before choosing this
-                  action.
-                </p>
-              )}
-              {invite && !closed && (
-                <button disabled={busy || !inviteAvailable} onClick={invite}>
-                  Send a fresh client sign-in link
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    command(job, "extend", {
+                      until: Date.now() + 90 * 86400000,
+                    })
+                  }
+                >
+                  Extend client access 90 days
                 </button>
               )}
-              {archive && (
+              {closed && job.state !== "archived" && (
+                <button
+                  disabled={busy || !reason.trim()}
+                  onClick={() => command(job, "archive_early", { reason })}
+                >
+                  Archive now · end client access
+                </button>
+              )}
+              {job.state === "archived" && (
                 <p>
-                  <a
-                    href={
-                      "https://drive.google.com/file/d/" +
-                      encodeURIComponent(archive.fileId) +
-                      "/view"
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open verified archive in your Google Drive
-                  </a>
+                  This archived history is available to the provider. To resume
+                  corrections, enter a reason and reopen the job.
+                  {invite
+                    ? " Send a fresh client sign-in link when ready."
+                    : " The prospect uses the private status link received after submission."}
                 </p>
               )}
-            </>
-          )}
-        </>
-      )}
+            </div>
+            {closed && job.state !== "archived" && (
+              <p>
+                Archiving now ends client access immediately, retains the
+                original records and files, and verifies an archive in your
+                private Drive folder. Record a reason before choosing this
+                action.
+              </p>
+            )}
+            {invite && !closed && (
+              <button disabled={busy || !inviteAvailable} onClick={invite}>
+                Send a fresh client sign-in link
+              </button>
+            )}
+            {archive && (
+              <p>
+                <a
+                  href={
+                    "https://drive.google.com/file/d/" +
+                    encodeURIComponent(archive.fileId) +
+                    "/view"
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open verified archive in your Google Drive
+                </a>
+              </p>
+            )}
+          </>
+        )}
+      </section>
     </section>
   );
 }

@@ -1,5 +1,17 @@
 import assert from "node:assert/strict";
 
+export async function navigateWorkspace(ui, page) {
+  const { fireEvent, waitFor } = await import("@testing-library/react");
+  const home = ui.queryByRole("button", { name: "Home", exact: true });
+  if (home) {
+    await waitFor(() => assert.equal(home.disabled, false));
+    fireEvent.click(home);
+  }
+  const action = await ui.findByRole("button", { name: page, exact: true });
+  await waitFor(() => assert.equal(action.disabled, false));
+  fireEvent.click(action);
+}
+
 // Existing workspace tests enter through the same explicit choice as a user.
 export async function enterWorkspace(ui) {
   const { fireEvent, waitFor, act } = await import("@testing-library/react");

@@ -80,7 +80,7 @@
 .welcome-logo-stage {
   width: min(100%, 330px);
   height: clamp(180px, 28svh, 244px);
-  margin: 0 auto 12px;
+  margin: 0 auto 40px;
   position: relative;
 }
 .welcome-lion-anchor {
@@ -326,7 +326,7 @@
   }
   .welcome-logo-stage {
     height: 180px;
-    margin-bottom: 3px;
+    margin-bottom: 30px;
   }
   .welcome-account {
     margin-top: 28px;

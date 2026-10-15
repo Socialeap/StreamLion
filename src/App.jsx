@@ -6,22 +6,24 @@ import {
   listProjectDrafts,
   projectDraftKey,
 } from "./drafts";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { updateReady, subscribeUpdate, applyUpdate } from "./updates.js";
 import {
-  FileText,
-  NotebookPen,
-  Link,
-  MessageCircle,
-  Ruler,
-} from "lucide-react";
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { updateReady, subscribeUpdate, applyUpdate } from "./updates.js";
 import Jobs from "./Jobs";
-import ThemeSwitch from "./ThemeSwitch.jsx";
-import ProviderManualButton from "./ProviderManual.jsx";
+import {
+  AppHeader,
+  BottomNavigation,
+  SectionNavigation,
+  usePageSections,
+} from "./AppNavigation.jsx";
 import { DEVICE_SETUP_KEY } from "./WorkspaceSetup.jsx";
 import WelcomeScreen from "./WelcomeScreen.jsx";
 import LicenseGate from "./LicenseGate.jsx";
-import AccountStatus from "./AccountStatus.jsx";
 import InstallApp from "./InstallApp.jsx";
 import { googleSignInFailure } from "./google-signin-errors.js";
 import Notes from "./Notes";
@@ -79,7 +81,21 @@ function rememberedWorkbook() {
     return "";
   }
 }
+function requestedPage() {
+  const page = new URLSearchParams(window.location.search).get("page");
+  return [
+    "Projects",
+    "Field notes",
+    "Measurements",
+    "Ask",
+    "Connections",
+    "Account",
+  ].includes(page)
+    ? page
+    : "";
+}
 export default function App() {
+  const entryPage = useRef(requestedPage());
   const newerVersion = useSyncExternalStore(subscribeUpdate, updateReady);
   const [local, setLocal] = useState(emptyWorkspace),
     current = useRef(null),
@@ -87,7 +103,7 @@ export default function App() {
   const [ready, setReady] = useState(false),
     [error, setError] = useState(""),
     [status, setStatus] = useState("Opening device records…");
-  const [page, setPage] = useState("Projects"),
+  const [page, setPage] = useState(() => requestedPage() || "Projects"),
     [selected, setSelected] = useState(""),
     [editing, setEditing] = useState(null),
     [captureBusy, setCaptureBusy] = useState(false),
@@ -112,11 +128,34 @@ export default function App() {
   const [checkingConnection, setCheckingConnection] = useState(true);
   const [welcomeOpen, setWelcomeOpen] = useState(
     () =>
+      !requestedPage() &&
       !["connected", "expired", "cancelled", "failed"].includes(
         new URLSearchParams(window.location.search).get("google"),
       ),
   );
   const [animateWelcome, setAnimateWelcome] = useState(true);
+  const pageRoot = useRef(null);
+  const [pageElement, setPageElement] = useState(null);
+  const bindPageRoot = useCallback((element) => {
+    pageRoot.current = element;
+    setPageElement(element);
+  }, []);
+  const pageSections = usePageSections(
+    pageRoot,
+    `${page}:${!!editing}`,
+    !!pageElement && !welcomeOpen && (page !== "Projects" || !!editing),
+  );
+  useEffect(() => {
+    if (requestedPage()) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("page");
+      window.history.replaceState(
+        null,
+        "",
+        url.pathname + url.search + url.hash,
+      );
+    }
+  }, []);
   const restoreEpoch = useRef(0);
   const editorOpen = !!editing;
   useEffect(() => {
@@ -149,7 +188,7 @@ export default function App() {
       refreshDrafts(connection.bookId);
       if (!connection.bookId) {
         setStatus("Google connected · choose a workbook");
-        setPage("Connections");
+        if (entryPage.current !== "Account") setPage("Connections");
         return;
       }
       const data = await readWorkbook(connection.bookId);
@@ -367,6 +406,7 @@ export default function App() {
           setSelected(savedProject);
           if (
             navigation.current.page === "Projects" &&
+            entryPage.current !== "Projects" &&
             !navigation.current.editing
           )
             setPage("Project home");
@@ -917,6 +957,7 @@ export default function App() {
   }
   const disabled = captureBusy || syncBusy || outboxBusy;
   const navigate = (p) => {
+    if (disabled) return;
     refreshDrafts();
     setEditing(null);
     setPage(p);
@@ -966,95 +1007,36 @@ export default function App() {
     );
   const workspaceContent = (
     <div className={`app${page === "Ask" && !editing ? " app-ask" : ""}`}>
-      <aside className="sidebar">
-        <div
-          className={page === "Ask" && !editing ? "ask-app-header" : undefined}
-        >
-          <div className="brand">
-            <span className="brand-mark" aria-hidden="true" />
-            <span>StreamLion</span>
-          </div>
-          {page === "Ask" && !editing && (
-            <div id="ask-read-aloud-controls" className="ask-read-aloud-slot" />
-          )}
-        </div>
-        <nav aria-label="Main">
-          {[
-            [FileText, "Projects"],
-            [NotebookPen, "Field notes"],
-            [Ruler, "Measurements"],
-            [MessageCircle, "Ask"],
-            [Link, "Connections"],
-          ].map(([Icon, label]) => (
-            <button
-              key={label}
-              aria-label={label}
-              aria-current={page === label ? "page" : undefined}
-              disabled={disabled}
-              className={page === label ? "active" : ""}
-              onClick={() => navigate(label)}
-              title={
-                {
-                  Projects: "Find, review, or create a project.",
-                  "Field notes": "Record what happened at a site.",
-                  Measurements:
-                    "Dictate or type exact dimensions and organize them by room.",
-                  Ask: "Get quick answers from your project or discuss it in your own ChatGPT account.",
-                  Connections:
-                    "Connect your Google account and choose a workbook.",
-                }[label]
-              }
-            >
-              <Icon size={20} />
-              {label === "Measurements" ? (
-                <>
-                  <span className="measure-nav-full">Measurements</span>
-                  <span className="measure-nav-short" aria-hidden="true">
-                    Measure
-                  </span>
-                </>
-              ) : (
-                label
-              )}
-            </button>
-          ))}
-          <a className="client-coordination-link" href="/api/client-requests">
-            <FileText size={20} />
-            <span>Client requests</span>
-          </a>
-        </nav>
-        {!(page === "Connections" && bookId) && (
-          <div
+      <AppHeader
+        account={googleAccount()}
+        connected={hasGoogleSession()}
+        checking={checkingConnection}
+        error={restoreError}
+        bookId={bookId}
+        verified={!!remote}
+        disabled={disabled}
+        onHome={() => navigate("Projects")}
+        onAccount={() => navigate("Account")}
+      />
+      <main ref={bindPageRoot}>
+        {page === "Ask" && !editing && (
+          <div id="ask-read-aloud-controls" className="ask-read-aloud-slot" />
+        )}
+        {status && !(["Connections", "Account"].includes(page) && bookId) && (
+          <p
             className={
               status.startsWith("Google records refreshed") ||
               status === "Device workspace"
                 ? "sr-only"
                 : "workspace-status"
             }
+            role="status"
           >
-            <span role="status">{status}</span>
-          </div>
+            {status === "Device workspace"
+              ? "Device only · not synced to Google"
+              : status}
+          </p>
         )}
-      </aside>
-      <main>
-        <header
-          className="app-utility"
-          aria-label="Workspace help and appearance"
-        >
-          <AccountStatus
-            checking={checkingConnection}
-            error={restoreError}
-            connected={hasGoogleSession()}
-            account={googleAccount()}
-            bookId={bookId}
-            verified={!!remote}
-            disabled={disabled}
-            onOpen={() => navigate("Connections")}
-          />
-          <InstallApp disabled={disabled} />
-          <ProviderManualButton />
-          {page !== "Ask" && <ThemeSwitch />}
-        </header>
         {newerVersion && (
           <section className="sync-bar" aria-label="App update">
             <span className={page === "Ask" ? "sr-only" : undefined}>
@@ -1399,42 +1381,87 @@ export default function App() {
             />
           </>
         ) : (
-          <Connections
-            bookId={bookId}
-            googleConnected={!!remote && hasGoogleSession()}
-            recordStatus={status}
-            onRefresh={refresh}
-            onRestore={restoreConnection}
-            restoreError={restoreError}
-            onWorkbook={connectBook}
-            onDisconnect={disconnect}
-            onSignOut={signOut}
-            busyCapture={disabled || checkingConnection}
-            siteCopy={siteCopy}
-            onSiteCopy={keepSiteCopy}
-            onConnectionBusy={setSyncBusy}
-            onContinue={() => navigate("Projects")}
-            onBackupBusy={setSyncBusy}
-            onBackupRestored={async () => {
-              const restored = await loadWorkspace();
-              current.current = restored;
-              setLocal(restored);
-              const destination = bookId || rememberedWorkbook();
-              if (!bookId) setBookId(destination);
-              refreshDrafts(destination);
-              const copy = await loadSiteCopy(destination);
-              cacheLoadEpoch.current++;
-              setSiteCopy(copy);
-              cacheEnabled.current = !!copy;
-              pending.current = destination
-                ? readDraft(`${destination}:pending-write`)
-                : null;
-              setHasPending(!!pending.current);
-              setStatus("Device backup restored");
-            }}
-          />
+          <>
+            {page === "Account" && (
+              <section className="account-overview">
+                <h1>Account</h1>
+                <p>
+                  {hasGoogleSession()
+                    ? googleAccount()
+                    : "Not signed in · your device drafts are kept"}
+                </p>
+                <section className="account-security">
+                  <h2>Sign-in and security</h2>
+                  <p>
+                    StreamLion uses your Google account to sign in. Manage your
+                    Google password and account protection in Google.
+                  </p>
+                  <a
+                    href="https://myaccount.google.com/security"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Google account security ↗
+                  </a>
+                  <p>
+                    <a href="/api/purchase">Purchase and license</a> ·{" "}
+                    <a href="/api/credits">Credits</a>
+                  </p>
+                </section>
+                <InstallApp disabled={disabled} />
+              </section>
+            )}
+            <Connections
+              accountPage={page === "Account"}
+              bookId={bookId}
+              googleConnected={!!remote && hasGoogleSession()}
+              recordStatus={status}
+              onRefresh={refresh}
+              onRestore={restoreConnection}
+              restoreError={restoreError}
+              onWorkbook={connectBook}
+              onDisconnect={disconnect}
+              onSignOut={signOut}
+              busyCapture={disabled || checkingConnection}
+              siteCopy={siteCopy}
+              onSiteCopy={keepSiteCopy}
+              onConnectionBusy={setSyncBusy}
+              onContinue={() => navigate("Projects")}
+              onBackupBusy={setSyncBusy}
+              onBackupRestored={async () => {
+                const restored = await loadWorkspace();
+                current.current = restored;
+                setLocal(restored);
+                const destination = bookId || rememberedWorkbook();
+                if (!bookId) setBookId(destination);
+                refreshDrafts(destination);
+                const copy = await loadSiteCopy(destination);
+                cacheLoadEpoch.current++;
+                setSiteCopy(copy);
+                cacheEnabled.current = !!copy;
+                pending.current = destination
+                  ? readDraft(`${destination}:pending-write`)
+                  : null;
+                setHasPending(!!pending.current);
+                setStatus("Device backup restored");
+              }}
+            />
+          </>
         )}
       </main>
+      {pageSections.length > 2 ? (
+        <SectionNavigation
+          sections={pageSections}
+          onHome={() => navigate("Projects")}
+          disabled={disabled}
+        />
+      ) : (
+        <BottomNavigation
+          page={page}
+          onNavigate={navigate}
+          disabled={disabled}
+        />
+      )}
     </div>
   );
   return <LicenseGate>{workspaceContent}</LicenseGate>;

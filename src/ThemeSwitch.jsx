@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { THEME_KEY, preferredTheme, applyTheme } from "./theme.js";
 
@@ -7,6 +7,13 @@ export default function ThemeSwitch({ initialTheme } = {}) {
     ["light", "dark"].includes(initialTheme) ? initialTheme : preferredTheme(),
   );
   const [error, setError] = useState("");
+  useEffect(() => {
+    function syncTheme(event) {
+      if (["light", "dark"].includes(event.detail)) setTheme(event.detail);
+    }
+    window.addEventListener("streamlion-theme-changed", syncTheme);
+    return () => window.removeEventListener("streamlion-theme-changed", syncTheme);
+  }, []);
   useLayoutEffect(() => {
     applyTheme(theme);
   }, [theme]);
@@ -20,6 +27,9 @@ export default function ThemeSwitch({ initialTheme } = {}) {
         "Theme changed for this visit. This browser could not remember it.",
       );
     }
+    window.dispatchEvent(
+      new window.CustomEvent("streamlion-theme-changed", { detail: next }),
+    );
   }
   return (
     <div className="appearance-control">

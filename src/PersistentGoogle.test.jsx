@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { enterWorkspace } from "./test-workspace.js";
+import { enterWorkspace, navigateWorkspace } from "./test-workspace.js";
 import React from "react";
 import { JSDOM } from "jsdom";
 import test from "node:test";
@@ -133,11 +133,11 @@ test("a transient startup error can be retried without asking the user to author
     // Connection actions lock navigation until workbook verification finishes.
     await waitFor(() =>
       assert.equal(
-        ui.getByRole("button", { name: "Projects", exact: true }).disabled,
+        ui.getByRole("button", { name: "Home", exact: true }).disabled,
         false,
       ),
     );
-    fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
+    await navigateWorkspace(ui, "Projects");
     await ui.findByRole("button", { name: "Automatically restored job" });
     cleanup();
   } finally {
@@ -197,7 +197,7 @@ test("a failed Google refresh replaces the success status, preserves records and
       ui.queryByText("Google records refreshed", { exact: true }),
       null,
     );
-    fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
+    await navigateWorkspace(ui, "Projects");
     assert.ok(ui.getByRole("button", { name: "Automatically restored job" }));
     fireEvent.click(
       ui.getByRole("button", { name: "Connections", exact: true }),
@@ -252,9 +252,7 @@ test("working pages keep drafts while Google refresh lives in Connections", asyn
       ui.queryByRole("button", { name: "Ask about this project" }),
       null,
     );
-    fireEvent.click(
-      ui.getByRole("button", { name: "Measurements", exact: true }),
-    );
+    await navigateWorkspace(ui, "Measurements");
     assert.equal(
       ui.queryByRole("button", { name: "Refresh from Google" }),
       null,
@@ -272,9 +270,7 @@ test("working pages keep drafts while Google refresh lives in Connections", asyn
       ui.getByRole("button", { name: "Refresh from Google" }).disabled,
       false,
     );
-    fireEvent.click(
-      ui.getByRole("button", { name: "Measurements", exact: true }),
-    );
+    await navigateWorkspace(ui, "Measurements");
     assert.equal(ui.getByLabelText("Room or exterior area").value, "Office 2");
     assert.equal(
       ui.getByLabelText("Dictate or type measurements").value,
@@ -288,7 +284,7 @@ test("working pages keep drafts while Google refresh lives in Connections", asyn
       ui.getByLabelText("Note", { exact: true }).value,
       "Keep this unfinished field note.",
     );
-    fireEvent.click(ui.getByRole("button", { name: "Projects", exact: true }));
+    await navigateWorkspace(ui, "Projects");
     fireEvent.click(
       ui.getByRole("button", { name: "Automatically restored job" }),
     );

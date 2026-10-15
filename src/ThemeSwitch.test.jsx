@@ -72,3 +72,14 @@ test("unavailable storage does not prevent a theme change and explains its lifet
   }
 });
 test.after(() => dom.window.close());
+
+test("the page and manual header theme controls stay synchronized", () => {
+  localStorage.clear();
+  window.matchMedia = () => ({ matches: true });
+  const ui = render(<><ThemeSwitch /><ThemeSwitch /></>);
+  fireEvent.click(ui.getAllByRole("button", { name: "Light theme" })[1]);
+  assert(ui.getAllByRole("button", { name: "Light theme" }).every((button) => button.getAttribute("aria-pressed") === "true"));
+  fireEvent.click(ui.getAllByRole("button", { name: "Dark theme" })[0]);
+  assert(ui.getAllByRole("button", { name: "Dark theme" }).every((button) => button.getAttribute("aria-pressed") === "true"));
+  cleanup();
+});
