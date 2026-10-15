@@ -263,6 +263,52 @@ test("a pending session check cannot flash new-user setup or a signed-out identi
   );
   await ui.findByRole("heading", { name: "Set up StreamLion" });
 });
+test("successful workbook refresh clears a previous connection-check failure", async () => {
+  session = {
+    enabled: true,
+    connected: true,
+    subject: "synthetic-a",
+    account: "qa-a@example.com",
+    bookId: "saved-book",
+    folderId: "",
+  };
+  const fetcher = globalThis.fetch;
+  let unavailableWorkbook = true;
+  globalThis.fetch = async (url, options) => {
+    if (!url.startsWith("/api/google/sheets?")) return fetcher(url, options);
+    if (unavailableWorkbook) return new Response("{}", { status: 400 });
+    const path = new URL(url, "https://app.example").searchParams.get("path");
+    return new Response(
+      JSON.stringify(
+        path.includes("batchGet")
+          ? {
+              valueRanges: Object.values(TABS).map((headers) => ({
+                values: [headers],
+              })),
+            }
+          : {
+              sheets: Object.keys(TABS).map((title) => ({
+                properties: { title, gridProperties: { rowCount: 20 } },
+              })),
+            },
+      ),
+    );
+  };
+  const ui = render(<App />);
+  fireEvent.click(
+    await ui.findByRole("button", { name: /Account: Connection unavailable/ }),
+  );
+  await ui.findByRole("heading", { name: "Connections" });
+  unavailableWorkbook = false;
+  fireEvent.click(ui.getByRole("button", { name: "Refresh from Google" }));
+  await ui.findByRole("button", {
+    name: /Account: qa-a@example.com. Google workbook connected/,
+  });
+  assert.equal(
+    ui.queryByRole("button", { name: /Retry saved connection/ }),
+    null,
+  );
+});
 test("install guidance is available without an install event and never claims installation", async () => {
   const ui = render(<App />);
   await ui.findByRole("heading", { name: "Set up StreamLion" });

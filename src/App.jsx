@@ -216,6 +216,7 @@ export default function App() {
     };
   }, [bookId]);
   async function acceptRemote(data, destination = bookId) {
+    setRestoreError("");
     setRemote(data);
     setVerifiedAt(new Date().toISOString());
     if (cacheEnabled.current && destination === bookId) {
@@ -328,6 +329,7 @@ export default function App() {
   }
   async function connectBook(id, data, restoring = false) {
     if (!restoring) await rememberGoogleWorkbook(id);
+    setRestoreError("");
     try {
       localStorage.setItem(selectedWorkbookKey, id);
     } catch {
