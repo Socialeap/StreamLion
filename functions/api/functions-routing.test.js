@@ -22,6 +22,13 @@ const invokes = (config, path) =>
   config.include.some((pattern) => matches(pattern, path)) &&
   !config.exclude.some((pattern) => matches(pattern, path));
 
+const staticApiShells = [
+  ...readdirSync(new URL("../../api/", import.meta.url)),
+  ...readdirSync(new URL("../../public/api/", import.meta.url)),
+]
+  .filter((file) => file.endsWith(".html"))
+  .map((file) => "/api/" + file.replace(/\.html$/, ""));
+
 test("public assets and application shells bypass Pages Functions", () => {
   const config = routes();
   assert.equal(config.version, 1);
@@ -40,11 +47,12 @@ test("public assets and application shells bypass Pages Functions", () => {
     "/client/",
     "/coordination/",
     "/extension.html",
+    ...staticApiShells.flatMap((path) => [path, path + "/", path + ".html"]),
   ])
     assert.equal(invokes(config, path), false, path);
 });
 
-test("every server entry point retains Functions routing including trailing slashes", () => {
+test("every dynamic server entry point retains Functions routing including trailing slashes", () => {
   const config = routes();
   const files = readdirSync(new URL("../../functions/", import.meta.url), {
     recursive: true,
@@ -57,11 +65,25 @@ test("every server entry point retains Functions routing including trailing slas
   )) {
     const path = "/" + file.replace(/\.js$/, "").replace(/\/\[\[path\]\]$/, "");
     for (const suffix of [
-      "",
-      "/",
+      ...(staticApiShells.includes(path) ? [] : ["", "/"]),
       ...(file.includes("[[path]]") ? ["/synthetic/action"] : []),
     ])
       assert.equal(invokes(config, path + suffix), true, file + suffix);
   }
   assert.equal(invokes(config, "/api/new-endpoint"), true);
+  for (const path of [
+    "/api/purchase/status",
+    "/api/purchase/checkout",
+    "/api/purchase/webhook",
+    "/api/credits/status",
+    "/api/credits/checkout",
+    "/api/credits/webhook",
+    "/api/google/callback",
+    "/api/google/session",
+    "/api/coordination/provider/jobs",
+    "/api/coordination/client/verify",
+  ]) {
+    assert.equal(invokes(config, path), true, path);
+    assert.equal(invokes(config, path + "/"), true, path + "/");
+  }
 });
