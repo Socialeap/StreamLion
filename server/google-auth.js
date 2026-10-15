@@ -1,3 +1,4 @@
+import { base64url as b64, base64urlBytes as unb64 } from "./base64.js";
 import { FOLDER_MIME } from "../src/drive-folders.js";
 import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
@@ -9,21 +10,6 @@ const SCOPE = "openid email https://www.googleapis.com/auth/drive.file";
 const MAX_AGE = 90 * 86400;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const b64 = (bytes) => {
-  // Journaled uploads and archives exceed the engine's function-argument
-  // limit. Encode bounded chunks without changing the stored ciphertext format.
-  const chunks = [];
-  for (let offset = 0; offset < bytes.length; offset += 8192)
-    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 8192)));
-  return btoa(chunks.join(""))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
-};
-const unb64 = (text) =>
-  Uint8Array.from(atob(text.replaceAll("-", "+").replaceAll("_", "/")), (c) =>
-    c.charCodeAt(0),
-  );
 const random = () => b64(crypto.getRandomValues(new Uint8Array(32)));
 export async function hash(value) {
   return b64(

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "description": "Run server endpoints only; serve public shells and assets without a Function invocation.",
+  "include": [
+    "/api",
+    "/api/*",
+    "/mcp",
+    "/mcp/",
+    "/mcp-extension",
+    "/mcp-extension/",
+    "/.well-known/*"
+  ],
+  "exclude": []
+}

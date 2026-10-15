@@ -1,4 +1,5 @@
 import { googleFetch, seal, unseal } from "./google-auth.js";
+import { base64Bytes } from "./base64.js";
 import { reserveGoogleRequest } from "./google-limits.js";
 import { boundedText, boundedBytes } from "./request-body.js";
 import {
@@ -1108,7 +1109,7 @@ export class CoordinationGoogle {
   async upload(plan) {
     await this.privateFolder();
     const { attachment: a, content } = plan,
-      bytes = Uint8Array.from(atob(content), (c) => c.charCodeAt(0));
+      bytes = base64Bytes(content);
     if (!validID(a.driveId))
       throw new CoordinationError("Invalid attachment identity.");
     const existing = await this.callMetadata(a.driveId);
