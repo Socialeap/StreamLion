@@ -81,7 +81,7 @@ Previously skipped messages have their payload replaced and are not replayed by 
 
 ## Gate 4 — frontend release and public read-only checks
 
-This PR changes no frontend behavior or copy. Pages may release frontend assets and Functions together; verify both against the approved merged SHA through the existing pipeline. This gate does not authorize public sales or activation.
+Verify frontend assets and Functions against the approved merged SHA through the existing Pages pipeline. Changes to first-run setup, account status or installation also require the [new-user acceptance checks](first-run-setup.md#release-gates). This gate does not authorize public sales or activation.
 
 Use the actual script entry points; there are no corresponding `npm run verify:release`, `verify:purchases`, or `verify:credits` aliases:
 

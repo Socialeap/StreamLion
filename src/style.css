@@ -1,5 +1,6 @@
 @import "./theme.css";
 @import "./provider-manual.css";
+@import "./workspace-setup.css";
 
 .project-stages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 28px; }
 .project-stages button { border: 1px solid var(--line); justify-content: center; }

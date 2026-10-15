@@ -38,6 +38,7 @@ export default function Connections({
   onBackupBusy,
   onBackupRestored,
   onConnectionBusy,
+  onContinue,
 }) {
   const [error, setError] = useState(""),
     [status, setStatus] = useState(""),
@@ -136,6 +137,33 @@ export default function Connections({
         aria-label="Google Sheets & Drive"
       >
         <SectionHeading icon={FolderSync}>Google Sheets & Drive</SectionHeading>
+        {!(googleConnected && bookId) && (
+          <ol className="google-setup-steps" aria-label="Google setup steps">
+            <li>
+              Sign in with the Google account you want to use for your projects.
+              Connect Google opens Google's sign-in and consent screen.
+            </li>
+            <li>
+              Create a workbook or choose an existing StreamLion workbook. Your
+              Google account owns these records.
+            </li>
+            <li>
+              Once the workbook is verified, return to Projects. Use this same
+              account to reopen your work on another device.
+            </li>
+          </ol>
+        )}
+        {!connected && (
+          <p className="hint">
+            You are not signed in. Device-only records have not been sent to
+            Google. Connecting does not automatically move them.
+          </p>
+        )}
+        {googleConnected && bookId && onContinue && (
+          <button disabled={busy || busyCapture} onClick={onContinue}>
+            Continue to projects
+          </button>
+        )}
         {!(connected && bookId) && (
           <p>
             {googleConfig?.persistentEnabled
