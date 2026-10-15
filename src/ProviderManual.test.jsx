@@ -29,6 +29,42 @@ const { render, fireEvent, cleanup, within } =
   await import("@testing-library/react");
 const { default: ManualButton } = await import("./ProviderManual.jsx");
 
+test("manual section navigation exposes all stages and Home returns to Projects without changing drafts", (t) => {
+  t.after(cleanup);
+  let home = 0;
+  localStorage.setItem("manual-draft", "Keep exact 6 7/16 inches");
+  const ui = render(<ManualButton onHome={() => home++} />);
+  fireEvent.click(ui.getByRole("button", { name: "Open provider manual" }));
+  const guide = within(ui.getByRole("dialog"));
+  const nav = within(guide.getByRole("navigation", { name: "Page sections" }));
+  fireEvent.click(nav.getByRole("button", { name: "Home" }));
+  assert.equal(home, 1);
+  assert.equal(ui.queryByRole("dialog"), null);
+  assert.equal(
+    localStorage.getItem("manual-draft"),
+    "Keep exact 6 7/16 inches",
+  );
+});
+
+test("the manual section directory reveals the final stage and focuses it without changing the underlying input", async (t) => {
+  t.after(cleanup);
+  const ui = render(
+    <>
+      <textarea aria-label="Unfinished QA" defaultValue="Exact 5 3/8 inches" />
+      <ManualButton />
+    </>,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Open provider manual" }));
+  const guide = within(ui.getByRole("dialog"));
+  fireEvent.click(guide.getByRole("button", { name: /Sections: all 7/ }));
+  const directory = within(ui.getByRole("dialog", { name: "Page sections" }));
+  assert.equal(directory.getAllByRole("button", { name: /^Go to / }).length, 7);
+  fireEvent.click(directory.getByRole("button", { name: "Go to Deliver" }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(document.querySelectorAll(".manual-stage")[6].open, true);
+  assert.equal(ui.getByLabelText("Unfinished QA").value, "Exact 5 3/8 inches");
+});
+
 test("walkthrough opens chronological stages, exposes nested guidance and supports expand/collapse", (t) => {
   t.after(cleanup);
   const ui = render(<ManualButton />);

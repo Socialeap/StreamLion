@@ -36,6 +36,16 @@ const response = (v, status = 200) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
+function assertBillingNavigation(ui) {
+  const header = ui.getByRole("banner");
+  assert.ok(header.querySelector(".workspace-lion"));
+  assert.ok(ui.getByRole("button", { name: /^Account:/ }));
+  assert.ok(
+    ui
+      .getByRole("navigation", { name: "Main" })
+      .querySelector('a[href="/?page=Projects"]'),
+  );
+}
 test("a temporary configuration failure offers a working retry and clear sign-in/restore guidance", async (t) => {
   let fail = true;
   t.mock.method(globalThis, "fetch", async (url) =>
@@ -53,8 +63,11 @@ test("a temporary configuration failure offers a working retry and clear sign-in
         ),
   );
   const ui = render(<Purchase />);
+  assert.ok(ui.getByText("Checking purchase options…"));
+  assertBillingNavigation(ui);
   await act(async () => {});
   assert.match(ui.getByRole("alert").textContent, /Temporarily unavailable/);
+  assertBillingNavigation(ui);
   fail = false;
   await act(async () =>
     fireEvent.click(ui.getByRole("button", { name: "Check again" })),
@@ -65,6 +78,7 @@ test("a temporary configuration failure offers a working retry and clear sign-in
   );
   assert.ok(ui.getByText(/Already purchased/));
   assert.ok(ui.getByText(/No real payment/));
+  assertBillingNavigation(ui);
   cleanup();
 });
 for (const sessionId of [null, "cs_test_verified"])
@@ -97,6 +111,7 @@ for (const sessionId of [null, "cs_test_verified"])
       "/",
     );
     assert.ok(ui.getByText("provider@example.com"));
+    assertBillingNavigation(ui);
     assert.equal(ui.queryByRole("alert"), null);
     assert.equal(window.location.search, "");
     assert.equal(restored, 1);
@@ -172,6 +187,41 @@ test("approved live owner QA shows checkout with an explicit real-payment notice
   await act(async () => {});
   assert.ok(ui.getByRole("button", { name: "Continue to secure checkout" }));
   assert.match(ui.getByRole("note").textContent, /real money/);
+});
+test("workspace navigation preserves the verified account and secure-checkout control", async (t) => {
+  window.history.replaceState(null, "", "/api/purchase");
+  const checkouts = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    if (url.endsWith("checkout")) {
+      checkouts.push(options);
+      return response({ processing: true });
+    }
+    return response(
+      url.endsWith("config")
+        ? config
+        : {
+            enabled: true,
+            required: true,
+            connected: true,
+            purchased: false,
+            subject: "buyer",
+            account: "buyer@example.com",
+          },
+    );
+  });
+  t.after(cleanup);
+  const ui = render(<Purchase />);
+  await act(async () => {});
+  assertBillingNavigation(ui);
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "Continue to secure checkout" }),
+    ),
+  );
+  assert.equal(checkouts.length, 1);
+  assert.equal(checkouts[0].headers["X-StreamLion-Account"], "buyer");
+  assert.ok(ui.getByText(/Your payment is being confirmed/));
+  assertBillingNavigation(ui);
 });
 test("Core return confirmation works while new checkout is paused or its quote is unavailable", async (t) => {
   for (const unavailable of [false, true]) {

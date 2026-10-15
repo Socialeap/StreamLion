@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Info, WalletCards } from "lucide-react";
+import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
 import { creditLabel } from "./managed-ai.js";
 export async function creditRequest(path, { account, ...options } = {}) {
   const response = await fetch("/api/credits/" + path, {
@@ -121,135 +123,149 @@ export default function Credits() {
     }
   }
   return (
-    <section className="purchase-card" aria-labelledby="credits-title">
-      <a className="purchase-brand" href="/api/welcome">
-        <img src="/lion-mint.png" alt="" width="36" height="36" />
-        StreamLion
-      </a>
-      <h1 id="credits-title">Credits for client work and AI</h1>
-      <p>
-        One prepaid wallet for confirmed client jobs and the optional AI Project
-        Assistant. Add credits when you need them. No subscription or automatic
-        recharge.
-      </p>
-      {(config?.mode || account?.mode) === "test" && (
-        <p className="purchase-test" role="note">
-          Stripe test checkout. Test credits have no monetary value and cannot
-          pay for live jobs or AI answers.
-        </p>
-      )}
-      {account?.connected && (
-        <>
+    <>
+      <AppHeader
+        account={account?.account || ""}
+        connected={!!account?.connected}
+        checking={!account && !error}
+      />
+      <main className="purchase-content">
+        <section className="purchase-card" aria-labelledby="credits-title">
+          <h1 id="credits-title">Credits for client work and AI</h1>
           <p>
-            Credits for <strong>{account.account}</strong>
+            One prepaid wallet for confirmed client jobs and the optional AI
+            Project Assistant. Add credits when you need them. No subscription
+            or automatic recharge.
           </p>
-          <p className="credit-balance">
-            {creditLabel(account.balanceMicros)} available
-          </p>
-          {account.creditHold && (
-            <p role="alert">
-              A refunded or disputed payment affects this balance. Contact
-              support to resolve it.
+          <section id="credits-wallet" aria-label="Credit wallet">
+            {(config?.mode || account?.mode) === "test" && (
+              <p className="purchase-test" role="note">
+                Stripe test checkout. Test credits have no monetary value and
+                cannot pay for live jobs or AI answers.
+              </p>
+            )}
+            {account?.connected && (
+              <>
+                <p>
+                  Credits for <strong>{account.account}</strong>
+                </p>
+                <p className="credit-balance">
+                  {creditLabel(account.balanceMicros)} available
+                </p>
+                {account.creditHold && (
+                  <p role="alert">
+                    A refunded or disputed payment affects this balance. Contact
+                    support to resolve it.
+                  </p>
+                )}
+                <a href="/api/google/start?returnTo=credits">
+                  Use a different Google account
+                </a>
+              </>
+            )}
+            {!config && !error && <p role="status">Checking credit options…</p>}
+            {config?.enabled === false && (
+              <>
+                <p>
+                  Credit purchases are not open yet. Your saved-detail voice
+                  lookup remains included in StreamLion.
+                </p>
+                {!account?.connected && (
+                  <a href="/api/google/start?returnTo=credits">
+                    Sign in to restore or check access
+                  </a>
+                )}
+              </>
+            )}
+            {config?.enabled && config.checkoutMode === "owner_qa" && (
+              <p role="note">
+                Checkout is available for your approved QA account. Other
+                accounts cannot start a purchase.
+                {config.mode === "live" &&
+                  " Live Stripe checkout uses real money."}
+              </p>
+            )}
+            {config?.enabled &&
+              (!account?.connected ? (
+                <a
+                  className="purchase-primary"
+                  href="/api/google/start?returnTo=credits"
+                >
+                  Continue with Google
+                </a>
+              ) : !account.purchased ? (
+                <p>
+                  <a className="purchase-primary" href="/api/purchase">
+                    Purchase or restore StreamLion first
+                  </a>
+                </p>
+              ) : (
+                <div className="credit-packs" aria-label="Prepaid credit packs">
+                  {config.packs.map((pack) => (
+                    <button
+                      key={pack.id}
+                      aria-label={`${creditLabel(pack.creditsMicros)} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(pack.amount / 100)}`}
+                      onClick={() => buy(pack.id)}
+                      disabled={busy}
+                    >
+                      <strong>{creditLabel(pack.creditsMicros)}</strong>
+                      <span>
+                        {new Intl.NumberFormat("en-US", {
+                          style: "currency",
+                          currency: "USD",
+                        }).format(pack.amount / 100)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            {config?.enabled && (
+              <p>
+                Purchased credits stay with this Google account across devices
+                and do not expire. Credits are separate from your one-time app
+                purchase. Promotional starter credits follow the eligibility
+                shown in client requests.
+              </p>
+            )}
+          </section>
+          <section id="credit-uses" aria-labelledby="credit-uses-title">
+            <h2 id="credit-uses-title">What uses credits?</h2>
+            <p>
+              When client coordination is available, creating a request uses no
+              project credits. The provider sees and authorizes the job charge
+              before agreement. That charge applies once, after both sides
+              approve the current brief. Clients use their invited portal free.
+              Reopening or recovering the same job does not add a second job
+              charge. <a href="/api/client-requests">Open client requests</a>.
             </p>
-          )}
-          <a href="/api/google/start?returnTo=credits">
-            Use a different Google account
-          </a>
-        </>
-      )}
-      {!config && !error && <p role="status">Checking credit options…</p>}
-      {config?.enabled === false && (
-        <>
+            <p>
+              Optional AI answers show their credit charge before you ask.
+              Incomplete text answers return reserved credits; a completed text
+              answer uses the quoted credits even if spoken playback is
+              unavailable. Saved-detail lookup remains included in Core.
+            </p>
+          </section>
+          {message && <p role="status">{message}</p>}
+          {error && <p role="alert">{error}</p>}
+          <button disabled={busy} onClick={load}>
+            {busy ? "Checking…" : "Refresh balance and payment status"}
+          </button>
           <p>
-            Credit purchases are not open yet. Your saved-detail voice lookup
-            remains included in StreamLion.
+            <a href="/">Return to workspace</a>
           </p>
-          {!account?.connected && (
-            <a href="/api/google/start?returnTo=credits">
-              Sign in to restore or check access
-            </a>
-          )}
-        </>
-      )}
-      {config?.enabled && config.checkoutMode === "owner_qa" && (
-        <p role="note">
-          Checkout is available for your approved QA account. Other accounts
-          cannot start a purchase.
-          {config.mode === "live" && " Live Stripe checkout uses real money."}
-        </p>
-      )}
-      {config?.enabled &&
-        (!account?.connected ? (
-          <a
-            className="purchase-primary"
-            href="/api/google/start?returnTo=credits"
-          >
-            Continue with Google
-          </a>
-        ) : !account.purchased ? (
-          <p>
-            <a className="purchase-primary" href="/api/purchase">
-              Purchase or restore StreamLion first
-            </a>
-          </p>
-        ) : (
-          <div className="credit-packs" aria-label="Prepaid credit packs">
-            {config.packs.map((pack) => (
-              <button
-                key={pack.id}
-                aria-label={`${creditLabel(pack.creditsMicros)} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(pack.amount / 100)}`}
-                onClick={() => buy(pack.id)}
-                disabled={busy}
-              >
-                <strong>{creditLabel(pack.creditsMicros)}</strong>
-                <span>
-                  {new Intl.NumberFormat("en-US", {
-                    style: "currency",
-                    currency: "USD",
-                  }).format(pack.amount / 100)}
-                </span>
-              </button>
-            ))}
-          </div>
-        ))}
-      {config?.enabled && (
-        <p>
-          Purchased credits stay with this Google account across devices and do
-          not expire. Credits are separate from your one-time app purchase.
-          Promotional starter credits follow the eligibility shown in client
-          requests.
-        </p>
-      )}
-      <section aria-labelledby="credit-uses-title">
-        <h2 id="credit-uses-title">What uses credits?</h2>
-        <p>
-          When client coordination is available, creating a request uses no
-          project credits. The provider sees and authorizes the job charge
-          before agreement. That charge applies once, after both sides approve
-          the current brief. Clients use their invited portal free. Reopening or
-          recovering the same job does not add a second job charge.{" "}
-          <a href="/api/client-requests">Open client requests</a>.
-        </p>
-        <p>
-          Optional AI answers show their credit charge before you ask.
-          Incomplete text answers return reserved credits; a completed text
-          answer uses the quoted credits even if spoken playback is unavailable.
-          Saved-detail lookup remains included in Core.
-        </p>
-      </section>
-      {message && <p role="status">{message}</p>}
-      {error && <p role="alert">{error}</p>}
-      <button disabled={busy} onClick={load}>
-        {busy ? "Checking…" : "Refresh balance and payment status"}
-      </button>
-      <p>
-        <a href="/">Return to workspace</a>
-      </p>
-      <footer>
-        <a href="/api/terms#ai-credits">Credit terms</a> ·{" "}
-        <a href="/api/privacy">Privacy</a> ·{" "}
-        <a href="mailto:info@transcendencemedia.com">Support</a>
-      </footer>
-    </section>
+          <footer>
+            <a href="/api/terms#ai-credits">Credit terms</a> ·{" "}
+            <a href="/api/privacy">Privacy</a> ·{" "}
+            <a href="mailto:info@transcendencemedia.com">Support</a>
+          </footer>
+        </section>
+      </main>
+      <SectionNavigation
+        sections={[
+          { id: "credits-wallet", label: "Wallet", icon: WalletCards },
+          { id: "credit-uses", label: "Credit uses", icon: Info },
+        ]}
+      />
+    </>
   );
 }

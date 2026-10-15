@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { enterWorkspace } from "./test-workspace.js";
+import { enterWorkspace, navigateWorkspace } from "./test-workspace.js";
 import React from "react";
 import { JSDOM } from "jsdom";
 import test from "node:test";
@@ -77,6 +77,12 @@ test("Project home and Ask route voice activity into the app update gate", async
       ui.getByRole("button", { name: "Update StreamLion" }).disabled,
       true,
     );
+    fireEvent.click(ui.getByRole("link", { name: "StreamLion Projects" }));
+    assert(ui.getByRole("heading", { name: "Ask this project" }));
+    assert.equal(
+      ui.getByRole("button", { name: "Open provider manual" }).disabled,
+      true,
+    );
     fireEvent.click(ui.getByRole("button", { name: "Cancel listening" }));
     assert.equal(
       ui.getByRole("button", { name: "Update StreamLion" }).disabled,
@@ -84,7 +90,7 @@ test("Project home and Ask route voice activity into the app update gate", async
     );
     fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
     assert.ok(ui.getByRole("heading", { name: "Connections" }));
-    fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
+    await navigateWorkspace(ui, "Ask");
     assert.ok(
       ui.container.querySelector(
         "#ask-read-aloud-controls input[type=checkbox]",
@@ -96,7 +102,7 @@ test("Project home and Ask route voice activity into the app update gate", async
     fireEvent.click(ui.getByRole("button", { name: "Open Connections" }));
     assert.ok(ui.getByRole("heading", { name: "Connections" }));
     assert.equal(instances[0].aborted, true);
-    fireEvent.click(ui.getByRole("button", { name: "Ask", exact: true }));
+    await navigateWorkspace(ui, "Ask");
     fireEvent.click(
       ui.getByRole("button", { name: "Synthetic voice site", exact: true }),
     );

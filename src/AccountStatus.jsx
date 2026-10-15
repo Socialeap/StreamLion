@@ -8,6 +8,7 @@ export default function AccountStatus({
   verified,
   disabled,
   onOpen,
+  accountLabel,
 }) {
   let label = "Not signed in",
     detail = "Device only · not synced to Google";
@@ -30,16 +31,19 @@ export default function AccountStatus({
   }
   return (
     <button
-      className="account-status"
-      aria-label={`Account: ${label}. ${detail}`}
+      className="profile-avatar"
+      aria-label={accountLabel || `Account: ${label}. ${detail}`}
+      title={accountLabel || `Account: ${label}. ${detail}`}
       onClick={onOpen}
       disabled={disabled}
     >
-      <UserRound size={20} aria-hidden="true" />
-      <span>
-        <strong>{label}</strong>
-        <small>{detail}</small>
-      </span>
+      {connected && account ? (
+        <span className="profile-initial" aria-hidden="true">
+          {account.slice(0, 1).toUpperCase()}
+        </span>
+      ) : (
+        <UserRound size={21} aria-hidden="true" />
+      )}
     </button>
   );
 }

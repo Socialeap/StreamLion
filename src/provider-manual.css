@@ -40,6 +40,9 @@
 .provider-manual::-webkit-scrollbar {
   display: none;
 }
+.provider-manual .workspace-header { position:sticky; top:0; z-index:5; }
+.provider-manual .manual-content { padding-bottom:110px; }
+.manual-close-row { display:flex; justify-content:flex-end; padding:12px 20px 0; }
 .provider-manual::backdrop {
   background: #050c14b8;
 }
