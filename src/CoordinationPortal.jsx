@@ -1,3 +1,4 @@
+import ProviderBrand from "./ProviderBrand.jsx";
 import React, {
   useEffect,
   useRef,
@@ -146,6 +147,7 @@ export default function CoordinationPortal({
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
+  const [branding, setBranding] = useState(null);
   const [brand, setBrand] = useState(""),
     [consent, setConsent] = useState(false),
     [email, setEmail] = useState(""),
@@ -258,6 +260,7 @@ export default function CoordinationPortal({
       setJobs([data.job]);
       setSelected(data.job.id);
       setBrand(data.brand);
+      setBranding(data.branding || { name: data.brand });
       setActivity(data.activity || []);
       setVerified(true);
       setVerification("");
@@ -277,6 +280,8 @@ export default function CoordinationPortal({
       const data = await api("provider/status");
       setSynthetic(Boolean(data.synthetic));
       setStatus(data);
+      setBranding(data.branding || null);
+      if (data.branding?.name) setBrand(data.branding.name);
       setAccess("ready");
       if (data.connected) {
         result ||= await api("provider/jobs");
@@ -339,6 +344,7 @@ export default function CoordinationPortal({
             if (active) {
               setProspect(data);
               setBrand(data.brand);
+              setBranding(data.branding || { name: data.brand });
               setAccess("prospect");
             }
           })
@@ -372,6 +378,7 @@ export default function CoordinationPortal({
             if (active) {
               setProspect(data);
               setBrand(data.brand);
+              setBranding(data.branding || { name: data.brand });
               setAccess("prospect");
             }
           })
@@ -658,6 +665,9 @@ export default function CoordinationPortal({
         }
       />
       <main>
+        {client && branding?.name && (
+          <ProviderBrand branding={branding} recipient />
+        )}
         {updateAvailable && (
           <p className="coord-notice">
             {verification
@@ -864,6 +874,8 @@ export default function CoordinationPortal({
           >
             <h2>Enable your client workspace</h2>
             <p>
+              Set your business name, logo and website in{" "}
+              <a href="/?page=Account">Account → Your business branding</a>.
               Choose your workbook and private Drive folder in{" "}
               <a href="/?page=Connections">Connections</a>, then enable
               background coordination here.
@@ -878,6 +890,7 @@ export default function CoordinationPortal({
                 Provider name clients will see
                 <input
                   value={brand}
+                  readOnly={Boolean(status.branding?.name)}
                   maxLength={100}
                   required
                   onChange={(e) => setBrand(e.target.value)}
@@ -956,6 +969,16 @@ export default function CoordinationPortal({
               aria-labelledby="coord-invite-title"
             >
               <h2 id="coord-invite-title">Invite a client</h2>
+              <ProviderBrand
+                branding={status.branding}
+                name={brand}
+                recipient
+              />
+              <p>
+                Requests go to the provider who creates this link, even if
+                someone else forwards it. Set your name, logo and website in{" "}
+                <a href="/?page=Account">Account → Your business branding</a>.
+              </p>
               <p>
                 Choose an invitation, set the details, then create and share.
                 Use a public form for new prospects or a private email for a
@@ -1048,7 +1071,7 @@ export default function CoordinationPortal({
                     >
                       <option value="">Standard work order</option>
                       <option value="preset:tm-spatial">
-                        Transcendence Media · spatial capture estimate
+                        Optional TM preset · Transcendence Media pricing
                       </option>
                       {createdInvitation &&
                         selectedJob?.intake &&
@@ -1191,6 +1214,17 @@ export default function CoordinationPortal({
                     )}
                   </div>
                   <div className="coord-invite-submit">
+                    {selectedTemplate === "preset:tm-spatial" && (
+                      <p>
+                        Optional template with Transcendence Media’s estimate
+                        rates. Your link still sends requests to the business
+                        shown above. USD $0.15/sq ft through 5,000; $0.12 at
+                        5,001–19,999; $0.10 at 20,000+. Optional Creative
+                        Direction: 6 hours / $900. Review these rates before
+                        sharing, or choose Standard work order / your own
+                        service template.
+                      </p>
+                    )}
                     {!createdInvitation && (
                       <button
                         disabled={
@@ -1237,6 +1271,11 @@ export default function CoordinationPortal({
                 aria-label="Your public forms"
               >
                 <h2>Your public forms</h2>
+                <ProviderBrand
+                  branding={status.branding}
+                  name={brand}
+                  recipient
+                />
                 <p>
                   Copy a saved link, show its QR code or update who can submit.
                   Reuse a form whenever you need a new request.
@@ -1246,6 +1285,16 @@ export default function CoordinationPortal({
                     <article key={form.id} className="coord-public-form">
                       <div>
                         <h3>{form.intake?.name || "Public work-order form"}</h3>
+                        <p>
+                          Requests go to{" "}
+                          <strong>
+                            {form.branding?.name ||
+                              form.brand ||
+                              status.branding?.name ||
+                              brand}
+                          </strong>
+                          .
+                        </p>
                         <p className="coord-small">
                           {form.openedAt
                             ? `First form open: ${date(form.openedAt)} · visitor unverified`
@@ -1348,6 +1397,11 @@ export default function CoordinationPortal({
                       aria-label="Selected request sharing"
                     >
                       <h3>Client access for this request</h3>
+                      <ProviderBrand
+                        branding={status.branding}
+                        name={brand}
+                        recipient
+                      />
                       {selectedJob.source === "public-form" &&
                       !selectedJob.emailVerified ? (
                         <p>

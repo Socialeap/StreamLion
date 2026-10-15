@@ -1,3 +1,4 @@
+import { brandingForConnection } from "./provider-branding.js";
 import { hash, seal, unseal } from "./google-auth.js";
 import { hasPurchase, paymentMode } from "./purchase-access.js";
 import { randomProspectToken } from "./prospect-intake.js";
@@ -81,7 +82,13 @@ export async function formsForProvider(env, c) {
   )
     .bind(c.id)
     .all();
-  return Promise.all(rows.results.map((row) => formView(env, row)));
+  const branding = await brandingForConnection(env, c);
+  return Promise.all(
+    rows.results.map(async (row) => ({
+      ...(await formView(env, row)),
+      brand: branding.name,
+    })),
+  );
 }
 export async function createPublicForm(
   env,
@@ -95,7 +102,10 @@ export async function createPublicForm(
   if (!operationID(operation))
     throw new CoordinationError("Invalid form identity.");
   const id = "form-" + operation,
-    descriptor = { brand: c.client_brand, intake: job.intake || null },
+    descriptor = {
+      brand: (await brandingForConnection(env, c)).name,
+      intake: job.intake || null,
+    },
     token = randomProspectToken();
   const old = await env.GOOGLE_SESSIONS.prepare(
     "SELECT * FROM streamlion_public_forms_v1 WHERE id=?",
@@ -168,7 +178,7 @@ export async function updatePublicForm(env, c, body) {
   return { updated: true };
 }
 export async function openPublicForm(env, token) {
-  const { row } = await publicForm(env, token),
+  const { row, connection } = await publicForm(env, token),
     now = Date.now();
   await env.GOOGLE_SESSIONS.prepare(
     "UPDATE streamlion_public_forms_v1 SET opened_at=COALESCE(opened_at,?) WHERE id=?",
@@ -176,8 +186,15 @@ export async function openPublicForm(env, token) {
     .bind(now, row.id)
     .run();
   const descriptor = await unseal(env, row.descriptor, "public-form:" + row.id);
+  const branding = await brandingForConnection(
+    env,
+    connection,
+    descriptor.brand,
+  );
   return {
     ...descriptor,
+    brand: branding.name,
+    branding,
     reusable: true,
     verificationRequired: Boolean(row.verification_required),
     visit: await seal(env, { formId: row.id, openedAt: now }, "public-visit"),

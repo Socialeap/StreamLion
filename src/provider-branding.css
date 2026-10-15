@@ -1,0 +1,81 @@
+.provider-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border, #526b68);
+  border-radius: 1rem;
+  margin-block: 1rem;
+  background: var(--panel, transparent);
+  min-width: 0;
+}
+.provider-brand-copy {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.provider-brand-label {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+.provider-brand-copy strong {
+  font-size: 1.1rem;
+}
+.provider-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  padding: 6px;
+  background: #fff;
+  flex: none;
+}
+.provider-logo--rounded {
+  border-radius: 20%;
+}
+.provider-logo--square {
+  border-radius: 0;
+}
+.provider-logo--rectangle {
+  width: 112px;
+  height: 64px;
+  border-radius: 0;
+}
+.branding-settings {
+  border: 1px solid var(--border, #526b68);
+  border-radius: 1rem;
+  padding: 1rem;
+  margin-block: 1.5rem;
+}
+.branding-settings form {
+  display: grid;
+  gap: 1rem;
+}
+.branding-settings label {
+  display: grid;
+  gap: 0.4rem;
+}
+.branding-settings input,
+.branding-settings select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.branding-settings input[type="file"] {
+  padding: 0.6rem;
+  overflow: hidden;
+}
+.branding-settings .branding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.branding-settings p {
+  line-height: 1.5;
+}
+@media (max-width: 380px) {
+  .provider-logo--rectangle {
+    width: 88px;
+    height: 54px;
+  }
+}

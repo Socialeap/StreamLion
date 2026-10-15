@@ -228,16 +228,17 @@ export default function IntakeTemplateSettings({
           >
             <option value="">Provider reviews and quotes each request</option>
             <option value={TM_ESTIMATE}>
-              Transcendence Media · spatial capture
+              Optional TM preset · Transcendence Media pricing
             </option>
           </select>
         </label>
         {config.estimateProfile && (
           <p className="coord-small">
-            USD $0.15/sq ft through 5,000; $0.12 at 5,001–19,999; $0.10 at
-            20,000+. Optional Creative Direction: 6 hours / $900. This
-            preliminary estimate requires your review; no payment or booking
-            occurs at submission.
+            Optional Transcendence Media pricing example; requests still go to
+            your business. Review these rates before sharing. USD $0.15/sq ft
+            through 5,000; $0.12 at 5,001–19,999; $0.10 at 20,000+. Optional
+            Creative Direction: 6 hours / $900. This preliminary estimate
+            requires your review; no payment or booking occurs at submission.
           </p>
         )}
         <h3>Service questions</h3>

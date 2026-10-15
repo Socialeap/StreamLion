@@ -1,3 +1,4 @@
+import ProviderBrandingSettings from "./ProviderBrandingSettings.jsx";
 import {
   readDraft,
   writeDraft,
@@ -1408,6 +1409,12 @@ export default function App() {
                     <a href="/api/credits">Credits</a>
                   </p>
                 </section>
+                <ProviderBrandingSettings
+                  connected={hasGoogleSession()}
+                  account={googleAccount()}
+                  disabled={disabled || checkingConnection}
+                  onBusy={setSyncBusy}
+                />
                 <InstallApp disabled={disabled} />
               </section>
             )}
