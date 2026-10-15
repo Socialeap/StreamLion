@@ -40,7 +40,9 @@ export default function Connections({
   onBackupRestored,
   onConnectionBusy,
   onContinue,
+  accountPage = false,
 }) {
+  const PageTitle = accountPage ? "h2" : "h1";
   const [error, setError] = useState(""),
     [status, setStatus] = useState(""),
     [busy, setBusy] = useState(false),
@@ -129,7 +131,7 @@ export default function Connections({
     <>
       <header className="page-head">
         <div>
-          <h1>Connections</h1>
+          <PageTitle>Connections</PageTitle>
           <p>Your records in Google. Your workspace in StreamLion.</p>
         </div>
       </header>

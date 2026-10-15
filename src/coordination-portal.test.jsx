@@ -58,6 +58,144 @@ function providerAPI(job) {
     throw new Error("Unexpected fixture request: " + path);
   };
 }
+async function selectPageSection(ui, label) {
+  const name = "Go to " + label;
+  let button = ui.queryByRole("button", { name, exact: true });
+  if (!button) {
+    fireEvent.click(ui.getByRole("button", { name: /^Sections:/ }));
+    button = await ui.findByRole("button", { name, exact: true });
+  }
+  fireEvent.click(button);
+}
+test("provider section navigation preserves invitation, service and recovery inputs without submitting them", async (t) => {
+  t.after(cleanup);
+  window.history.replaceState(null, "", "/api/client-requests");
+  const writes = [],
+    base = providerAPI(fixture());
+  const ui = render(
+    <Portal
+      api={async (path, body) => {
+        if (body) writes.push({ path, body });
+        return base(path);
+      }}
+    />,
+  );
+  await ui.findByRole("heading", { name: "Invite a client" });
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Unsaved invitation" },
+  });
+  fireEvent.click(ui.getByText("Services & intake templates"));
+  fireEvent.change(ui.getByLabelText("Service name"), {
+    target: { value: "Unsaved service" },
+  });
+  fireEvent.click(ui.getByText("Archives and workbook recovery"));
+  fireEvent.change(ui.getByLabelText("Archive file link or ID"), {
+    target: { value: "unsaved-archive-id" },
+  });
+  const invitation = ui.getByLabelText("Project name");
+  const service = ui.getByLabelText("Service name");
+  const archive = ui.getByLabelText("Archive file link or ID");
+  await selectPageSection(ui, "Projects");
+  await waitFor(() =>
+    assert.equal(document.activeElement.id, "coord-projects"),
+  );
+  await selectPageSection(ui, "Services");
+  await waitFor(() =>
+    assert.equal(document.activeElement.id, "coord-services"),
+  );
+  await selectPageSection(ui, "Recovery");
+  await waitFor(() =>
+    assert.equal(document.activeElement.id, "coord-recovery"),
+  );
+  await selectPageSection(ui, "Invite");
+  await waitFor(() => assert.equal(document.activeElement.id, "coord-invite"));
+  assert.equal(ui.getByLabelText("Project name"), invitation);
+  assert.equal(invitation.value, "Unsaved invitation");
+  assert.equal(ui.getByLabelText("Service name"), service);
+  assert.equal(service.value, "Unsaved service");
+  assert.equal(ui.getByLabelText("Archive file link or ID"), archive);
+  assert.equal(archive.value, "unsaved-archive-id");
+  assert.deepEqual(writes, []);
+});
+test("work-order section navigation focuses rendered panels and preserves the mounted brief draft", async (t) => {
+  t.after(cleanup);
+  t.after(() =>
+    window.localStorage.removeItem(
+      coordinationDraftKey("provider", "a", "job-a"),
+    ),
+  );
+  const writes = [],
+    base = providerAPI(fixture());
+  const ui = render(
+    <Portal
+      api={async (path, body) => {
+        if (body) writes.push({ path, body });
+        return base(path);
+      }}
+    />,
+  );
+  const order = within(await ui.findByRole("region", { name: "Work order" }));
+  const scope = order.getByRole("textbox", { name: /^Scope of work/ });
+  fireEvent.change(scope, {
+    target: { value: "Unsaved exact wording 12 7/16 in." },
+  });
+  await selectPageSection(ui, "Agreement");
+  await waitFor(() =>
+    assert.equal(document.activeElement.id, "coord-work-agreement"),
+  );
+  assert.equal(document.getElementById("coord-work-agreement").hidden, false);
+  assert.equal(document.getElementById("coord-work-brief").hidden, true);
+  assert.equal(scope.isConnected, true);
+  await selectPageSection(ui, "Brief");
+  await waitFor(() =>
+    assert.equal(document.activeElement.id, "coord-work-brief"),
+  );
+  assert.equal(order.getByRole("textbox", { name: /^Scope of work/ }), scope);
+  assert.equal(scope.value, "Unsaved exact wording 12 7/16 in.");
+  assert.deepEqual(writes, []);
+});
+test("client section navigation exposes project sections without provider management controls", async (t) => {
+  t.after(cleanup);
+  const ui = render(
+    <Portal
+      client
+      api={async (path) => {
+        if (path === "client/job")
+          return {
+            job: clientView(fixture()),
+            brand: "Synthetic provider",
+            activity: [],
+          };
+        if (path === "client/notifications")
+          return { enabled: false, devices: [] };
+        throw new Error("Unexpected client request: " + path);
+      }}
+    />,
+  );
+  await ui.findByRole("region", { name: "Work order" });
+  assert.equal(
+    ui.queryByRole("button", { name: "Open provider manual" }),
+    null,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Client access: private project open" }),
+  );
+  assert.equal(document.activeElement.id, "coord-client-access");
+  await selectPageSection(ui, "Updates");
+  await waitFor(() =>
+    assert.equal(document.activeElement.id, "coord-work-updates"),
+  );
+  fireEvent.click(ui.getByRole("button", { name: /^Sections:/ }));
+  for (const label of ["Invite", "Projects", "Services", "Recovery", "Setup"]) {
+    assert.equal(
+      ui.queryByRole("button", { name: "Go to " + label, exact: true }),
+      null,
+    );
+  }
+  for (const link of ui.getAllByRole("link", { name: "Home", exact: true })) {
+    assert.equal(link.getAttribute("href"), "/?page=Projects");
+  }
+});
 test("rejected field validation keeps the draft and uses a new corrected operation instead of retrying invalid input", async (t) => {
   t.after(cleanup);
   let job = newClientJob({
@@ -731,12 +869,15 @@ test("client proposes changes and retains the same operation after an interrupte
   const ui = render(<Portal client api={api} />);
   await ui.findByRole("heading", { name: "Office" });
   assert.equal(ui.queryByLabelText("Amount received"), null);
-  fireEvent.change(ui.getByLabelText(/Scope of work/), {
+  fireEvent.change(ui.getByRole("textbox", { name: /Scope of work/ }), {
     target: { value: "Only lobby" },
   });
   fireEvent.click(ui.getByRole("button", { name: "Propose these changes" }));
   await ui.findByRole("alert");
-  assert.equal(ui.getByLabelText(/Scope of work/).value, "Only lobby");
+  assert.equal(
+    ui.getByRole("textbox", { name: /Scope of work/ }).value,
+    "Only lobby",
+  );
   assert.equal(calls[0].body.command.action, "propose");
   fireEvent.click(ui.getByRole("button", { name: "Retry original request" }));
   await ui.findByRole("alert");
@@ -768,7 +909,10 @@ test("closed client brief is read-only and payment status identifies its source"
     />,
   );
   await ui.findByRole("heading", { name: "Office" });
-  assert.equal(ui.getByLabelText(/Scope of work/).disabled, true);
+  assert.equal(
+    ui.getByRole("textbox", { name: /Scope of work/ }).disabled,
+    true,
+  );
   assert.equal(
     ui.queryByRole("button", { name: "Save current information" }),
     null,
@@ -792,7 +936,7 @@ test("client wording survives reopening and a newer shared revision without bein
   };
   let ui = render(<Portal client api={api} />);
   await ui.findByRole("heading", { name: "Office" });
-  fireEvent.change(ui.getByLabelText(/Scope of work/), {
+  fireEvent.change(ui.getByRole("textbox", { name: /Scope of work/ }), {
     target: { value: "Exact draft 6 7/16 inches" },
   });
   await ui.findByText(/Draft saved on this device/);
@@ -801,7 +945,7 @@ test("client wording survives reopening and a newer shared revision without bein
   await ui.findByRole("heading", { name: "Office" });
   await ui.findByText(/Draft saved on this device/);
   assert.equal(
-    ui.getByLabelText(/Scope of work/).value,
+    ui.getByRole("textbox", { name: /Scope of work/ }).value,
     "Exact draft 6 7/16 inches",
   );
   assert.equal(ui.queryByText(/A newer brief arrived/), null);
@@ -818,7 +962,7 @@ test("client wording survives reopening and a newer shared revision without bein
   ui = render(<Portal client api={api} />);
   await ui.findByRole("heading", { name: "Updated office" });
   assert.equal(
-    ui.getByLabelText(/Scope of work/).value,
+    ui.getByRole("textbox", { name: /Scope of work/ }).value,
     "Exact draft 6 7/16 inches",
   );
   await ui.findByText(/A newer brief arrived/);
@@ -828,7 +972,10 @@ test("client wording survives reopening and a newer shared revision without bein
       name: "Use latest brief and discard my unsaved edit",
     }),
   );
-  assert.equal(ui.getByLabelText(/Scope of work/).value, "Latest agreed scope");
+  assert.equal(
+    ui.getByRole("textbox", { name: /Scope of work/ }).value,
+    "Latest agreed scope",
+  );
   assert.equal(
     window.localStorage.getItem(
       coordinationDraftKey("client", "client", job.id),
@@ -853,14 +1000,14 @@ test("client sign-out waits for server acknowledgement and then clears its local
   };
   const ui = render(<Portal client api={api} />);
   await ui.findByRole("heading", { name: "Office" });
-  fireEvent.change(ui.getByLabelText(/Scope of work/), {
+  fireEvent.change(ui.getByRole("textbox", { name: /Scope of work/ }), {
     target: { value: "Private unsaved wording" },
   });
   await ui.findByText(/Draft saved on this device/);
   fireEvent.click(ui.getByRole("button", { name: "Sign out" }));
   await ui.findByRole("alert");
   assert.equal(
-    ui.getByLabelText(/Scope of work/).value,
+    ui.getByRole("textbox", { name: /Scope of work/ }).value,
     "Private unsaved wording",
   );
   assert.ok(
@@ -901,11 +1048,14 @@ test("unavailable device storage keeps the form usable and warns before the clie
     />,
   );
   await ui.findByRole("heading", { name: "Office" });
-  fireEvent.change(ui.getByLabelText(/Scope of work/), {
+  fireEvent.change(ui.getByRole("textbox", { name: /Scope of work/ }), {
     target: { value: "Keep my wording" },
   });
   await ui.findByText(/Device storage is unavailable/);
-  assert.equal(ui.getByLabelText(/Scope of work/).value, "Keep my wording");
+  assert.equal(
+    ui.getByRole("textbox", { name: /Scope of work/ }).value,
+    "Keep my wording",
+  );
   assert.equal(
     ui.getByRole("button", { name: "Propose these changes" }).disabled,
     false,
@@ -1271,7 +1421,7 @@ test("prospect estimator sends the original work-order wording for verification 
   fireEvent.change(ui.getByLabelText(/Street address/), {
     target: { value: "Synthetic site" },
   });
-  fireEvent.change(ui.getByLabelText(/Scope of work/), {
+  fireEvent.change(ui.getByRole("textbox", { name: /Scope of work/ }), {
     target: { value: "Capture lobby. Exact 12 7/16 in." },
   });
   fireEvent.change(ui.getByLabelText("Email for confirmation"), {
@@ -1410,7 +1560,7 @@ test("public link opens directly to the form and accepts a request without email
   fireEvent.change(ui.getByLabelText(/Street address/), {
     target: { value: "Synthetic site" },
   });
-  fireEvent.change(ui.getByLabelText(/Scope of work/), {
+  fireEvent.change(ui.getByRole("textbox", { name: /Scope of work/ }), {
     target: { value: "Capture lobby. Exact 12 7/16 in." },
   });
   fireEvent.click(

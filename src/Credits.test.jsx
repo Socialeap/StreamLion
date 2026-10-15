@@ -10,6 +10,7 @@ Object.assign(globalThis, {
   window: dom.window,
   document: dom.window.document,
   HTMLElement: dom.window.HTMLElement,
+  localStorage: dom.window.localStorage,
   IS_REACT_ACT_ENVIRONMENT: true,
 });
 Object.defineProperty(globalThis, "navigator", {
@@ -19,6 +20,16 @@ Object.defineProperty(globalThis, "navigator", {
 const { render, fireEvent, act, cleanup } =
   await import("@testing-library/react");
 const { default: Credits } = await import("./Credits.jsx");
+function assertBillingNavigation(ui) {
+  const header = ui.getByRole("banner");
+  assert.ok(header.querySelector(".workspace-lion"));
+  assert.ok(ui.getByRole("button", { name: /^Account:/ }));
+  assert.ok(
+    ui
+      .getByRole("navigation", { name: "Page sections" })
+      .querySelector('a[href="/?page=Projects"]'),
+  );
+}
 const packs = [
   { id: "small", amount: 1000, creditsMicros: 10000000 },
   { id: "medium", amount: 2500, creditsMicros: 25000000 },
@@ -42,8 +53,44 @@ test("approved live credit QA shows pack choices with an explicit real-payment n
   t.after(cleanup);
   const ui = render(<Credits />);
   await act(async () => {});
-  assert.ok(ui.getByRole("button", { name: "800 credits for $10.00" }));
+  assertBillingNavigation(ui);
+  const pack = ui.getByRole("button", { name: "800 credits for $10.00" });
+  const wallet = ui.getByRole("region", { name: "Credit wallet" });
   assert.match(ui.getByRole("note").textContent, /real money/);
+  await act(async () => {
+    fireEvent.click(ui.getByRole("button", { name: "Go to Credit uses" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  assert.equal(document.activeElement.id, "credit-uses");
+  assert.equal(ui.getByRole("region", { name: "Credit wallet" }), wallet);
+  assert.equal(
+    ui.getByRole("button", { name: "800 credits for $10.00" }),
+    pack,
+  );
+  await act(async () => {
+    fireEvent.click(ui.getByRole("button", { name: "Go to Wallet" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  assert.equal(document.activeElement.id, "credits-wallet");
+});
+test("credit loading and failed verification keep workspace navigation available", async (t) => {
+  const pending = [];
+  t.mock.method(
+    globalThis,
+    "fetch",
+    () => new Promise((resolve) => pending.push(resolve)),
+  );
+  t.after(cleanup);
+  const ui = render(<Credits />);
+  assert.ok(ui.getByText("Checking credit options…"));
+  assertBillingNavigation(ui);
+  await act(async () => {
+    for (const resolve of pending)
+      resolve(Response.json({ error: "Credits unavailable" }, { status: 503 }));
+  });
+  assert.match(ui.getByRole("alert").textContent, /Credits unavailable/);
+  assertBillingNavigation(ui);
+  assert.equal(ui.queryByText("$10.00"), null);
 });
 test("top-up options are gated by verified availability, Google identity and app entitlement", async (t) => {
   let config = { enabled: false },

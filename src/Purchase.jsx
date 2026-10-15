@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AppHeader, BottomNavigation } from "./AppNavigation.jsx";
 import { purchaseRequest } from "./purchase-api.js";
 export default function Purchase({ onPurchased }) {
   const [config, setConfig] = useState(null),
@@ -128,154 +129,165 @@ export default function Purchase({ onPurchased }) {
       }).format(config.amount / 100)
     : "";
   return (
-    <section className="purchase-card" aria-labelledby="purchase-title">
-      <a className="purchase-brand" href="/api/welcome">
-        <img src="/lion-mint.png" alt="" width="36" height="36" />
-        StreamLion
-      </a>
-      <h1 id="purchase-title">
-        {account?.purchased
-          ? "Your workspace is ready"
-          : "Own your field workspace"}
-      </h1>
-      <p>One purchase. Your projects stay in your Google account.</p>
-      {config?.mode === "test" && (
-        <p className="purchase-test" role="note">
-          Test checkout — use Stripe’s test card. No real payment is taken. Test
-          access does not become a live purchase.
-        </p>
-      )}
-      {!config && !error && <p role="status">Checking purchase options…</p>}
-      {config?.enabled === false && (
-        <>
-          <p>
-            New purchases are paused. Existing purchases can still be restored
-            or confirmed.
-          </p>
-          <a href="/api/google/start?returnTo=purchase">
-            {account?.connected
-              ? "Use a different Google account"
-              : "Sign in to restore or check access"}
-          </a>
-          <p>
-            <a href="/api/welcome">Return to StreamLion</a>.
-          </p>
-        </>
-      )}
-      {config?.enabled &&
-        config.checkoutMode === "owner_qa" &&
-        !account?.purchased && (
-          <p role="note">
-            Checkout is available for your approved QA account. Other accounts
-            cannot start a purchase.
-            {config.mode === "live" && " Live Stripe checkout uses real money."}
-          </p>
-        )}
-      {config?.enabled && (
-        <>
-          <ol className="purchase-steps" aria-label="Purchase steps">
-            <li className={account?.connected ? "done" : "current"}>Sign in</li>
-            <li
-              className={
-                account?.purchased
-                  ? "done"
-                  : account?.connected
-                    ? "current"
-                    : ""
-              }
-            >
-              Pay once
-            </li>
-            <li className={account?.purchased ? "current" : ""}>
-              Open your workspace
-            </li>
-          </ol>
-          {account?.purchased ? (
+    <>
+      <AppHeader
+        account={account?.account || ""}
+        connected={!!account?.connected}
+        checking={!account && !error}
+      />
+      <main className="purchase-content">
+        <section className="purchase-card" aria-labelledby="purchase-title">
+          <h1 id="purchase-title">
+            {account?.purchased
+              ? "Your workspace is ready"
+              : "Own your field workspace"}
+          </h1>
+          <p>One purchase. Your projects stay in your Google account.</p>
+          {config?.mode === "test" && (
+            <p className="purchase-test" role="note">
+              Test checkout — use Stripe’s test card. No real payment is taken.
+              Test access does not become a live purchase.
+            </p>
+          )}
+          {!config && !error && <p role="status">Checking purchase options…</p>}
+          {config?.enabled === false && (
             <>
               <p>
-                Your purchase is linked to <strong>{account.account}</strong>.
-                Use this Google account on your other devices.
+                New purchases are paused. Existing purchases can still be
+                restored or confirmed.
               </p>
-              <a className="purchase-primary" href="/">
-                Open workspace
+              <a href="/api/google/start?returnTo=purchase">
+                {account?.connected
+                  ? "Use a different Google account"
+                  : "Sign in to restore or check access"}
               </a>
-            </>
-          ) : (
-            <>
-              <p className="purchase-price">
-                {amount} <small>USD · one-time purchase</small>
-              </p>
-              {config.launchRemaining > 0 && (
-                <p>
-                  First 200 Only Launch Offer. Places are reserved when checkout
-                  starts. Pending payments hold a place; expired or failed
-                  checkouts release it once confirmed. Your final price is shown
-                  before payment.
-                </p>
-              )}
               <p>
-                {config.refundDays}-day money-back guarantee. Request a full
-                refund within {config.refundDays} days of purchase.{" "}
-                <a href="/api/terms" target="_blank" rel="noreferrer">
-                  Purchase terms
-                </a>{" "}
-                ·{" "}
-                <a href="/api/privacy" target="_blank" rel="noreferrer">
-                  Privacy
-                </a>
+                <a href="/api/welcome">Return to StreamLion</a>.
               </p>
-              {!account?.connected ? (
+            </>
+          )}
+          {config?.enabled &&
+            config.checkoutMode === "owner_qa" &&
+            !account?.purchased && (
+              <p role="note">
+                Checkout is available for your approved QA account. Other
+                accounts cannot start a purchase.
+                {config.mode === "live" &&
+                  " Live Stripe checkout uses real money."}
+              </p>
+            )}
+          {config?.enabled && (
+            <>
+              <ol className="purchase-steps" aria-label="Purchase steps">
+                <li className={account?.connected ? "done" : "current"}>
+                  Sign in
+                </li>
+                <li
+                  className={
+                    account?.purchased
+                      ? "done"
+                      : account?.connected
+                        ? "current"
+                        : ""
+                  }
+                >
+                  Pay once
+                </li>
+                <li className={account?.purchased ? "current" : ""}>
+                  Open your workspace
+                </li>
+              </ol>
+              {account?.purchased ? (
                 <>
                   <p>
-                    Choose the Google account you will use for your projects.
-                    Already purchased? The same sign-in restores access.
+                    Your purchase is linked to{" "}
+                    <strong>{account.account}</strong>. Use this Google account
+                    on your other devices.
                   </p>
-                  <a
-                    className="purchase-primary"
-                    href="/api/google/start?returnTo=purchase"
-                  >
-                    Continue with Google
+                  <a className="purchase-primary" href="/">
+                    Open workspace
                   </a>
                 </>
               ) : (
                 <>
-                  <p>
-                    Purchase for <strong>{account.account}</strong>
+                  <p className="purchase-price">
+                    {amount} <small>USD · one-time purchase</small>
                   </p>
-                  <button
-                    className="purchase-primary"
-                    onClick={checkout}
-                    disabled={busy}
-                  >
-                    {busy ? "Checking…" : "Continue to secure checkout"}
-                  </button>
+                  {config.launchRemaining > 0 && (
+                    <p>
+                      First 200 Only Launch Offer. Places are reserved when
+                      checkout starts. Pending payments hold a place; expired or
+                      failed checkouts release it once confirmed. Your final
+                      price is shown before payment.
+                    </p>
+                  )}
                   <p>
-                    <a href="/api/google/start?returnTo=purchase">
-                      Use a different Google account
+                    {config.refundDays}-day money-back guarantee. Request a full
+                    refund within {config.refundDays} days of purchase.{" "}
+                    <a href="/api/terms" target="_blank" rel="noreferrer">
+                      Purchase terms
+                    </a>{" "}
+                    ·{" "}
+                    <a href="/api/privacy" target="_blank" rel="noreferrer">
+                      Privacy
                     </a>
                   </p>
+                  {!account?.connected ? (
+                    <>
+                      <p>
+                        Choose the Google account you will use for your
+                        projects. Already purchased? The same sign-in restores
+                        access.
+                      </p>
+                      <a
+                        className="purchase-primary"
+                        href="/api/google/start?returnTo=purchase"
+                      >
+                        Continue with Google
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        Purchase for <strong>{account.account}</strong>
+                      </p>
+                      <button
+                        className="purchase-primary"
+                        onClick={checkout}
+                        disabled={busy}
+                      >
+                        {busy ? "Checking…" : "Continue to secure checkout"}
+                      </button>
+                      <p>
+                        <a href="/api/google/start?returnTo=purchase">
+                          Use a different Google account
+                        </a>
+                      </p>
+                    </>
+                  )}
                 </>
               )}
             </>
           )}
-        </>
-      )}
-      {message && <p role="status">{message}</p>}
-      {error && <p role="alert">{error}</p>}
-      {(error || message) && (
-        <button disabled={busy} onClick={load}>
-          {busy ? "Checking…" : "Check again"}
-        </button>
-      )}
-      <footer>
-        <p>
-          <button onClick={backup} disabled={busy}>
-            Download my device backup
-          </button>
-        </p>
-        <a href="mailto:info@transcendencemedia.com">Need help?</a> ·
-        Transcendence Media LLC
-      </footer>
-    </section>
+          {message && <p role="status">{message}</p>}
+          {error && <p role="alert">{error}</p>}
+          {(error || message) && (
+            <button disabled={busy} onClick={load}>
+              {busy ? "Checking…" : "Check again"}
+            </button>
+          )}
+          <footer>
+            <p>
+              <button onClick={backup} disabled={busy}>
+                Download my device backup
+              </button>
+            </p>
+            <a href="mailto:info@transcendencemedia.com">Need help?</a> ·
+            Transcendence Media LLC
+          </footer>
+        </section>
+      </main>
+      <BottomNavigation page="Account" />
+    </>
   );
 }

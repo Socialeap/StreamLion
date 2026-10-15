@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { purchaseRequest } from "./purchase-api.js";
 import Purchase from "./Purchase.jsx";
+import { AppHeader, BottomNavigation } from "./AppNavigation.jsx";
 const KEY = "streamlion-purchase-receipt-v1";
 export default function LicenseGate({ children }) {
   const [allowed, setAllowed] = useState(false),
@@ -46,13 +47,16 @@ export default function LicenseGate({ children }) {
   if (loading)
     return (
       <div className="purchase-shell">
+        <AppHeader checking />
         <p role="status">Opening StreamLion…</p>
+        <BottomNavigation />
       </div>
     );
   if (allowed) return children;
   if (error)
     return (
       <div className="purchase-shell">
+        <AppHeader />
         <section className="purchase-card">
           <h1>Let’s try again</h1>
           <p role="alert">{error}</p>
@@ -66,6 +70,7 @@ export default function LicenseGate({ children }) {
             <a href="/api/welcome">About StreamLion</a>
           </p>
         </section>
+        <BottomNavigation />
       </div>
     );
   return (

@@ -77,14 +77,31 @@ export default function WelcomeScreen({
       return;
     }
     media?.addEventListener("change", settle);
-    // Never leave the tagline hidden when an asset cannot load offline.
-    const timeout = setTimeout(settle, 1500);
+    // Account controls remain usable during a slow mobile asset load.
+    // A late font must never suppress the explanatory animation.
+    const deadline = setTimeout(settle, 5000);
     const images = [...element.querySelectorAll("img")];
-    Promise.all([
-      document.fonts?.ready,
-      ...images.map((image) => image.decode?.().catch(() => {})),
-    ]).then(() => {
-      clearTimeout(timeout);
+    const imageListeners = [];
+    Promise.all(
+      images.map((image) => {
+        if (image.complete && image.naturalWidth) return Promise.resolve();
+        if (image.decode) return image.decode().catch(() => {});
+        return new Promise((resolve) => {
+          const finish = () => {
+            image.removeEventListener("load", finish);
+            image.removeEventListener("error", finish);
+            resolve();
+          };
+          image.addEventListener("load", finish, { once: true });
+          image.addEventListener("error", finish, { once: true });
+          imageListeners.push(() => {
+            image.removeEventListener("load", finish);
+            image.removeEventListener("error", finish);
+          });
+        });
+      }),
+    ).then(() => {
+      clearTimeout(deadline);
       if (cancelled) return;
       if (images.some((image) => !image.naturalWidth)) {
         settle();
@@ -217,13 +234,20 @@ export default function WelcomeScreen({
         { duration: 300, delay: 3780, easing: easeOut },
       );
     });
-    window.addEventListener("resize", settle);
+    // Mobile browser bars resize height during cold startup and ordinary scroll.
+    // Only a layout-width/orientation change invalidates the measured paths.
+    const width = window.innerWidth;
+    const resize = () => {
+      if (window.innerWidth !== width) settle();
+    };
+    window.addEventListener("resize", resize);
     return () => {
       cancelled = true;
-      clearTimeout(timeout);
+      clearTimeout(deadline);
+      imageListeners.forEach((remove) => remove());
       animations.forEach((animation) => animation.cancel());
       media?.removeEventListener("change", settle);
-      window.removeEventListener("resize", settle);
+      window.removeEventListener("resize", resize);
       element.querySelector(".welcome-cables").replaceChildren();
     };
   }, []);

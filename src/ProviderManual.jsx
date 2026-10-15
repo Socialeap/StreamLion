@@ -26,6 +26,7 @@ import {
   Link,
 } from "lucide-react";
 import { MANUAL_STAGES } from "./provider-manual.js";
+import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
 
 const icons = {
   cloud: Cloud,
@@ -104,7 +105,17 @@ function Example({ kind }) {
   );
 }
 
-export function ProviderManual({ onClose, returnFocusElement }) {
+export function ProviderManual({
+  onClose,
+  returnFocusElement,
+  account = "",
+  connected = false,
+  onHome,
+  onAccount,
+  disabled = false,
+  bookId,
+  verified,
+}) {
   const dialog = useRef(null);
   const stages = useRef([]);
   const titleId = useId();
@@ -114,6 +125,7 @@ export function ProviderManual({ onClose, returnFocusElement }) {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     element.showModal();
+    element.querySelector('[aria-label="Close provider manual"]')?.focus();
     return () => {
       element.close();
       document.body.style.overflow = previousOverflow;
@@ -126,6 +138,18 @@ export function ProviderManual({ onClose, returnFocusElement }) {
     stage.open = true;
     stage.querySelector("summary").focus({ preventScroll: true });
     stage.scrollIntoView({ block: "start" });
+  }
+  function home() {
+    if (disabled) return;
+    onClose();
+    if (onHome) onHome();
+    else window.location.assign("/?page=Projects");
+  }
+  function accountPage() {
+    if (disabled) return;
+    onClose();
+    if (onAccount) onAccount();
+    else window.location.assign("/?page=Account");
   }
   function expandAll(open) {
     for (const detail of dialog.current.querySelectorAll("details"))
@@ -142,22 +166,26 @@ export function ProviderManual({ onClose, returnFocusElement }) {
         onClose();
       }}
     >
-      <header className="manual-header">
-        <div>
-          <BookOpen size={23} aria-hidden="true" />
-          <strong>
-            StreamLion <span>Provider manual</span>
-          </strong>
-        </div>
+      <AppHeader
+        manual={false}
+        account={account}
+        connected={connected}
+        onHome={home}
+        onAccount={accountPage}
+        disabled={disabled}
+        bookId={bookId}
+        verified={verified}
+      />
+      <div className="manual-close-row">
         <button
           type="button"
           onClick={onClose}
           aria-label="Close provider manual"
           autoFocus
         >
-          <X size={22} aria-hidden="true" />
+          <X size={20} aria-hidden="true" /> Close manual
         </button>
-      </header>
+      </div>
       <div className="manual-content">
         <div className="manual-intro">
           <h1 id={titleId}>One job, from request to handover.</h1>
@@ -196,6 +224,7 @@ export function ProviderManual({ onClose, returnFocusElement }) {
             <li key={stage.id}>
               <details
                 className="manual-stage"
+                id={`${titleId}-${stage.id}`}
                 ref={(el) => {
                   stages.current[index] = el;
                 }}
@@ -306,12 +335,39 @@ export function ProviderManual({ onClose, returnFocusElement }) {
           </p>
         </footer>
       </div>
+      <SectionNavigation
+        disabled={disabled}
+        onHome={home}
+        sections={MANUAL_STAGES.map((stage, index) => ({
+          id: `${titleId}-${stage.id}`,
+          label: [
+            "Setup",
+            "Receive",
+            "Agree",
+            "Prepare",
+            "Capture",
+            "Check",
+            "Deliver",
+          ][index],
+          title: stage.title,
+          icon: [
+            Cloud,
+            FileText,
+            Handshake,
+            ClipboardCheck,
+            Camera,
+            Send,
+            Repeat2,
+          ][index],
+          onSelect: () => openStage(index),
+        }))}
+      />
     </dialog>,
     document.body,
   );
 }
 
-export default function ProviderManualButton() {
+export default function ProviderManualButton(props = {}) {
   const [open, setOpen] = useState(false);
   const trigger = useRef(null);
   return (
@@ -321,6 +377,7 @@ export default function ProviderManualButton() {
         type="button"
         className="provider-manual-trigger"
         aria-label="Open provider manual"
+        disabled={props.disabled}
         aria-haspopup="dialog"
         onClick={() => setOpen(true)}
         title="Follow a job from request to handover"
@@ -330,6 +387,7 @@ export default function ProviderManualButton() {
       </button>
       {open && (
         <ProviderManual
+          {...props}
           onClose={() => setOpen(false)}
           returnFocusElement={trigger.current}
         />

@@ -1,6 +1,7 @@
 @import "./theme.css";
 @import "./provider-manual.css";
 @import "./client-invitation.css";
+@import "./app-navigation.css";
 
 :root {
   font-family:
@@ -159,6 +160,34 @@ h3 {
 }
 .coord-shell main {
   padding: 36px 30px 60px;
+}
+.coord-shell.has-section-navigation main {
+  padding-bottom: calc(112px + env(safe-area-inset-bottom));
+}
+.coord-section,
+.coord-card[id],
+#coord-selected-request {
+  scroll-margin-top: 24px;
+  scroll-margin-bottom: calc(100px + env(safe-area-inset-bottom));
+}
+.coord-section:focus-visible,
+.coord-card[id]:focus-visible,
+#coord-selected-request:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+.coord-work-section[hidden] {
+  display: none;
+}
+.coord-client-access {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
 }
 .coord-heading {
   display: flex;
