@@ -253,6 +253,70 @@ test("failed sign-out keeps the account and drafts visible and offers a safe ret
   assert.equal(localStorage.getItem(key), draft);
 });
 
+test("a blackholed sign-out times out without replaying and re-enables a safe manual retry", async (t) => {
+  restoredWorkbook();
+  const key = "streamlion-draft-v1:saved-book:pending-write",
+    draft = '{"revisionId":"keep-this-operation","text":"Exact 5 3/8 inches"}';
+  localStorage.setItem(key, draft);
+  const records = {
+    version: 1,
+    revision: 1,
+    jobs: [{ id: "kept", title: "Kept device project" }],
+    notes: [],
+  };
+  await (await openLocalDatabase()).put("workspace", records, "current");
+  const base = globalThis.fetch;
+  let writes = 0;
+  globalThis.fetch = (url, options = {}) => {
+    if (url !== "/api/google/signout") return base(url, options);
+    writes++;
+    assert.equal(options.method, "POST");
+    if (writes > 1) return Promise.resolve(new Response('{"connected":false}'));
+    // Simulate a transport that never responds but honors request cancellation.
+    return new Promise((resolve, reject) =>
+      options.signal?.addEventListener(
+        "abort",
+        () => reject(options.signal.reason),
+        { once: true },
+      ),
+    );
+  };
+  const ui = render(<App />);
+  await waitFor(() =>
+    assert.equal(
+      ui.getByRole("button", { name: "Sign out", exact: true }).disabled,
+      false,
+    ),
+  );
+  const timeout = new AbortController();
+  t.mock.method(AbortSignal, "timeout", (ms) => {
+    assert(ms > 0 && ms <= 20000, "sign-out must have a bounded deadline");
+    return timeout.signal;
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Sign out", exact: true }));
+  assert(ui.getByRole("button", { name: "Signing out…" }).disabled);
+  await act(async () =>
+    timeout.abort(new DOMException("Request timed out", "TimeoutError")),
+  );
+  await ui.findByRole("alert");
+  const retry = ui.getByRole("button", { name: "Sign out", exact: true });
+  assert.equal(retry.disabled, false);
+  assert(ui.getByText("qa-a@example.com"));
+  assert.equal(writes, 1, "a timed-out POST must not replay automatically");
+  assert.equal(localStorage.getItem(key), draft);
+  assert.equal(
+    localStorage.getItem("streamlion-selected-workbook-v1"),
+    "saved-book",
+  );
+  assert.deepEqual(await loadWorkspace(), records);
+  t.mock.restoreAll();
+  fireEvent.click(retry);
+  await ui.findByRole("link", { name: "Reconnect with Google" });
+  assert.equal(writes, 2, "only the explicit manual retry sends another POST");
+  assert.equal(localStorage.getItem(key), draft);
+  assert.deepEqual(await loadWorkspace(), records);
+});
+
 test("a new visitor chooses Google setup or explicit device-only use before creating work", async () => {
   const ui = render(<App />);
   await ui.findByRole("heading", { name: "StreamLion", exact: true });

@@ -251,7 +251,7 @@ export async function forgetGoogleConnection() {
 export async function signOutGoogleSession() {
   if (persistentSession) {
     const generation = session;
-    const response = await fetch("/api/google/signout", {
+    const response = await fetchRead("/api/google/signout", {
       method: "POST",
       credentials: "same-origin",
       cache: "no-store",

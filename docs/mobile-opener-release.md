@@ -19,7 +19,9 @@ use the static composition. The illustrations are optimized local WebP files
   click. OAuth callbacks retain their existing routing.
 - **Sign out on this device** deletes only the current authorization session.
   It preserves records, workbook-scoped drafts, other devices and coordination
-  grants. **Disconnect Google** remains a separate, broader action.
+  grants. Its POST is bounded to 20 seconds and is never retried automatically;
+  a timeout releases the busy controls and preserves state for manual retry.
+  **Disconnect Google** remains a separate, broader action.
 - An encrypted, HttpOnly workspace bookmark can restore workbook/folder
   selection only after Google independently verifies the same subject. It
   cannot authorize API access or select another account's workspace. Session
@@ -28,10 +30,11 @@ use the static composition. The illustrations are optimized local WebP files
 
 ## Local validation
 
-- 578 tests pass, including first entry, returning account, license gating,
+- 579 tests pass, including first entry, returning account, license gating,
   expired/cancelled sessions, sign-out failure, draft preservation, account
-  isolation and lost-response recovery. The test harness emits React act
-  warnings; there are no failed, skipped or cancelled tests.
+  isolation, blackholed sign-out/manual retry and lost-response recovery. The
+  test harness emits React act warnings; there are no failed, skipped or
+  cancelled tests.
 - Production app/PWA and extension build, Pages Functions compilation and local
   capacity verification pass. Both auxiliary Worker dry-run builds pass and the
   dependency audit reports zero vulnerabilities. Capacity evidence is local,
