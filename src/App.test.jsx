@@ -26,10 +26,15 @@ const { render, fireEvent, waitFor, cleanup, act } =
 const { default: App } = await import("./App.jsx");
 const { loadWorkspace } = await import("./storage.js");
 const { offerUpdate } = await import("./updates.js");
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async () =>
+  new Response(JSON.stringify({ enabled: false, connected: false }));
 
 test("saving a draft keeps its editor and updates the same project on later saves", async () => {
   localStorage.clear();
   const ui = render(<App />);
+  await ui.findByRole("heading", { name: "Set up StreamLion" });
+  fireEvent.click(ui.getByRole("button", { name: "Continue on this device" }));
   await ui.findByRole("heading", { name: "Projects" });
   fireEvent.click(ui.getAllByRole("button", { name: "Create project" })[0]);
   fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
@@ -167,4 +172,7 @@ test("the header manual preserves an unfinished project and remains available fr
   assert.ok(ui.getByRole("dialog"));
   fireEvent.click(ui.getByRole("button", { name: "Close provider manual" }));
 });
-test.after(() => dom.window.close());
+test.after(() => {
+  globalThis.fetch = originalFetch;
+  dom.window.close();
+});

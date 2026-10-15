@@ -18,6 +18,13 @@ import {
 import Jobs from "./Jobs";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import ProviderManualButton from "./ProviderManual.jsx";
+import WorkspaceSetup, {
+  DEVICE_SETUP_KEY,
+  deviceSetupChosen,
+  hasDeviceDrafts,
+} from "./WorkspaceSetup.jsx";
+import AccountStatus from "./AccountStatus.jsx";
+import InstallApp from "./InstallApp.jsx";
 import { googleSignInFailure } from "./google-signin-errors.js";
 import Notes from "./Notes";
 import Measurements from "./MeasurementCapture.jsx";
@@ -54,6 +61,7 @@ import {
   rememberGoogleWorkbook,
   appendRevision,
   hasGoogleSession,
+  googleAccount,
   reserveFieldFileId,
   retainFieldFile,
 } from "./google";
@@ -102,6 +110,8 @@ export default function App() {
   const [hasPending, setHasPending] = useState(false);
   const [noteEpoch, setNoteEpoch] = useState(0);
   const [restoreError, setRestoreError] = useState("");
+  const [checkingConnection, setCheckingConnection] = useState(true);
+  const [deviceChosen, setDeviceChosen] = useState(deviceSetupChosen);
   const restoreEpoch = useRef(0);
   const editorOpen = !!editing;
   useEffect(() => {
@@ -109,6 +119,7 @@ export default function App() {
   }, [page, editorOpen]);
   async function restoreConnection() {
     const epoch = ++restoreEpoch.current;
+    setCheckingConnection(true);
     setRestoreError("");
     setStatus("Restoring Google connection…");
     try {
@@ -144,6 +155,8 @@ export default function App() {
         setRestoreError(e.message);
         setStatus("Saved connection unavailable · retry in Connections");
       }
+    } finally {
+      if (epoch === restoreEpoch.current) setCheckingConnection(false);
     }
   }
   useEffect(() => {
@@ -368,6 +381,7 @@ export default function App() {
   }
   function disconnect(preserveSelection = false) {
     restoreEpoch.current++;
+    setCheckingConnection(false);
     setRestoreError("");
     if (!preserveSelection) {
       pending.current = null;
@@ -895,6 +909,12 @@ export default function App() {
       }));
   }
   const disabled = captureBusy || syncBusy || outboxBusy;
+  const existingWork =
+    !!bookId ||
+    local.jobs.length > 0 ||
+    local.notes.length > 0 ||
+    hasDeviceDrafts();
+  const newVisitor = !deviceChosen && !existingWork && !hasGoogleSession();
   const navigate = (p) => {
     refreshDrafts();
     setEditing(null);
@@ -977,6 +997,17 @@ export default function App() {
           className="app-utility"
           aria-label="Workspace help and appearance"
         >
+          <AccountStatus
+            checking={checkingConnection}
+            error={restoreError}
+            connected={hasGoogleSession()}
+            account={googleAccount()}
+            bookId={bookId}
+            verified={!!remote}
+            disabled={disabled}
+            onOpen={() => navigate("Connections")}
+          />
+          <InstallApp disabled={disabled} />
           <ProviderManualButton />
           {page !== "Ask" && <ThemeSwitch />}
         </header>
@@ -1104,6 +1135,20 @@ export default function App() {
             }}
             onRefreshProjects={showProjectsFromGoogle}
             templates={templates}
+          />
+        ) : page === "Projects" && newVisitor && checkingConnection ? (
+          <p role="status">Checking your saved connection…</p>
+        ) : page === "Projects" && newVisitor && !restoreError ? (
+          <WorkspaceSetup
+            onGoogle={() => navigate("Connections")}
+            onDevice={() => {
+              try {
+                localStorage.setItem(DEVICE_SETUP_KEY, "device");
+              } catch {
+                /* optional preference */
+              }
+              setDeviceChosen(true);
+            }}
           />
         ) : page === "Projects" ? (
           <Jobs
@@ -1337,6 +1382,7 @@ export default function App() {
             siteCopy={siteCopy}
             onSiteCopy={keepSiteCopy}
             onConnectionBusy={setSyncBusy}
+            onContinue={() => navigate("Projects")}
             onBackupBusy={setSyncBusy}
             onBackupRestored={async () => {
               const restored = await loadWorkspace();

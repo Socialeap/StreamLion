@@ -1,0 +1,121 @@
+.app-utility .account-status {
+  margin-right: auto;
+  min-width: 0;
+  max-width: 420px;
+  text-align: left;
+  justify-content: flex-start;
+}
+.account-status > span {
+  min-width: 0;
+}
+.account-status strong,
+.account-status small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.account-status small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px !important;
+  font-weight: 400;
+}
+.account-status svg {
+  flex-shrink: 0;
+}
+.app-utility {
+  margin-bottom: 24px;
+}
+.setup-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.setup-choices > section {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 0;
+}
+.setup-eyebrow {
+  font-size: 14px !important;
+  color: var(--green);
+  margin-bottom: 12px !important;
+}
+.google-setup-steps {
+  padding-left: 24px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.google-setup-steps li {
+  margin-bottom: 10px;
+}
+.install-app {
+  position: relative;
+  flex-shrink: 0;
+}
+.install-app > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 14px;
+}
+.install-app > summary:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.install-instructions {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(400px, calc(100vw - 40px));
+  max-height: 65dvh;
+  overflow-y: auto;
+  z-index: 20;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px #0002;
+}
+.install-instructions h2 {
+  font-size: 20px;
+}
+.install-instructions p {
+  font-size: 14px;
+}
+@media (max-width: 760px) {
+  .setup-choices {
+    grid-template-columns: 1fr;
+  }
+  .setup-choices > section {
+    padding: 20px;
+  }
+  .app-utility .account-status {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  .app .app-utility {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-items: center;
+  }
+  .install-instructions {
+    position: fixed;
+    top: min(220px, 28dvh);
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-height: calc(100dvh - 310px);
+  }
+}
+@media print {
+  .workspace-setup,
+  .install-app {
+    display: none;
+  }
+}
