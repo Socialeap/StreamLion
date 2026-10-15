@@ -104,3 +104,39 @@ test("cyclic and excessively deep parent chains stop with an incomplete path", a
   );
   assert.equal(calls.length, 14);
 });
+
+for (const shared of [false, true]) {
+  for (const hops of [0, 11, 12, 13]) {
+    test(`${shared ? "shared-drive" : "My Drive"} root completion at ${hops} parent hops`, async () => {
+      const rootId = `f${hops}`;
+      const rootName = shared ? "Team workspace" : "My Drive";
+      const files = Object.fromEntries(
+        Array.from({ length: hops + 1 }, (_, i) => [
+          `f${i}`,
+          {
+            id: `f${i}`,
+            name: i === hops ? rootName : `Folder ${i}`,
+            ...(i < hops ? { parents: [`f${i + 1}`] } : {}),
+            ...(shared ? { driveId: rootId } : {}),
+          },
+        ]),
+      );
+      if (!shared) files.root = files[rootId];
+      const calls = [];
+      const result = await folderLocation(drive(files, calls), "f0");
+      assert.equal(result.complete, hops <= 12);
+      const names = Array.from(
+        { length: Math.min(hops, 12) + 1 },
+        (_, i) => files[`f${i}`].name,
+      ).reverse();
+      if (shared && hops <= 12) names.unshift("Shared drives");
+      assert.equal(result.location, names.join(" / "));
+      assert.equal(
+        calls.length,
+        shared
+          ? 1 + Math.min(hops, 12)
+          : 2 + Math.min(hops, 12) - (hops > 0 && hops <= 12 ? 1 : 0),
+      );
+    });
+  }
+}

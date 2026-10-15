@@ -40,16 +40,7 @@ export async function folderLocation(drive, id) {
   const names = [folder.name],
     seen = new Set([id]);
   for (let depth = 0; depth < 12; depth++) {
-    if (current.id === root?.id) {
-      names[0] = "My Drive";
-      complete = true;
-      break;
-    }
-    if (folder.driveId && current.id === folder.driveId) {
-      names.unshift("Shared drives");
-      complete = true;
-      break;
-    }
+    if (current.id === root?.id || current.id === folder.driveId) break;
     const parentId = current.parents?.[0];
     if (!parentId || seen.has(parentId)) break;
     seen.add(parentId);
@@ -59,6 +50,15 @@ export async function folderLocation(drive, id) {
       break;
     }
     names.unshift(current.name);
+  }
+  // The final allowed parent may itself be the root. Classify it after
+  // traversal, without spending another ancestor read or extending the bound.
+  if (current.id === root?.id) {
+    names[0] = "My Drive";
+    complete = true;
+  } else if (current.id === folder.driveId) {
+    names.unshift("Shared drives");
+    complete = true;
   }
   return {
     id,
