@@ -78,12 +78,18 @@
   .project-voice { padding: 16px; }
 }
 .context-preview { max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.intake-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 24px; }
+.intake-choices { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 18px; margin-bottom: 24px; }
 .intake-choices section { border: 1px solid var(--line); border-radius: 10px; padding: 22px; }
 .intake-choices svg { color: var(--green); }
 .intake-choices .primary svg { color: var(--on-accent); }
 .intake-choices h3 { margin: 12px 0 8px; }
 .intake-choices p { min-height: 70px; }
+.brief-actions { display: grid; gap: 10px; }
+.brief-actions .button-link, .brief-actions button { justify-content: center; white-space: normal; }
+.brief-import { display: grid; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.intake-choices .brief-import p { min-height: 0; margin: 0; }
+.brief-import label { margin: 0; }
+.brief-import input[type="file"] { width: 100%; max-width: 100%; min-width: 0; }
 .mobile-section-picker { display: none; }
 .wizard-starting .editor-header-actions .primary:disabled { display: none; }
 @media (max-width: 760px) {
@@ -826,9 +832,6 @@ fieldset .form-row {gap:0 18px;}
 .quiet-details { border-top: 1px solid var(--line); margin-top: 27px; padding-top: 12px; }
 .quiet-details summary { font-size: 15px; font-weight: 650; }
 .quiet-details p { font-size: 14px; }
-.import-details textarea { max-width: 800px; }
-.import-details .actions { align-items: flex-start; }
-.import-details .file-label { max-width: 250px; }
 .wizard-fields {
   border: 0;
   border-radius: 0;

@@ -86,6 +86,8 @@ export default function ProjectEditor({
   const [saveNotice, setSaveNotice] = useState(savedNotice);
   const [busy, setBusy] = useState(false);
   const [json, setJson] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const importFileRef = useRef(null);
   const [importStatus, setImportStatus] = useState("");
   const [reviewed, setReviewed] = useState(false);
   const progressRef = useRef(null);
@@ -107,6 +109,29 @@ export default function ProjectEditor({
       behavior: "smooth",
     });
   }, [step]);
+
+  useEffect(() => {
+    if (importOpen && step === 0) importFileRef.current?.focus();
+  }, [importOpen, step]);
+
+  async function importFile(event) {
+    const input = event.target;
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      if (file.size > 150000) {
+        setError("That file is too large. Choose one project file.");
+        return;
+      }
+      importText(await file.text());
+    } catch {
+      setError(
+        "Could not read that file. Choose it again, or paste the project JSON below.",
+      );
+    } finally {
+      input.value = "";
+    }
+  }
 
   function goTo(next) {
     const target = Math.max(0, Math.min(STEPS.length - 1, next));
@@ -339,14 +364,73 @@ export default function ProjectEditor({
                 soon as the project has a name.
               </p>
               <div className="intake-choices">
-                <section>
+                <section aria-label="Prepare my project brief with ChatGPT">
                   <MessageCircle size={28} aria-hidden="true" />
-                  <h3>I have a brief</h3>
+                  <h3>Prepare my project brief with ChatGPT</h3>
                   <p>
-                    Use your own ChatGPT to read the PDF or messages. Bring its
-                    project file back here to review.
+                    Upload the project's PDF, email thread or messages to
+                    ChatGPT with the prepared instructions. ChatGPT will create
+                    a single project file. Download it to your device, then
+                    upload it here.
                   </p>
-                  <ChatGPTLaunch mode="create" />
+                  <div className="brief-actions">
+                    <ChatGPTLaunch
+                      mode="create"
+                      label="1. Prepare my brief in ChatGPT"
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-expanded={importOpen}
+                      aria-controls="chatgpt-project-import"
+                      onClick={() => setImportOpen((open) => !open)}
+                    >
+                      <Upload size={16} aria-hidden="true" />
+                      2. Bring back the ChatGPT project file
+                    </button>
+                  </div>
+                  {importOpen && (
+                    <div id="chatgpt-project-import" className="brief-import">
+                      <p>
+                        Choose the .json project file you downloaded from
+                        ChatGPT. StreamLion will fill in the project steps for
+                        you to review before saving the project.
+                      </p>
+                      <label className="file-label">
+                        Choose project file (.json)
+                        <input
+                          ref={importFileRef}
+                          type="file"
+                          disabled={busy}
+                          accept=".json,application/json"
+                          onChange={importFile}
+                        />
+                      </label>
+                      <label htmlFor="project-import">
+                        Or, paste the project details here:
+                      </label>
+                      <p id="project-paste-help" className="hint">
+                        If ChatGPT shows the project JSON instead of a download,
+                        copy the entire JSON and paste it below. Do not paste
+                        the original PDF text or email thread here.
+                      </p>
+                      <textarea
+                        id="project-import"
+                        aria-describedby="project-paste-help"
+                        disabled={busy}
+                        value={json}
+                        onChange={(event) => setJson(event.target.value)}
+                        rows={4}
+                      />
+                      <button
+                        type="button"
+                        disabled={busy || !json.trim()}
+                        onClick={() => importText(json)}
+                      >
+                        Use these details
+                      </button>
+                    </div>
+                  )}
                 </section>
                 <section>
                   <FileText size={28} aria-hidden="true" />
@@ -439,51 +523,6 @@ export default function ProjectEditor({
                   saves it to the destination above.
                 </p>
               </section>
-              <details className="quiet-details import-details">
-                <summary title="Use this if the chat gives you project details to paste or download.">
-                  Bring back the ChatGPT project file
-                </summary>
-                <p>
-                  Attach your brief in the ChatGPT conversation opened above.
-                  Ask for the project file, then choose it here. Review the
-                  imported details before saving.
-                </p>
-                <label htmlFor="project-import">Paste project details</label>
-                <textarea
-                  id="project-import"
-                  disabled={busy}
-                  value={json}
-                  onChange={(event) => setJson(event.target.value)}
-                  rows={4}
-                />
-                <div className="actions">
-                  <button
-                    type="button"
-                    disabled={busy || !json.trim()}
-                    onClick={() => importText(json)}
-                    title="Fill the project fields from the pasted details."
-                  >
-                    Use these details
-                  </button>
-                  <label className="file-label">
-                    Choose project file
-                    <input
-                      type="file"
-                      disabled={busy}
-                      accept=".json,application/json"
-                      onChange={async (event) => {
-                        const file = event.target.files[0];
-                        if (!file) return;
-                        if (file.size > 150000)
-                          return setError(
-                            "That file is too large. Choose one project file.",
-                          );
-                        importText(await file.text());
-                      }}
-                    />
-                  </label>
-                </div>
-              </details>
             </div>
           ) : (
             <fieldset className="wizard-fields" disabled={busy}>
