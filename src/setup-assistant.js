@@ -59,6 +59,12 @@ export const HARDWARE = [
 ];
 const DELIVERABLES = [
   { id: "space", label: "Matterport Space link", for: MATTERPORT },
+  {
+    id: "transfer",
+    label: "Matterport Model Transfer",
+    detail: "Captured on my account, then transferred to the client’s",
+    for: MATTERPORT,
+  },
   { id: "schematic", label: "Schematic floor plan", for: MATTERPORT },
   { id: "matterpak", label: "MatterPak bundle (OBJ / XYZ)", for: MATTERPORT },
   {

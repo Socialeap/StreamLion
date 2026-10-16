@@ -84,6 +84,8 @@ test("hardware drives deliverable options, 360 hosting and the custom system que
   const options = (hardware) =>
     deliverableOptions({ hardware }).map((item) => item.id);
   assert(options(["matterport-pro3"]).includes("space"));
+  assert(options(["matterport-pro2"]).includes("transfer"));
+  assert(!options(["insta360", "leica-blk360"]).includes("transfer"));
   assert(!options(["drone"]).includes("space"));
   assert(options(["drone"]).includes("orthomosaic"));
   const state = run([
@@ -91,7 +93,7 @@ test("hardware drives deliverable options, 360 hosting and the custom system que
     ["focus", ["handover"]],
     ["hardware", ["matterport-pro2", "insta360", "other"]],
     ["hardwareOther", "NavVis VLX"],
-    ["deliverables", ["space", "tour"]],
+    ["deliverables", ["space", "transfer", "tour"]],
     ["tourHosting", ["kuula", "cloudpano"]],
     ["storage", "device"],
   ]);
@@ -103,6 +105,7 @@ test("hardware drives deliverable options, 360 hosting and the custom system que
   ]);
   assert.deepEqual(profile.deliverables, [
     "Matterport Space link",
+    "Matterport Model Transfer",
     "360° virtual tour link (Kuula, CloudPano)",
   ]);
   assert.throws(
