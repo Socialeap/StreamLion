@@ -333,7 +333,9 @@ export function parseIntake(text) {
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error("Paste the JSON object from StreamLion in ChatGPT.");
+    throw new Error(
+      "Paste the complete project JSON from ChatGPT, or choose its downloaded .json file.",
+    );
   }
   if (
     data?.schemaVersion !== SCHEMA_VERSION ||

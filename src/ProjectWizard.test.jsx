@@ -20,13 +20,168 @@ Object.defineProperty(globalThis, "navigator", {
   configurable: true,
 });
 
-const { render, fireEvent, act, cleanup } =
+const { render, fireEvent, act, cleanup, within, waitFor } =
   await import("@testing-library/react");
 const { default: ProjectEditor } = await import("./ProjectEditor.jsx");
 const { chatUrl } = await import("./ChatGPTPanel.jsx");
 const { FIELD_HELP } = await import("./FieldHelp.jsx");
-const { PROJECT_FIELDS } = await import("./project-schema.js");
+const { PROJECT_FIELDS, intakeFor } = await import("./project-schema.js");
+const { readDraft, projectDraftKey } = await import("./drafts.js");
 const { default: Jobs } = await import("./Jobs.jsx");
+
+test("ChatGPT preparation and return stay together, with file first and a paste alternative", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let saves = 0;
+  const ui = render(
+    <ProjectEditor
+      draftScope="brief-paste"
+      onSave={async () => {
+        saves++;
+      }}
+      onCancel={() => {}}
+    />,
+  );
+  const card = within(
+    ui.getByRole("region", { name: "Prepare my project brief with ChatGPT" }),
+  );
+  const prepare = card.getByRole("link", {
+    name: "1. Prepare my brief in ChatGPT",
+  });
+  const bringBack = card.getByRole("button", {
+    name: "2. Bring back the ChatGPT project file",
+  });
+  assert(
+    prepare.compareDocumentPosition(bringBack) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  assert.equal(bringBack.getAttribute("aria-expanded"), "false");
+  fireEvent.click(bringBack);
+  const file = card.getByLabelText("Choose project file (.json)"),
+    paste = card.getByLabelText("Or, paste the project details here:");
+  assert.equal(document.activeElement, file);
+  assert(
+    file.compareDocumentPosition(paste) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  const text = JSON.stringify(
+    intakeFor({ title: "Pasted project", scope: "Lobby and stairs" }),
+  );
+  fireEvent.change(paste, { target: { value: text } });
+  fireEvent.click(bringBack);
+  fireEvent.click(bringBack);
+  assert.equal(
+    card.getByLabelText("Or, paste the project details here:").value,
+    text,
+  );
+  fireEvent.click(card.getByRole("button", { name: "Use these details" }));
+  assert.equal(ui.getByLabelText("Project name").value, "Pasted project");
+  assert.equal(
+    readDraft(projectDraftKey("brief-paste", "new")).fields.scope,
+    "Lobby and stairs",
+  );
+  assert.equal(saves, 0);
+});
+
+test("a ChatGPT project file fills review steps without saving the project", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let saves = 0;
+  const ui = render(
+    <ProjectEditor
+      draftScope="brief-file"
+      onSave={async () => {
+        saves++;
+      }}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "2. Bring back the ChatGPT project file" }),
+  );
+  const file = {
+    size: 200,
+    text: async () =>
+      JSON.stringify(
+        intakeFor({ title: "Uploaded project", address: "100 Example Street" }),
+      ),
+  };
+  fireEvent.change(ui.getByLabelText("Choose project file (.json)"), {
+    target: { files: [file] },
+  });
+  await waitFor(() =>
+    assert.equal(ui.getByLabelText("Project name").value, "Uploaded project"),
+  );
+  assert.equal(
+    readDraft(projectDraftKey("brief-file", "new")).fields.address,
+    "100 Example Street",
+  );
+  assert.equal(saves, 0);
+});
+
+test("invalid, oversized and unreadable imports preserve the existing draft and paste input", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const ui = render(
+    <ProjectEditor
+      draftScope="brief-errors"
+      onSave={async () => {
+        throw Error("Import must not save");
+      }}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Keep my draft" },
+  });
+  const before = readDraft(projectDraftKey("brief-errors", "new"));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 1: Start with your project brief" }),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "2. Bring back the ChatGPT project file" }),
+  );
+  fireEvent.change(ui.getByLabelText("Or, paste the project details here:"), {
+    target: { value: "Keep this paste draft" },
+  });
+  for (const [file, message] of [
+    [
+      {
+        size: 150001,
+        text: async () => {
+          throw Error("Must not read oversized file");
+        },
+      },
+      /too large/,
+    ],
+    [
+      {
+        size: 20,
+        text: async () => {
+          throw Error("Unreadable");
+        },
+      },
+      /Could not read/,
+    ],
+    [
+      { size: 20, text: async () => "not project JSON" },
+      /complete project JSON/,
+    ],
+  ]) {
+    const input = ui.getByLabelText("Choose project file (.json)");
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() =>
+      assert.match(ui.getByRole("alert").textContent, message),
+    );
+    assert.equal(input.value, "");
+    assert.deepEqual(readDraft(projectDraftKey("brief-errors", "new")), before);
+    assert.equal(
+      ui.getByLabelText("Or, paste the project details here:").value,
+      "Keep this paste draft",
+    );
+  }
+});
 
 test("project wizard starts with the ChatGPT action and reveals one field group at a time", () => {
   localStorage.clear();
