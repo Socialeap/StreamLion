@@ -1,4 +1,5 @@
 import { pricingForConnection } from "./provider-pricing.js";
+import { withClientBudget } from "../src/provider-pricing.js";
 import { pricingRequest } from "../src/provider-pricing.js";
 import { brandingForConnection } from "./provider-branding.js";
 import { hash, seal, unseal } from "./google-auth.js";
@@ -35,7 +36,13 @@ export async function prospectSchema(env) {
     return false;
   }
 }
-export async function createProspectLink(env, row, job, connection) {
+export async function createProspectLink(
+  env,
+  row,
+  job,
+  connection,
+  clientBudget,
+) {
   if (!(await prospectSchema(env)))
     throw new CoordinationError(
       "Share-link intake awaits activation. Email invitations remain available.",
@@ -50,15 +57,18 @@ export async function createProspectLink(env, row, job, connection) {
   const token = randomProspectToken();
   // Deliberately public service wording only. Never publish the private job,
   // starting contact details, provider ID, files, financial records or history.
-  const descriptor = {
-    brand: (await brandingForConnection(env, connection)).name,
-    intake: job.intake || null,
-    pricing: await pricingForConnection(
-      env,
-      connection,
-      job.intake?.pricingProfile || "default",
-    ),
-  };
+  const descriptor = withClientBudget(
+    {
+      brand: (await brandingForConnection(env, connection)).name,
+      intake: job.intake || null,
+      pricing: await pricingForConnection(
+        env,
+        connection,
+        job.intake?.pricingProfile || "default",
+      ),
+    },
+    clientBudget,
+  );
   await env.GOOGLE_SESSIONS.prepare(
     "INSERT OR IGNORE INTO streamlion_prospect_links_v1(job_id,token_hash,token_cipher,public_intake,expected_email_hash,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
   )

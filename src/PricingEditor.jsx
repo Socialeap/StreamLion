@@ -241,6 +241,22 @@ export default function PricingEditor({ config, onChange, disabled = false }) {
         />
         Let clients propose a budget
       </label>
+      <label className="pricing-check">
+        <input
+          type="checkbox"
+          disabled={disabled}
+          checked={config.budgetPerClient === true}
+          onChange={(e) => patch({ budgetPerClient: e.target.checked })}
+        />
+        Decide per client request
+      </label>
+      {config.budgetPerClient && (
+        <p className="hint">
+          Each share link or public form you create asks whether that client may
+          propose a budget. The choice above is the starting setting; other
+          clients see only your set rates.
+        </p>
+      )}
       <details>
         <summary>Optional TM sample rates</summary>
         <p>

@@ -88,6 +88,11 @@ export function validatePricing(input) {
     fail("Choose a currency that uses two decimal places.");
   if (typeof input.allowBudget !== "boolean")
     fail("Choose whether clients may propose a budget.");
+  if (
+    input.budgetPerClient !== undefined &&
+    typeof input.budgetPerClient !== "boolean"
+  )
+    fail("Choose whether budgets are decided per client request.");
   const rate = String(input.rate ?? "0");
   decimalUnits(rate);
   const tiered = ["whole", "progressive", "flat"].includes(input.method);
@@ -145,7 +150,25 @@ export function validatePricing(input) {
     tiers: cleanTiers,
     extras,
     allowBudget: input.allowBudget,
+    // Per-client budgets: each request link records its own choice, and
+    // allowBudget is the starting choice. Omitted when off, as saved before.
+    ...(input.budgetPerClient ? { budgetPerClient: true } : {}),
   };
+}
+// Records a per-client budget choice on a new request link's descriptor.
+export function withClientBudget(descriptor, choice) {
+  return descriptor.pricing?.config?.budgetPerClient &&
+    typeof choice === "boolean"
+    ? { ...descriptor, clientBudget: choice }
+    : descriptor;
+}
+// Whether a published request link accepts a proposed budget.
+export function budgetAllowed(descriptor) {
+  const config = descriptor?.pricing?.config;
+  if (!config) return false;
+  return config.budgetPerClient && typeof descriptor.clientBudget === "boolean"
+    ? descriptor.clientBudget
+    : config.allowBudget === true;
 }
 const cents = (units, divisor = 100n) => {
   const amount = (units + divisor / 2n) / divisor;
@@ -266,7 +289,7 @@ export function pricingRequest(descriptor, body) {
   );
   let budgetCents = null;
   if (body.budget != null && body.budget !== "") {
-    if (!config.allowBudget)
+    if (!budgetAllowed(descriptor))
       fail("This provider is not accepting proposed budgets.");
     budgetCents = Number(decimalUnits(body.budget, 2, 100000000));
   }

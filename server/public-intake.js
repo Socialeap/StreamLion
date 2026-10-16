@@ -1,4 +1,5 @@
 import { pricingForConnection, pricingProfiles } from "./provider-pricing.js";
+import { withClientBudget } from "../src/provider-pricing.js";
 import { pricingRequest, pricingKey } from "../src/provider-pricing.js";
 import { brandingForConnection } from "./provider-branding.js";
 import { hash, seal, unseal } from "./google-auth.js";
@@ -99,6 +100,7 @@ export async function createPublicForm(
   operation,
   job,
   verificationRequired = false,
+  clientBudget,
 ) {
   if (!(await publicIntakeSchema(env)))
     throw new CoordinationError("Public forms await activation.", 503);
@@ -113,7 +115,9 @@ export async function createPublicForm(
     // operation input. A lost-response retry must survive a later profile edit.
     if (
       stableJSON(stored.intake || null) !== stableJSON(job.intake || null) ||
-      Boolean(row.verification_required) !== verificationRequired
+      Boolean(row.verification_required) !== verificationRequired ||
+      (Object.hasOwn(stored, "clientBudget") &&
+        stored.clientBudget !== clientBudget)
     )
       throw new CoordinationError("Form identity changed.", 409);
   }
@@ -126,15 +130,18 @@ export async function createPublicForm(
     await assertIdentity(old);
     return formView(env, old);
   }
-  const descriptor = {
-      brand: (await brandingForConnection(env, c)).name,
-      intake: job.intake || null,
-      pricing: await pricingForConnection(
-        env,
-        c,
-        job.intake?.pricingProfile || "default",
-      ),
-    },
+  const descriptor = withClientBudget(
+      {
+        brand: (await brandingForConnection(env, c)).name,
+        intake: job.intake || null,
+        pricing: await pricingForConnection(
+          env,
+          c,
+          job.intake?.pricingProfile || "default",
+        ),
+      },
+      clientBudget,
+    ),
     token = randomProspectToken();
   await env.GOOGLE_SESSIONS.prepare(
     "INSERT OR IGNORE INTO streamlion_public_forms_v1(id,connection_id,token_hash,token_cipher,descriptor,verification_required,created_at) SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_public_forms_v1 WHERE connection_id=?)<20",

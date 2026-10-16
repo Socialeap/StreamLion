@@ -227,6 +227,7 @@ export function pricingConfig(answers) {
     rate: method === "area" ? answers.rate : blankPricing().rate,
     tiers: ["tiers", "flat"].includes(method) ? answers.tiers : [],
     allowBudget: answers.budget === "yes",
+    budgetPerClient: answers.budget === "per-client",
   });
 }
 function money(value, places) {
@@ -684,11 +685,24 @@ export const STEPS = [
       !!answers.pricingMethod && answers.pricingMethod !== "skip",
     prompt: () => ({
       text: "Can clients suggest their own budget when they send a request?",
+      hint: "With Set per client, each share link or public form asks whether that client may propose a budget.",
     }),
-    options: () => yesNo("Yes, let them propose one", "No"),
-    validate: (value) => oneOf({ yes: 1, no: 1 }, value, "Choose an option."),
+    options: () => [
+      ...yesNo("Yes, let them propose one", "No"),
+      {
+        id: "per-client",
+        label: "Set per client",
+        detail: "Choose for each request link",
+      },
+    ],
+    validate: (value) =>
+      oneOf({ yes: 1, no: 1, "per-client": 1 }, value, "Choose an option."),
     summary: (value) =>
-      value === "yes" ? "Clients may propose a budget" : "No proposed budgets",
+      value === "yes"
+        ? "Clients may propose a budget"
+        : value === "per-client"
+          ? "Set per client"
+          : "No proposed budgets",
   },
   {
     id: "logo",

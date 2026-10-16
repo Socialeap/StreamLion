@@ -161,3 +161,28 @@ test("a proposed budget never replaces the computed fee, and stale pricing keys 
   );
   assert.equal(pricingRequest({ intake: {} }, {}), undefined);
 });
+test("per-client budgets are optional, keep old configurations unchanged and follow each link's choice", async () => {
+  const { budgetAllowed, withClientBudget } =
+    await import("./provider-pricing.js");
+  const base = validatePricing({ ...blankPricing(), allowBudget: true });
+  assert.equal(Object.hasOwn(base, "budgetPerClient"), false);
+  assert.throws(
+    () => validatePricing({ ...blankPricing(), budgetPerClient: "yes" }),
+    /per client/,
+  );
+  const perClient = validatePricing({
+    ...blankPricing(),
+    allowBudget: false,
+    budgetPerClient: true,
+  });
+  assert.equal(perClient.budgetPerClient, true);
+  const link = { pricing: { key: "default:1", config: perClient } };
+  assert.equal(budgetAllowed(link), false, "the default applies until chosen");
+  assert.equal(budgetAllowed(withClientBudget(link, true)), true);
+  assert.equal(budgetAllowed(withClientBudget(link, false)), false);
+  // A profile that is not per-client ignores a link's choice.
+  const fixed = { pricing: { key: "default:1", config: base } };
+  assert.equal(withClientBudget(fixed, false), fixed);
+  assert.equal(budgetAllowed(fixed), true);
+  assert.equal(budgetAllowed({ pricing: null }), false);
+});

@@ -1,5 +1,5 @@
 import { EstimateInputs, EstimatePreview } from "./PricingEstimate.jsx";
-import { pricingKey } from "./provider-pricing.js";
+import { budgetAllowed, pricingKey } from "./provider-pricing.js";
 import React, { useState, useRef } from "react";
 import { captureEstimate, estimateMoney } from "./capture-estimate.js";
 import { PROJECT_FIELDS } from "./project-schema.js";
@@ -120,7 +120,7 @@ export default function ProspectIntake({
                 ? {
                     pricingKey: pricingKey(descriptor),
                     quantities,
-                    budget: config?.allowBudget ? budget : "",
+                    budget: budgetAllowed(descriptor) ? budget : "",
                   }
                 : {}),
             };
@@ -187,7 +187,7 @@ export default function ProspectIntake({
                   area={fields.propertySizeSqFt}
                   quantities={quantities}
                 />
-                {config.allowBudget && (
+                {budgetAllowed(descriptor) && (
                   <label>
                     Your proposed budget (optional, {config.currency})
                     <input

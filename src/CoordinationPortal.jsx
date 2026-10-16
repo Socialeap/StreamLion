@@ -157,6 +157,7 @@ export default function CoordinationPortal({
     [companyName, setCompanyName] = useState("");
   const [forms, setForms] = useState([]),
     [verificationRequired, setVerificationRequired] = useState(false),
+    [clientBudget, setClientBudget] = useState(null),
     [links, setLinks] = useState([]),
     [shareLink, setShareLink] = useState(true),
     [createdInvitation, setCreatedInvitation] = useState(null),
@@ -473,6 +474,16 @@ export default function CoordinationPortal({
     }
   }
   const selectedJob = jobs.find((j) => j.id === selected);
+  // Pricing that decides budgets per client asks on each new request link.
+  const budgetChoice = (() => {
+    const profile =
+      templates.find((t) => t.id === selectedTemplate)?.config.pricingProfile ||
+      "default";
+    const config = (status?.pricingProfiles || []).find(
+      (p) => p.id === profile,
+    )?.config;
+    return config?.budgetPerClient ? config : null;
+  })();
   const visibleForms =
     createdInvitation?.form &&
     !forms.some((f) => f.id === createdInvitation.form.id)
@@ -1000,6 +1011,12 @@ export default function CoordinationPortal({
                       : status.shareLinks
                         ? { shareLink }
                         : {}),
+                    ...(shareLink && budgetChoice
+                      ? {
+                          clientBudget:
+                            clientBudget ?? budgetChoice.allowBudget,
+                        }
+                      : {}),
                     ...(selectedTemplate === "preset:tm-spatial"
                       ? { preset: "tm-spatial" }
                       : selectedTemplate
@@ -1068,7 +1085,10 @@ export default function CoordinationPortal({
                     <select
                       value={selectedTemplate}
                       disabled={busy || Boolean(createdInvitation)}
-                      onChange={(e) => setSelectedTemplate(e.target.value)}
+                      onChange={(e) => {
+                        setSelectedTemplate(e.target.value);
+                        setClientBudget(null);
+                      }}
                     >
                       <option value="">Standard work order</option>
                       <option value="preset:tm-spatial">
@@ -1137,6 +1157,25 @@ export default function CoordinationPortal({
                       Public forms await deployment activation. Your prospect
                       email is not required to share a public form.
                     </p>
+                  )}
+                  {shareLink && budgetChoice && (
+                    <>
+                      <label className="coord-check">
+                        <input
+                          type="checkbox"
+                          checked={clientBudget ?? budgetChoice.allowBudget}
+                          disabled={busy || Boolean(createdInvitation)}
+                          onChange={(e) => setClientBudget(e.target.checked)}
+                        />
+                        {status.publicForms
+                          ? "Let clients using this form propose their own budget"
+                          : "Let this client propose their own budget"}
+                      </label>
+                      <p className="coord-field-help">
+                        Your pricing decides budgets per client. When this is
+                        off, the client sees your set rates only.
+                      </p>
+                    </>
                   )}
                   {(!shareLink || status.publicForms === undefined) && (
                     <div className="coord-invite-fields">
@@ -1246,6 +1285,7 @@ export default function CoordinationPortal({
                         disabled={busy}
                         onClick={() => {
                           setCreatedInvitation(null);
+                          setClientBudget(null);
                           setMessage("");
                           selectRequest(null);
                           setTitle("");

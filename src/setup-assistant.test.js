@@ -221,6 +221,19 @@ test("every pricing path produces a configuration the existing pricing contract 
     pricingConfig(run([...lead, ["pricingMethod", "skip"]]).answers),
     null,
   );
+  const perClient = run([
+    ...lead,
+    ["pricingMethod", "area"],
+    ["currency", "USD"],
+    ["rate", "0.15"],
+    ["budget", "per-client"],
+  ]);
+  assert.equal(pricingConfig(perClient.answers).allowBudget, false);
+  assert.equal(pricingConfig(perClient.answers).budgetPerClient, true);
+  assert.equal(
+    walk(perClient, online).history.at(-1).step.summary("per-client"),
+    "Set per client",
+  );
   const rateStep = run([
     ...lead,
     ["pricingMethod", "area"],

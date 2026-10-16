@@ -270,3 +270,23 @@ test("an unpublished default starts from setup pricing without publishing it", a
   assert.equal(ui.getByLabelText("Currency (ISO code)").value, "CAD");
   assert.equal(writes.length, 0);
 });
+
+test("pricing can let each client request decide budgets, with the shared choice as its default", async (t) => {
+  t.after(cleanup);
+  const writes = [];
+  const api = async (body) => {
+    if (body) writes.push(body);
+    return { subject: "a", available: true, profiles: [] };
+  };
+  const ui = render(<Settings connected account="a@example.com" api={api} />);
+  const perClient = await ui.findByLabelText("Decide per client request");
+  assert.equal(ui.queryByText(/Each share link or public form/), null);
+  fireEvent.click(perClient);
+  assert(ui.getByText(/Each share link or public form/));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Publish pricing for new forms" }),
+  );
+  await ui.findByText(/Pricing published/);
+  assert.equal(writes[0].config.budgetPerClient, true);
+  assert.equal(writes[0].config.allowBudget, false);
+});
