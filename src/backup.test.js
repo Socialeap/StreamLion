@@ -345,3 +345,46 @@ test("malformed checklist plans and baselines are rejected before any restore ch
   }
 });
 test.after(() => dom.window.close());
+test("setup answers and the handover contact are backed up, restored only where missing, and validated", async () => {
+  const { SETUP_KEY, answerStep, newSetup } =
+    await import("./setup-assistant.js");
+  const { PROVIDER_CONTACT_KEY } = await import("./provider-contact.js");
+  await reset();
+  const setup = JSON.stringify(
+    answerStep(newSetup(), "name", "Alex", { online: true }),
+  );
+  const contact = JSON.stringify({ phone: "(503) 555-0100", area: "Portland" });
+  localStorage.setItem(SETUP_KEY, setup);
+  localStorage.setItem(PROVIDER_CONTACT_KEY, contact);
+  const backup = await createBackup();
+  await reset();
+  await restoreBackup(backup);
+  assert.equal(localStorage.getItem(SETUP_KEY), setup);
+  assert.equal(localStorage.getItem(PROVIDER_CONTACT_KEY), contact);
+  // Newer answers on this device are never replaced by a restore.
+  const newer = JSON.stringify(
+    answerStep(newSetup(), "name", "Sam", { online: true }),
+  );
+  localStorage.setItem(SETUP_KEY, newer);
+  await restoreBackup(backup);
+  assert.equal(localStorage.getItem(SETUP_KEY), newer);
+  // A damaged profile in a backup file is rejected before anything changes.
+  const value = JSON.parse(await backup.text());
+  value.payload.deviceStrings.find(
+    (entry) => entry.key === PROVIDER_CONTACT_KEY,
+  ).value = JSON.stringify({ phone: "<script>" });
+  // Re-sign so the file passes integrity and reaches content validation.
+  value.sha256 = await digest(
+    new TextEncoder().encode(JSON.stringify(value.payload)),
+  );
+  await reset();
+  await assert.rejects(
+    restoreBackup(new Blob([JSON.stringify(value)])),
+    /Invalid backup setup profile/,
+  );
+  assert.equal(localStorage.getItem(SETUP_KEY), null);
+  // A damaged profile on the device is skipped instead of blocking a backup.
+  localStorage.setItem(SETUP_KEY, "{broken");
+  const skipped = JSON.parse(await (await createBackup()).text());
+  assert(!skipped.payload.deviceStrings.some((e) => e.key === SETUP_KEY));
+});

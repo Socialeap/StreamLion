@@ -1569,6 +1569,7 @@ export default function App() {
                   ? readDraft(`${destination}:pending-write`)
                   : null;
                 setHasPending(!!pending.current);
+                setProfile(setupProfile());
                 setStatus("Device backup restored");
               }}
             />

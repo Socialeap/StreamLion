@@ -3,6 +3,11 @@ import { assertWorkspace, emptyWorkspace } from "./model.js";
 import { TABS, validateRevision } from "./workbook.js";
 import { PROJECT_FIELDS } from "./project-schema.js";
 import { validateWorkflow } from "./workflow.js";
+import { SETUP_KEY, readSetup } from "./setup-assistant.js";
+import {
+  PROVIDER_CONTACT_KEY,
+  parseProviderContact,
+} from "./provider-contact.js";
 
 export const BACKUP_LIMIT = 100 * 1024 * 1024;
 const draftPrefix = "streamlion-draft-v1:";
@@ -10,6 +15,12 @@ const id = (value) => typeof value === "string" && /^[\w-]{1,100}$/.test(value);
 const prefs = (key) =>
   key === "streamlion-selected-workbook-v1" ||
   /^streamlion-last-project:[\w-]{1,100}$/.test(key);
+// Setup answers and the handover contact card travel with the device backup.
+const profiles = {
+  [SETUP_KEY]: (value) => readSetup({ getItem: () => value }),
+  [PROVIDER_CONTACT_KEY]: parseProviderContact,
+};
+const profile = (key) => Object.hasOwn(profiles, key);
 const conflict = () =>
   new Error(
     "This backup conflicts with records already on this device. Nothing was replaced. Restore it in a fresh browser profile or on another device.",
@@ -147,8 +158,14 @@ function deviceStrings() {
   const values = [];
   for (let index = 0; index < localStorage.length; index++) {
     const key = localStorage.key(index);
-    if (key?.startsWith(draftPrefix) || prefs(key))
-      values.push({ key, value: localStorage.getItem(key) });
+    const value = localStorage.getItem(key);
+    // A damaged setup profile is left out rather than blocking the backup.
+    if (
+      key?.startsWith(draftPrefix) ||
+      prefs(key) ||
+      (profile(key) && profiles[key](value))
+    )
+      values.push({ key, value });
   }
   return values.sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -184,6 +201,9 @@ function validatePayload(payload) {
         throw new Error("Unrecognized backup draft.");
       // Keep exact draft text and operation IDs, including incomplete fields.
       validateDraft(entry);
+    } else if (profile(entry.key)) {
+      if (!profiles[entry.key](entry.value))
+        throw new Error("Invalid backup setup profile.");
     } else if (!prefs(entry.key) || (entry.value && !id(entry.value)))
       throw new Error("Unrecognized backup setting.");
   }
