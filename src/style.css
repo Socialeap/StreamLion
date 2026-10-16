@@ -90,6 +90,17 @@
 .intake-choices .brief-import p { min-height: 0; margin: 0; }
 .brief-import label { margin: 0; }
 .brief-import input[type="file"] { width: 100%; max-width: 100%; min-width: 0; }
+.native-brief-card { grid-column: 1 / -1; min-width: 0; }
+.intake-choices .native-brief-card p { min-height: 0; }
+.native-brief-card textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.brief-pdf-tips { font-size: .9rem; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.brief-pdf-tips summary { cursor: pointer; font-weight: 600; }
+.brief-pdf-tips li { margin: 10px 0; }
+.brief-review { border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 12px; }
+.brief-review dl { margin: 0; display: grid; gap: 12px; }
+.brief-review dl > div { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.brief-review dt { font-weight: 700; }
+.brief-review dd { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mobile-section-picker { display: none; }
 .wizard-starting .editor-header-actions .primary:disabled { display: none; }
 @media (max-width: 760px) {

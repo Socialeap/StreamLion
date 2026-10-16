@@ -26,6 +26,8 @@ import { download } from "./storage";
 import { ChatGPTLaunch } from "./ChatGPTPanel";
 import { reusableFields } from "./workflow";
 import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
+import BriefImporter from "./BriefImporter.jsx";
+import { fillEmptyBriefFields, readPendingBrief } from "./brief-import.js";
 
 const STEPS = [
   { label: "Start", group: null, title: "Start with your project brief" },
@@ -169,7 +171,31 @@ export default function ProjectEditor({
     }
   }
 
+  function usePreparedBrief(proposed) {
+    const next = fillEmptyBriefFields(fields, proposed);
+    // Keep the recovery reference if the device cannot safely persist the draft.
+    writeDraft(key, { fields: next, base: draftBase });
+    setFields(next);
+    setReviewed(false);
+    setSaveNotice("");
+    setError("");
+    setImportStatus(
+      "Prepared details added to empty fields. Review every step before saving.",
+    );
+    goTo(1);
+  }
+
   async function save(asReviewed) {
+    // A save can assign an ID/remount this editor. Keep the paid recovery
+    // reference bound to its original draft until import, discard or failure.
+    // Read storage at action time: the importer may have unmounted on navigation.
+    if (readPendingBrief(key)) {
+      setError(
+        "Recover this brief before saving. Use or discard its prepared details first. Your draft stays on this device.",
+      );
+      goTo(0);
+      return;
+    }
     if (stale) {
       setError(
         "This project changed in Google. Download your draft, then load the current record before saving.",
@@ -364,6 +390,12 @@ export default function ProjectEditor({
                 soon as the project has a name.
               </p>
               <div className="intake-choices">
+                <BriefImporter
+                  draftKey={key}
+                  fields={fields}
+                  onUse={usePreparedBrief}
+                  disabled={busy}
+                />
                 <section aria-label="Prepare my project brief with ChatGPT">
                   <MessageCircle size={28} aria-hidden="true" />
                   <h3>Prepare my project brief with ChatGPT</h3>
@@ -519,8 +551,8 @@ export default function ProjectEditor({
                   </p>
                 )}
                 <p className="hint">
-                  ChatGPT prepares a file. You review it here, then StreamLion
-                  saves it to the destination above.
+                  Review prepared or imported details here, then save the
+                  project to the destination above when you are ready.
                 </p>
               </section>
             </div>
