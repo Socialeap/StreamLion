@@ -121,7 +121,7 @@ test("the chat greets, takes one answer at a time and keeps an editable transcri
   const log = ui.getByRole("log", { name: "Setup conversation" });
   assert.equal(log.getAttribute("aria-live"), "polite");
   assert(within(log).getByText(/What should I call you\?/));
-  assert(ui.getByText("Step 1 of 6 · About you"));
+  assert(ui.getByText("Step 1 of 7 · About you"));
   await say(ui, "What should I call you?", "Alex");
   await ui.findByText(/Nice to meet you, Alex!/);
   assert(within(log).getByText("Alex"));
@@ -154,7 +154,7 @@ test("a reload resumes at the exact pending step with its history", async () => 
   const log = ui.getByRole("log", { name: "Setup conversation" });
   assert(within(log).getByText("Alex"));
   assert(within(log).getByText("Harbor Spatial"));
-  assert(ui.getByText("Step 2 of 6 · Contact"));
+  assert(ui.getByText("Step 2 of 7 · Contact"));
   fireEvent.click(ui.getByRole("button", { name: "Finish later" }));
   assert.deepEqual(calls, [["exit"]]);
   assert.equal(readSetup().status, "active");
@@ -214,6 +214,7 @@ test("a device-first setup branches by answers, applies the theme and finishes w
   assert.equal(rate.value, "0.16");
   await choose(ui, "Continue");
   await choose(ui, /^No$/);
+  await choose(ui, "Not now");
   await ui.findByText(/add your logo/);
   await choose(ui, "Skip for now");
   await choose(ui, "Dark");
@@ -325,6 +326,7 @@ test("Google sign-in, workbook creation, offline copy and publishing happen only
   fireEvent.click(ui.getByRole("button", { name: "Two bands" }));
   await choose(ui, "Continue");
   await choose(ui, /^Yes, let them propose one/);
+  await choose(ui, "Not now");
   await ui.findByText(/add your logo/);
   await choose(ui, "Skip for now");
   await choose(ui, "Light");
@@ -385,6 +387,7 @@ test("publishing problems are reported without losing the finished setup", async
   await choose(ui, /^I quote each job myself/);
   await choose(ui, "USD");
   await choose(ui, /^No$/);
+  await choose(ui, "Not now");
   await choose(ui, "Skip for now");
   await choose(ui, "Light");
   await choose(ui, "Save & finish");
@@ -417,7 +420,7 @@ test("offline providers keep going on this device, and Google can be swapped for
   await ui.findByRole("link", { name: "Continue with Google" });
   fireEvent.click(ui.getByRole("button", { name: "Use this device instead" }));
   await ui.findByText("Start on this device");
-  await ui.findByText(/which look do you prefer/);
+  await ui.findByText(/How would you like to use it/);
   assert.equal(readSetup().answers.storage, "device");
 });
 
@@ -485,6 +488,7 @@ test("saving publishes phone and service area with branding and keeps them for h
     ["deliverables", []],
     ["storage", "device"],
     ["pricingMethod", "skip"],
+    ["aiUses", []],
     ["logo", null],
     ["theme", "light"],
   ])
@@ -531,4 +535,85 @@ test("saving publishes phone and service area with branding and keeps them for h
     phone: "(503) 555-0100",
     area: "Portland, OR",
   });
+});
+
+test("ChatGPT questions explain credits, set read-aloud and send built-in AI users to credits only when purchases are open", async () => {
+  const { answerStep, newSetup } = await import("./setup-assistant.js");
+  const seed = (storage) => {
+    let state = newSetup();
+    for (const [id, value] of [
+      ["name", "Alex"],
+      ["business", "Harbor Spatial"],
+      ["contact", { email: "a@b.co", phone: "", area: "", website: "" }],
+      ["focus", ["briefs"]],
+      ["hardware", ["dslr"]],
+      ["deliverables", []],
+      ["storage", storage],
+    ])
+      state = answerStep(state, id, value, {
+        online: true,
+        googleAvailable: true,
+      });
+    localStorage.setItem(SETUP_KEY, JSON.stringify(state));
+  };
+  const packs = [
+    { id: "10", amount: 1000, creditsMicros: 1 },
+    { id: "25", amount: 2500, creditsMicros: 1 },
+  ];
+  // Device-only: credits need a Google account first.
+  seed("device");
+  let loads = 0;
+  const loadCredits = async () => {
+    loads++;
+    return { enabled: true, packs };
+  };
+  const device = await open(<SetupAssistant {...props({ loadCredits })} />);
+  const explain = await device.findByRole("link", {
+    name: /How AI credits work/,
+  });
+  assert.equal(explain.getAttribute("href"), "/api/credits");
+  assert.equal(explain.getAttribute("target"), "_blank");
+  await tags(device, [/^Smart project briefs/, /^Ask about my projects/]);
+  await choose(device, /^Read answers aloud/);
+  assert.equal(localStorage.getItem("streamlion-read-answers-v1"), "true");
+  await device.findByText(/Credits belong to a Google account/);
+  assert.equal(loads, 0, "no credit lookup without a Google account");
+  await choose(device, "OK, I’ll add credits later");
+  await device.findByText("I’ll add credits later");
+  cleanup();
+  // Connected, purchases closed: keep the choice, no purchase link.
+  localStorage.clear();
+  seed("google");
+  const connected = {
+    connected: true,
+    account: "a@b.co",
+    workbookReady: true,
+    bookId: "book",
+  };
+  const closed = await open(
+    <SetupAssistant
+      {...props({ loadCredits: async () => ({ enabled: false, packs: [] }) })}
+      {...connected}
+    />,
+  );
+  await tags(closed, [/^Smart project briefs/, /^Briefing Helper/]);
+  await closed.findByText(/Credit purchases aren’t open yet/);
+  assert.equal(closed.queryByRole("link", { name: /Add credits now/ }), null);
+  cleanup();
+  // Connected, purchases open: a new-tab link to the Credits page.
+  localStorage.clear();
+  seed("google");
+  const ui = await open(
+    <SetupAssistant {...props({ loadCredits })} {...connected} />,
+  );
+  await tags(ui, [/^Smart project briefs/, /^Briefing Helper/]);
+  await ui.findByText(/Packs: \$10 · \$25/);
+  const add = ui.getByRole("link", { name: /Add credits now/ });
+  assert.equal(add.getAttribute("href"), "/api/credits");
+  assert.equal(add.getAttribute("target"), "_blank");
+  fireEvent.click(add);
+  await ui.findByText("Opened credits & payment");
+  await choose(ui, "Light");
+  await choose(ui, "Save & finish");
+  await ui.findByText(/Briefing Helper: create a project/);
 });

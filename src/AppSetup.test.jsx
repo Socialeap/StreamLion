@@ -156,7 +156,7 @@ test("a restored account's saved workbook completes the Google step without crea
   window.history.replaceState(null, "", "/?google=connected");
   const ui = render(<App />);
   await ui.findByText("Use my saved workbook");
-  await ui.findByText(/which look do you prefer/);
+  await ui.findByText(/How would you like to use it/);
 });
 
 test("a cancelled Google consent during setup is explained in the assistant", async () => {
@@ -173,6 +173,7 @@ test("finished setup prefills new projects, offers usual deliverables and can be
   const state = seed([
     ...intro,
     ["storage", "device"],
+    ["aiUses", []],
     ["theme", "light"],
     ["review", true],
   ]);
@@ -219,7 +220,7 @@ test("finished setup prefills new projects, offers usual deliverables and can be
 });
 
 test("finishing on this device remembers the device choice and opens a new project", async () => {
-  seed([...intro, ["storage", "device"], ["theme", "light"]]);
+  seed([...intro, ["storage", "device"], ["aiUses", []], ["theme", "light"]]);
   const ui = render(<App />);
   fireEvent.click(
     await ready(await ui.findByRole("button", { name: "Continue setup" })),

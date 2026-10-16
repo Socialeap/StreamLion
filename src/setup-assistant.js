@@ -20,6 +20,7 @@ export const STAGES = [
   "Your work",
   "Storage",
   "Pricing & units",
+  "ChatGPT & AI",
   "Finish",
 ];
 
@@ -115,6 +116,25 @@ export const TOUR_HOSTS = [
   { id: "other", label: "Other" },
 ];
 const TOUR_CAMERAS = ["insta360", "ricoh-theta", "other"];
+export const AI_USES = [
+  {
+    id: "brief",
+    label: "Smart project briefs",
+    detail: "From uploaded PDFs or pasted text · AI credits",
+  },
+  {
+    id: "ask",
+    label: "Ask about my projects",
+    detail: "Active or past projects · AI credits",
+  },
+  {
+    id: "helper",
+    label: "Briefing Helper in my own ChatGPT",
+    detail: "Free · prepare briefs in ChatGPT, then import",
+  },
+];
+// Built-in AI features are paid with prepaid StreamLion credits.
+const CREDIT_USES = ["brief", "ask"];
 export const CURRENCIES = ["USD", "CAD", "GBP", "EUR", "AUD", "NZD"];
 const PRICING_CHOICES = {
   quote: "I quote each job myself",
@@ -705,9 +725,63 @@ export const STEPS = [
           : "No proposed budgets",
   },
   {
+    id: "aiUses",
+    title: "ChatGPT uses",
+    stage: 5,
+    kind: "multi",
+    optional: "Not now",
+    prompt: () => ({
+      text: "StreamLion works with ChatGPT. How would you like to use it?",
+      hint: "Your own ChatGPT is free. Built-in AI uses prepaid StreamLion credits: the price is shown before each use, with no subscription or automatic recharge.",
+      link: { href: "/api/credits", label: "How AI credits work" },
+    }),
+    options: () => AI_USES,
+    validate: (value) =>
+      pick(AI_USES, value, "Choose from the listed ChatGPT uses.", { min: 0 }),
+    summary: (value) => labels(AI_USES, value).join(", ") || "Not now",
+    dependents: ["aiVoice", "aiCredits"],
+  },
+  {
+    id: "aiVoice",
+    title: "Read answers aloud",
+    stage: 5,
+    kind: "choice",
+    when: (answers) => has(answers, "aiUses", "ask"),
+    prompt: () => ({
+      text: "When you ask about a project, should answers be read aloud?",
+      hint: "Handy on site with your hands full. You can change this on the Ask page.",
+    }),
+    options: () => [
+      { id: "aloud", label: "Read answers aloud" },
+      { id: "text", label: "Text only" },
+    ],
+    validate: (value) =>
+      oneOf({ aloud: 1, text: 1 }, value, "Choose an option."),
+    summary: (value) =>
+      value === "aloud" ? "Read answers aloud" : "Text only",
+  },
+  {
+    id: "aiCredits",
+    title: "AI credits",
+    stage: 5,
+    kind: "credits",
+    when: (answers) => CREDIT_USES.some((id) => has(answers, "aiUses", id)),
+    prompt: () => ({
+      text: "Built-in AI runs on StreamLion credits. Add them through secure Stripe checkout whenever you need more; nothing renews or charges automatically.",
+      hint: "Credits belong to your Google account and need a StreamLion purchase.",
+      link: { href: "/api/credits", label: "Credits & payment details" },
+    }),
+    validate: (value) =>
+      oneOf({ opened: 1, later: 1 }, value, "Choose an option."),
+    summary: (value) =>
+      value === "opened"
+        ? "Opened credits & payment"
+        : "I’ll add credits later",
+  },
+  {
     id: "logo",
     title: "Logo",
-    stage: 5,
+    stage: 6,
     kind: "logo",
     when: (answers) => has(answers, "focus", "requests"),
     prompt: () => ({
@@ -725,7 +799,7 @@ export const STEPS = [
   {
     id: "theme",
     title: "Theme",
-    stage: 5,
+    stage: 6,
     kind: "choice",
     prompt: () => ({
       text: "Last touch: which look do you prefer?",
@@ -741,7 +815,7 @@ export const STEPS = [
   {
     id: "review",
     title: "Review",
-    stage: 5,
+    stage: 6,
     kind: "review",
     editable: false,
     prompt: (answers) => ({
@@ -921,6 +995,11 @@ export function setupProfile(state = readSetup()) {
     pricing,
     logo: applies("logo") ? a.logo : null,
     theme: a.theme || "",
+    ai: {
+      uses: labels(AI_USES, a.aiUses),
+      readAloud: applies("aiVoice") ? a.aiVoice === "aloud" : null,
+      credits: applies("aiCredits") ? a.aiCredits : "",
+    },
   };
 }
 export function providerDefaults(profile = setupProfile()) {

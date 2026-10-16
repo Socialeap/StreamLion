@@ -53,6 +53,7 @@ test("a device-first provider is asked only what their answers make relevant", (
     ["hardware", ["leica-blk360"]],
     ["deliverables", ["e57", "pointcloud"]],
     ["storage", "device"],
+    ["aiUses", []],
     ["theme", "dark"],
     ["review", true],
   ]);
@@ -325,7 +326,7 @@ test("offline providers cannot choose Google now, but stored answers survive goi
     /offline/,
   );
   const device = answerStep(pending, "storage", "device", offline);
-  assert.equal(walk(device, offline).current.id, "theme");
+  assert.equal(walk(device, offline).current.id, "aiUses");
   const unavailable = { online: true, googleAvailable: false };
   assert.throws(
     () => answerStep(pending, "storage", "google", unavailable),
@@ -348,6 +349,7 @@ test("editing re-asks only that answer, while dependent answers are asked again"
     ["currency", "USD"],
     ["rate", "0.15"],
     ["budget", "no"],
+    ["aiUses", []],
     ["logo", null],
     ["theme", "light"],
     ["review", true],
@@ -409,7 +411,7 @@ test("progress, locale currency and profile defaults stay small and predictable"
   assert.deepEqual(stageProgress(walk(state, online)), {
     stage: 2,
     label: "Your work",
-    percent: 33,
+    percent: 29,
   });
   assert.equal(currencyForLocale("en-CA"), "CAD");
   assert.equal(currencyForLocale("de-DE"), "EUR");
@@ -430,4 +432,41 @@ test("progress, locale currency and profile defaults stay small and predictable"
   });
   assert.deepEqual(providerDefaults(null), {});
   assert.equal(brandingSuggestion(null), null);
+});
+
+test("ChatGPT questions branch: credits only for built-in AI, read-aloud only for project questions", () => {
+  const lead = [
+    ...identity,
+    ["focus", ["briefs"]],
+    ["hardware", ["dslr"]],
+    ["deliverables", []],
+    ["storage", "device"],
+  ];
+  const helperOnly = run([...lead, ["aiUses", ["helper"]]]);
+  assert.equal(walk(helperOnly, online).current.id, "theme");
+  assert.deepEqual(setupProfile(helperOnly).ai, {
+    uses: ["Briefing Helper in my own ChatGPT"],
+    readAloud: null,
+    credits: "",
+  });
+  const asking = run([
+    ...lead,
+    ["aiUses", ["ask", "helper"]],
+    ["aiVoice", "aloud"],
+    ["aiCredits", "later"],
+  ]);
+  assert.equal(walk(asking, online).current.id, "theme");
+  assert.equal(setupProfile(asking).ai.readAloud, true);
+  assert.equal(setupProfile(asking).ai.credits, "later");
+  const briefs = run([...lead, ["aiUses", ["brief"]]]);
+  assert.equal(walk(briefs, online).current.id, "aiCredits");
+  assert.throws(
+    () => answerStep(briefs, "aiCredits", "maybe", online),
+    /Choose an option/,
+  );
+  // Dropping built-in AI no longer asks about credits or read-aloud.
+  let edited = editStep(asking, "aiUses");
+  edited = answerStep(edited, "aiUses", ["helper"], online);
+  assert.equal(walk(edited, online).current.id, "theme");
+  assert.equal(setupProfile(edited).ai.credits, "");
 });

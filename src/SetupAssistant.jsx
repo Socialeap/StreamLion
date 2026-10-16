@@ -39,6 +39,7 @@ import { brandingAPI, prepareLogo } from "./ProviderBrandingSettings.jsx";
 import { pricingAPI } from "./ProviderPricingSettings.jsx";
 import { validateBranding } from "./provider-branding.js";
 import { loadGoogleConfig } from "./google-config.js";
+import { fetchRead } from "./network.js";
 import { saveTheme } from "./theme.js";
 import { rememberProviderContact } from "./provider-contact.js";
 import {
@@ -63,6 +64,18 @@ export const googleActions = {
   folderId: googleFolderId,
 };
 
+// Public credit-pack settings; purchases happen on the Credits page.
+async function loadCreditConfig() {
+  const response = await fetchRead("/api/credits/config", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  const data = await response.json();
+  if (!response.ok || typeof data.enabled !== "boolean")
+    throw new Error("Credit settings could not be checked.");
+  return data;
+}
+const READ_ALOUD_KEY = "streamlion-read-answers-v1";
 function initialSetup() {
   const saved = readSetup();
   if (!saved) return newSetup();
@@ -75,13 +88,23 @@ function Avatar() {
     </span>
   );
 }
-function AssistantMessage({ text, hint, fresh, children }) {
+function AssistantMessage({ text, hint, link, fresh, children }) {
   return (
     <li className={`setup-message setup-assistant${fresh ? " is-new" : ""}`}>
       <Avatar />
       <div className="setup-bubble">
         {text && <p>{text}</p>}
-        {hint && <p className="setup-hint">{hint}</p>}
+        {(hint || link) && (
+          <p className="setup-hint">
+            {hint}
+            {hint && link && " "}
+            {link && (
+              <a href={link.href} target="_blank" rel="noopener noreferrer">
+                {link.label} ↗
+              </a>
+            )}
+          </p>
+        )}
         {children}
       </div>
     </li>
@@ -228,6 +251,7 @@ export default function SetupAssistant({
   pricingApi = pricingAPI,
   convertLogo = prepareLogo,
   loadConfig = loadGoogleConfig,
+  loadCredits = loadCreditConfig,
 }) {
   const [state, setState] = useState(initialSetup);
   const stateRef = useRef(state);
@@ -240,6 +264,7 @@ export default function SetupAssistant({
     [online, setOnline] = useState(() => navigator.onLine !== false),
     [config, setConfig] = useState({ loading: true, value: null }),
     [configAttempt, setConfigAttempt] = useState(0),
+    [credits, setCredits] = useState({ loading: false, value: null }),
     [, setGoogleTick] = useState(0);
   const feed = useRef(null),
     dock = useRef(null),
@@ -284,6 +309,21 @@ export default function SetupAssistant({
   const progress = stageProgress(walked);
   const complete = !current;
 
+  const creditStep = current?.id === "aiCredits" && live;
+  useEffect(() => {
+    if (!creditStep || credits.value || credits.loading) return;
+    let active = true;
+    setCredits({ loading: true, value: null });
+    loadCredits()
+      .then((value) => active && setCredits({ loading: false, value }))
+      .catch(
+        () =>
+          active && setCredits({ loading: false, value: null, failed: true }),
+      );
+    return () => {
+      active = false;
+    };
+  }, [creditStep]);
   useEffect(() => {
     const element = feed.current;
     const reduced = window.matchMedia?.(
@@ -318,6 +358,12 @@ export default function SetupAssistant({
       // Validate first so no side effect runs for an invalid answer.
       step.validate(value, answers, ctx);
       if (step.id === "theme") saveTheme(value);
+      if (step.id === "aiVoice")
+        try {
+          localStorage.setItem(READ_ALOUD_KEY, String(value === "aloud"));
+        } catch {
+          /* the Ask page keeps its own switch */
+        }
       if (step.id === "siteCopy" && value === "yes") {
         setBusy("Saving an offline copy on this device…");
         await onSiteCopy();
@@ -631,6 +677,72 @@ export default function SetupAssistant({
             </div>
           </div>
         );
+      case "credits": {
+        const packs = credits.value?.packs || [];
+        const open = live && credits.value?.enabled;
+        return (
+          <div className="setup-card">
+            {!live ? (
+              <p className="setup-status">
+                Credits belong to a Google account. Connect Google first, then
+                add credits any time from Account → Credits.
+              </p>
+            ) : credits.loading ? (
+              <p role="status" className="setup-status">
+                <LoaderCircle size={18} aria-hidden="true" /> Checking credit
+                packs…
+              </p>
+            ) : credits.failed ? (
+              <p className="setup-status">
+                Couldn’t check credit packs right now. You can add credits any
+                time from Account → Credits.
+              </p>
+            ) : !open ? (
+              <p className="setup-status">
+                Credit purchases aren’t open yet. We’ll keep your choice, and
+                the free Briefing Helper works today.
+              </p>
+            ) : (
+              <p className="setup-status">
+                Packs:{" "}
+                {packs
+                  .map((pack) =>
+                    new Intl.NumberFormat("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      minimumFractionDigits: pack.amount % 100 ? 2 : 0,
+                    }).format(pack.amount / 100),
+                  )
+                  .join(" · ")}
+                . You choose a pack and pay on the next page; add more whenever
+                you need them.
+              </p>
+            )}
+            <div className="setup-dock-actions">
+              <button
+                type="button"
+                data-setup-focus={open ? undefined : true}
+                disabled={disabled}
+                onClick={() => submit("later")}
+              >
+                {open ? "Later" : "OK, I’ll add credits later"}
+              </button>
+              {open && (
+                <a
+                  className="setup-link-button primary"
+                  data-setup-focus
+                  href="/api/credits"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => submit("opened")}
+                >
+                  Add credits now ↗
+                </a>
+              )}
+            </div>
+          </div>
+        );
+      }
       case "workbook":
         return (
           <div className="setup-options" role="group" aria-label="Workbook">
@@ -796,6 +908,12 @@ export default function SetupAssistant({
               text={`You’re all set, ${answers.name}! Your StreamLion workspace is ready to turn client requests into completed, professional handovers.`}
               hint="Your answers stay on this device. Rerun this assistant any time from Account."
             >
+              {answers.aiUses?.includes("helper") && (
+                <p className="setup-hint">
+                  Briefing Helper: create a project and choose “Prepare my brief
+                  in ChatGPT”, then bring its project file back.
+                </p>
+              )}
               {results?.length > 0 && (
                 <ul className="setup-results">
                   {results.map((item) => (
