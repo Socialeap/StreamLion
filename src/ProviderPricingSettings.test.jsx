@@ -22,6 +22,40 @@ const { default: Settings, pricingAPI } =
   await import("./ProviderPricingSettings.jsx");
 const { default: Intake } = await import("./ProspectIntake.jsx");
 const { blankPricing, validatePricing } = await import("./provider-pricing.js");
+test("nine named profiles disable additions while leaving the unpublished default editable", async (t) => {
+  t.after(cleanup);
+  const profiles = Array.from({ length: 9 }, (_, i) => ({
+    id: `named-${i}`,
+    name: `Service ${i}`,
+    version: 1,
+    config: blankPricing(),
+  }));
+  const writes = [];
+  const api = async (body) => {
+    if (body) {
+      writes.push(body);
+      profiles.push({ ...body, version: 1 });
+    }
+    return { subject: "a", available: true, profiles: [...profiles] };
+  };
+  const ui = render(<Settings connected account="a@example.com" api={api} />);
+  const publish = await ui.findByRole("button", {
+    name: "Publish pricing for new forms",
+  });
+  assert.equal(
+    ui.getByRole("button", { name: "Add service pricing profile" }).disabled,
+    true,
+  );
+  assert.equal(publish.disabled, false);
+  fireEvent.click(publish);
+  await ui.findByText(/Pricing published/);
+  assert.equal(writes[0].id, "default");
+  assert.equal(profiles.length, 10);
+  assert.equal(
+    ui.getByRole("button", { name: "Add service pricing profile" }).disabled,
+    true,
+  );
+});
 test("Account previews tier choices, named extras and budgets before an explicit publish", async (t) => {
   t.after(cleanup);
   const writes = [];

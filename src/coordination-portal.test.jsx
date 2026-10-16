@@ -23,7 +23,7 @@ Object.defineProperty(globalThis, "navigator", {
   value: dom.window.navigator,
   configurable: true,
 });
-const { render, fireEvent, cleanup, waitFor, within } =
+const { render, fireEvent, cleanup, waitFor, within, act } =
   await import("@testing-library/react");
 const { default: Portal, coordinationAPI } =
   await import("./CoordinationPortal.jsx");
@@ -339,9 +339,13 @@ test("verified archive recovery selects archived history and permits only a reas
   fireEvent.change(ui.getByLabelText("Archive file link or ID"), {
     target: { value: "archive-id" },
   });
-  fireEvent.click(
-    ui.getByRole("button", { name: "Verify and recover archived job" }),
-  );
+  // Flush recovery's selection effects before navigating: the notice can
+  // render before the newly selected job's initial Brief-tab reset runs.
+  await act(async () => {
+    fireEvent.click(
+      ui.getByRole("button", { name: "Verify and recover archived job" }),
+    );
+  });
   await ui.findByText(
     "Archive recovery verified. The job remains archived and client access remains expired.",
   );

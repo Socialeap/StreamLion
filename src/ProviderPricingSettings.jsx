@@ -160,7 +160,10 @@ export default function ProviderPricingSettings({
               </label>
               <button
                 type="button"
-                disabled={locked || state.profiles.length >= 10}
+                disabled={
+                  locked ||
+                  state.profiles.filter((p) => p.id !== "default").length >= 9
+                }
                 onClick={() => {
                   setDraft({
                     id: "price-" + crypto.randomUUID(),

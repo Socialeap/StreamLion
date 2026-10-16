@@ -119,7 +119,7 @@ export async function handleProviderPricing({ request, env }) {
     const statement =
       body.version === 0
         ? env.GOOGLE_SESSIONS.prepare(
-            `INSERT INTO ${table}(mode,google_subject,id,name,config,version,updated_at) SELECT ?,?,?,?,?,1,? WHERE (SELECT COUNT(*) FROM ${table} WHERE mode=? AND google_subject=?)<10 ON CONFLICT(mode,google_subject,id) DO NOTHING`,
+            `INSERT INTO ${table}(mode,google_subject,id,name,config,version,updated_at) SELECT ?,?,?,?,?,1,? WHERE (SELECT COUNT(*) FROM ${table} WHERE mode=? AND google_subject=?)<10 AND (?='default' OR (SELECT COUNT(*) FROM ${table} WHERE mode=? AND google_subject=? AND id!='default')<9) ON CONFLICT(mode,google_subject,id) DO NOTHING`,
           ).bind(
             mode,
             session.google_subject,
@@ -127,6 +127,9 @@ export async function handleProviderPricing({ request, env }) {
             body.name.trim(),
             JSON.stringify(config),
             Date.now(),
+            mode,
+            session.google_subject,
+            body.id,
             mode,
             session.google_subject,
           )
@@ -146,7 +149,7 @@ export async function handleProviderPricing({ request, env }) {
       return reply(
         {
           error:
-            "Pricing changed in another tab, or the 10-profile limit was reached. Reopen Account and review before saving.",
+            "Pricing changed in another tab, or the limit of one account default plus nine named profiles was reached. Reopen Account and review before saving.",
         },
         409,
       );

@@ -71,6 +71,39 @@ const value = {
   version: 0,
   config: { ...blankPricing(), method: "area", rate: "0.15" },
 };
+test("nine named profiles reserve the default slot in either publication order", async (t) => {
+  for (const defaultFirst of [false, true]) {
+    await t.test(defaultFirst ? "default first" : "default last", async (t) => {
+      const f = await fixture(t);
+      if (defaultFirst) assert.equal((await f.call(value)).status, 200);
+      for (let i = 0; i < 8; i++)
+        assert.equal(
+          (await f.call({ ...value, id: `named-${i}` })).status,
+          200,
+        );
+      // Admission stays in the INSERT itself, including competing requests.
+      const competing = await Promise.all([
+        f.call({ ...value, id: "ninth" }),
+        f.call({ ...value, id: "tenth" }),
+      ]);
+      assert.deepEqual(competing.map((r) => r.status).sort(), [200, 409]);
+      if (!defaultFirst) assert.equal((await f.call(value)).status, 200);
+      assert.equal((await (await f.call()).json()).profiles.length, 10);
+      assert.equal((await f.call({ ...value, id: "overflow" })).status, 409);
+      assert.equal((await f.call({ ...value, version: 1 })).status, 200);
+      assert.equal(
+        (await f.call({ ...value, id: "named-0", version: 1 })).status,
+        200,
+      );
+      assert.equal(
+        (await f.call({ ...value, id: "other-account" }, "b")).status,
+        200,
+      );
+      f.env.STREAMLION_PAYMENTS_MODE = "live";
+      assert.equal((await f.call({ ...value, id: "other-mode" })).status, 200);
+    });
+  }
+});
 test("pricing profiles are account/mode scoped, versioned and do not change pilot policy or work records", async (t) => {
   const f = await fixture(t),
     before = f.sql
