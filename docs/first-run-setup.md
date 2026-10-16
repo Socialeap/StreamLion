@@ -42,7 +42,8 @@ account with a saved workbook is never asked to create another. Offline, the
 Google choice is disabled and setup continues on the device.
 
 **Save & finish** is the only write. When Google is connected it saves the
-business name, website and optional logo through `/api/provider-branding`
+business name, website, phone, service area and optional logo through
+`/api/provider-branding`
 and publishes the chosen pricing as the account default through
 `/api/provider-pricing`, keeping any saved logo, website and named extras.
 Each result is reported in the chat; a failure keeps the finished setup. On

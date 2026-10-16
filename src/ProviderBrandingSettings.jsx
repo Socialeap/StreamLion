@@ -6,6 +6,7 @@ import {
   validateBranding,
 } from "./provider-branding.js";
 import ProviderBrand from "./ProviderBrand.jsx";
+import { rememberProviderContact } from "./provider-contact.js";
 export async function brandingAPI(body, subject) {
   const response = await fetchRead("/api/provider-branding", {
     credentials: "same-origin",
@@ -109,6 +110,8 @@ export default function ProviderBrandingSettings({
             );
           if (generation.current === id) {
             setState(data);
+            // Saved branding keeps this device's handover contact current.
+            if (data.version) rememberProviderContact(data.branding);
             // Unsaved branding starts from the setup assistant's answers.
             const suggested = !data.version && suggestionRef.current;
             setDraft(
@@ -117,6 +120,8 @@ export default function ProviderBrandingSettings({
                     ...data.branding,
                     name: data.branding.name || suggested.name,
                     website: data.branding.website || suggested.website,
+                    phone: data.branding.phone || suggested.phone,
+                    area: data.branding.area || suggested.area,
                     logo: data.branding.logo || suggested.logo,
                     shape: data.branding.logo
                       ? data.branding.shape
@@ -170,6 +175,7 @@ export default function ProviderBrandingSettings({
     try {
       const branding = validateBranding(draft),
         result = await api({ branding, version: state.version }, state.subject);
+      rememberProviderContact(result.branding);
       if (generation.current === id) {
         setState(result);
         setDraft(result.branding);
@@ -194,7 +200,10 @@ export default function ProviderBrandingSettings({
         changes who receives them.
       </p>
       {!connected ? (
-        <p>Sign in to Google to save your business name, logo and website.</p>
+        <p>
+          Sign in to Google to save your business name, logo, website, phone and
+          service area.
+        </p>
       ) : (
         <>
           {!state && !error && <p role="status">Loading business branding…</p>}
@@ -235,6 +244,29 @@ export default function ProviderBrandingSettings({
                 />
               </label>
               <label>
+                Business phone (optional)
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  maxLength={40}
+                  value={draft.phone || ""}
+                  disabled={locked}
+                  onChange={(e) =>
+                    setDraft({ ...draft, phone: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Service area or business address (optional)
+                <input
+                  maxLength={200}
+                  placeholder="e.g., Portland, OR and surrounding areas"
+                  value={draft.area || ""}
+                  disabled={locked}
+                  onChange={(e) => setDraft({ ...draft, area: e.target.value })}
+                />
+              </label>
+              <label>
                 Upload your logo (optional)
                 <input
                   type="file"
@@ -246,8 +278,8 @@ export default function ProviderBrandingSettings({
               <p>
                 PNG, JPEG or WebP, up to 5 MB. StreamLion resizes the image on
                 this device and removes its original metadata before saving.
-                Your logo and website are visible to people with your client
-                links.
+                Your logo, website, phone and service area are visible to people
+                with your client links and on your job handovers.
               </p>
               <label>
                 Logo display shape
@@ -270,8 +302,8 @@ export default function ProviderBrandingSettings({
                   website: (() => {
                     try {
                       return validateBranding({
-                        ...draft,
-                        name: draft.name || "Preview",
+                        name: "Preview",
+                        website: draft.website,
                       }).website;
                     } catch {
                       return "";

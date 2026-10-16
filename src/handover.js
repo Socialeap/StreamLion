@@ -93,6 +93,10 @@ export function handoverModel(project, plan, notes, options = {}) {
       ),
     })),
     payment: options.includePayment ? paymentSummary(project) : null,
+    provider: {
+      phone: options.provider?.phone || "",
+      area: options.provider?.area || "",
+    },
   };
 }
 
@@ -111,8 +115,12 @@ export function handoverMarkup(model, images = {}) {
   const links = ["reference1", "reference2", "document1", "document2"].filter(
     (prefix) => p[`${prefix}Url`],
   );
+  const contact = [model.provider?.phone, model.provider?.area]
+    .filter(Boolean)
+    .map(escape)
+    .join(" · ");
   return `<article class="handover-report">
-    <header class="report-brand"><span aria-hidden="true">🦁</span><div><strong>${text(p.providerName, "StreamLion")}</strong><small>Spatial capture · Job handover</small></div></header>
+    <header class="report-brand"><span aria-hidden="true">🦁</span><div><strong>${text(p.providerName, "StreamLion")}</strong>${contact ? `<span class="report-contact">${contact}</span>` : ""}<small>Spatial capture · Job handover</small></div></header>
     <div class="report-title"><p class="report-eyebrow">PROVIDER'S FIELD RECORD</p><h1>${text(p.title, "Untitled project")}</h1><p>${text(p.reference, "No customer reference")}${p.companyName ? ` · ${escape(p.companyName)}` : ""}</p></div>
     <dl class="report-facts"><div><dt>Site</dt><dd>${text(address)}</dd></div><div><dt>Visit</dt><dd>${text(p.startLocal?.replace("T", " at "))}${p.timeZone ? ` · ${escape(p.timeZone)}` : ""}</dd></div><div><dt>Record source</dt><dd>${text(model.origin)}${model.asOf ? ` · checked ${escape(date(model.asOf))}` : ""}</dd></div><div><dt>Report prepared</dt><dd>${escape(date(model.generatedAt))}</dd></div></dl>
     ${warnings.length || omitted ? `<section class="report-attention"><h2>Outstanding work / review</h2><ul>${warnings.map((item) => `<li><strong>${escape(item.label)}</strong> — ${escape(item.detail)}</li>`).join("")}${omitted ? `<li>${omitted} unchecked field record${omitted === 1 ? " is" : "s are"} omitted from the details below. Review in Field notes before sending.</li>` : ""}</ul></section>` : ""}
@@ -158,7 +166,7 @@ export function handoverMarkup(model, images = {}) {
 export const reportStyles = `
 .handover-report td > small{display:block;margin-top:8px}
 .handover-report{color:#173b2d;background:white;font:15px/1.55 Arial,sans-serif;max-width:900px;margin:auto;padding:36px;overflow-wrap:anywhere}
-.handover-report *{box-sizing:border-box}.report-brand{display:flex;align-items:center;gap:12px;border-bottom:2px solid #194f39;padding-bottom:18px}.report-brand>span{font-size:38px}.report-brand strong{font-size:21px}.report-brand small{display:block;color:#52655a}.report-title{padding:28px 0 18px}.handover-report h1{font-size:32px;line-height:1.2;margin:8px 0}.handover-report h2{font-size:21px;margin:0 0 12px}.handover-report h3{font-size:16px;margin:14px 0 8px}.handover-report section{margin:24px 0}.report-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#52655a}.report-facts{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;margin:0}.report-facts dt{font-size:12px;color:#52655a;text-transform:capitalize}.report-facts dd{margin:3px 0 0}.report-wording{white-space:pre-wrap}.report-attention{padding:18px;border:1px solid #cfb57a;background:#fff9e9}.report-attention li{margin:8px 0}.handover-report table{width:100%;border-collapse:collapse;table-layout:fixed}.handover-report th{text-align:left;background:#f0f5f1}.handover-report td,.handover-report th{padding:12px;border-bottom:1px solid #dce5df;vertical-align:top}.handover-report td:first-child{width:60%}.handover-report blockquote{margin:12px 0 0;border-left:3px solid #c8d9ce;padding-left:12px;font-size:13px;white-space:pre-wrap}.handover-report blockquote small{display:block;color:#52655a}.report-evidence{border-top:1px solid #dce5df;padding-top:14px}.report-evidence img{display:block;max-width:100%;max-height:340px;object-fit:contain;margin:12px 0}.handover-report a{color:#194f39}.report-footer{border-top:1px solid #dce5df;padding-top:18px;color:#52655a;font-size:11px}
+.handover-report *{box-sizing:border-box}.report-brand{display:flex;align-items:center;gap:12px;border-bottom:2px solid #194f39;padding-bottom:18px}.report-brand>span{font-size:38px}.report-brand strong{font-size:21px}.report-brand small{display:block;color:#52655a}.report-contact{display:block;font-size:13px;color:#173b2d}.report-title{padding:28px 0 18px}.handover-report h1{font-size:32px;line-height:1.2;margin:8px 0}.handover-report h2{font-size:21px;margin:0 0 12px}.handover-report h3{font-size:16px;margin:14px 0 8px}.handover-report section{margin:24px 0}.report-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#52655a}.report-facts{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;margin:0}.report-facts dt{font-size:12px;color:#52655a;text-transform:capitalize}.report-facts dd{margin:3px 0 0}.report-wording{white-space:pre-wrap}.report-attention{padding:18px;border:1px solid #cfb57a;background:#fff9e9}.report-attention li{margin:8px 0}.handover-report table{width:100%;border-collapse:collapse;table-layout:fixed}.handover-report th{text-align:left;background:#f0f5f1}.handover-report td,.handover-report th{padding:12px;border-bottom:1px solid #dce5df;vertical-align:top}.handover-report td:first-child{width:60%}.handover-report blockquote{margin:12px 0 0;border-left:3px solid #c8d9ce;padding-left:12px;font-size:13px;white-space:pre-wrap}.handover-report blockquote small{display:block;color:#52655a}.report-evidence{border-top:1px solid #dce5df;padding-top:14px}.report-evidence img{display:block;max-width:100%;max-height:340px;object-fit:contain;margin:12px 0}.handover-report a{color:#194f39}.report-footer{border-top:1px solid #dce5df;padding-top:18px;color:#52655a;font-size:11px}
 @media(max-width:600px){.handover-report{padding:20px}.report-facts{grid-template-columns:1fr}.handover-report h1{font-size:25px}.handover-report td,.handover-report th{padding:8px}}
 @media print{@page{size:auto;margin:16mm}.handover-report{padding:0;font-size:10pt;max-width:none}.report-facts{grid-template-columns:1fr 1fr}.handover-report h1{font-size:23pt}.handover-report h2{break-after:avoid}.handover-report tr,.report-evidence img,.report-brand{break-inside:avoid}.report-evidence{break-inside:auto}.handover-report a{color:inherit}}
 `;

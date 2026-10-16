@@ -40,6 +40,7 @@ import { pricingAPI } from "./ProviderPricingSettings.jsx";
 import { validateBranding } from "./provider-branding.js";
 import { loadGoogleConfig } from "./google-config.js";
 import { saveTheme } from "./theme.js";
+import { rememberProviderContact } from "./provider-contact.js";
 import {
   connectGoogle,
   createWorkbook,
@@ -182,9 +183,18 @@ function ReviewCard({ history, answers, disabled, onEdit }) {
 }
 function applyPlan(profile, connected) {
   const plan = [];
+  const shown = [
+    profile.website && "website",
+    profile.phone && "phone",
+    profile.area && "service area",
+    profile.logo && "logo",
+  ].filter(Boolean);
+  const details = shown.length
+    ? `, your ${shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}` : shown[0]}`
+    : "";
   if (connected && profile.business)
     plan.push(
-      `Save “${profile.business}”${profile.website ? ", your website" : ""}${profile.logo ? " and your logo" : ""} to your client request pages`,
+      `Save “${profile.business}”${details} to your client request pages`,
     );
   if (connected && profile.pricing)
     plan.push("Publish this pricing as the default for new request forms");
@@ -194,6 +204,10 @@ function applyPlan(profile, connected) {
     );
   if (profile.business)
     plan.push("Start new projects with your business name and email");
+  if (profile.phone || profile.area)
+    plan.push(
+      "Show your phone and service area on job handovers prepared on this device",
+    );
   return plan;
 }
 
@@ -408,6 +422,8 @@ export default function SetupAssistant({
         const branding = validateBranding({
           name: profile.business,
           website: profile.website || saved.website || "",
+          phone: profile.phone || saved.phone || "",
+          area: profile.area || saved.area || "",
           logo: profile.logo?.logo || saved.logo || "",
           shape: profile.logo ? profile.logo.shape : saved.shape || "rounded",
         });
@@ -415,6 +431,7 @@ export default function SetupAssistant({
           { branding, version: current.version },
           current.subject,
         );
+        rememberProviderContact(branding);
         done.push({
           ok: true,
           text: "Business branding saved to your client pages",
@@ -470,6 +487,8 @@ export default function SetupAssistant({
     setError("");
     setBusy("Saving your setup…");
     try {
+      // Handovers prepared on this device show the phone and service area.
+      rememberProviderContact(profile);
       const done =
         start.connected && profile.business ? await publish(profile) : [];
       commit(answerStep(stateRef.current, "review", true, start));

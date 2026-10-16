@@ -1639,3 +1639,35 @@ test("declined request status shows the provider response and expiration to the 
     null,
   );
 });
+test("clients see the provider's phone and service area with the business name", async (t) => {
+  t.after(cleanup);
+  const job = fixture();
+  const ui = render(
+    <Portal
+      client
+      api={async () => ({
+        job: clientView(job),
+        brand: "Harbor Spatial",
+        branding: {
+          name: "Harbor Spatial",
+          website: "",
+          logo: "",
+          shape: "rounded",
+          phone: "(503) 555-0100",
+          area: "Portland, OR",
+        },
+      })}
+    />,
+  );
+  await ui.findByRole("heading", { name: "Office" });
+  const card = ui.getByText("Harbor Spatial", {
+    selector: "strong",
+  }).parentElement;
+  assert.equal(
+    within(card)
+      .getByRole("link", { name: "(503) 555-0100" })
+      .getAttribute("href"),
+    "tel:5035550100",
+  );
+  assert(within(card).getByText("Portland, OR"));
+});

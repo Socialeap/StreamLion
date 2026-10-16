@@ -224,3 +224,19 @@ test("unchecked evidence identities stay private unless their details are explic
   assert.match(handoverDocument(included), /Private executive safe room/);
   assert.match(handoverDocument(included), /Needs review/);
 });
+test("the handover letterhead shows the provider's phone and service area, escaped", () => {
+  const plan = readWorkflow([], project);
+  const html = handoverDocument(
+    handoverModel(project, plan, [], {
+      provider: { phone: "(503) 555-0100", area: "Portland <OR> & nearby" },
+    }),
+  );
+  assert.match(
+    html,
+    /<span class="report-contact">\(503\) 555-0100 · Portland &lt;OR&gt; &amp; nearby<\/span>/,
+  );
+  assert.doesNotMatch(
+    handoverDocument(handoverModel(project, plan, [])),
+    /report-contact"/,
+  );
+});

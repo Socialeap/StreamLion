@@ -26,6 +26,24 @@ SVG, remote image URLs and executable website schemes are rejected. The shape
 controls the display frame; the image is contained rather than cropped. Logo
 and website are intentionally public to holders of the provider's client links.
 
+Providers can also add an optional business phone and service area or
+business address. The shared validator (`src/provider-branding.js`, used by the
+browser and `/api/provider-branding`) accepts phones with 7–15 digits using only
+digits, spaces, `+`, `( )`, `.` and `-`, and areas up to 200 characters without
+control characters. Both are stored in the existing JSON profile only when
+filled in, so profiles without them keep their exact saved shape and no
+migration is needed. Client request pages, prospect invitations and client
+workspaces show them on the provider card, with the phone as a `tel:` link.
+Like the logo and website, they are public to holders of the provider's client
+links. A server still running the previous validator ignores the two fields,
+so they save only once the Functions from the same commit are deployed.
+
+Handovers are prepared on the provider's device, often offline, so the report
+letterhead uses a contact card kept on that device
+(`streamlion-provider-contact-v1`). Loading or saving branding in Account
+refreshes it; before that, the setup assistant's answers are used. Projects and
+the Google workbook schema are unchanged.
+
 Existing links show the owner's current saved branding when reopened. If no
 profile exists, they retain the legacy provider name. A missing migration keeps
 legacy forms operational and disables profile saves. Other database failures

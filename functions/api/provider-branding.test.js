@@ -169,3 +169,38 @@ test("missing branding migration retains legacy identity and fails closed on sav
     "Original Provider",
   );
 });
+test("optional phone and service area are validated, saved and returned to client pages", async (t) => {
+  const f = await fixture(t);
+  const contact = {
+    ...profile,
+    phone: " (503)  555-0100 ",
+    area: "Portland, OR\nand nearby",
+  };
+  const saved = await (await f.call({ branding: contact, version: 0 })).json();
+  assert.equal(saved.branding.phone, "(503) 555-0100");
+  assert.equal(saved.branding.area, "Portland, OR and nearby");
+  for (const bad of [
+    { phone: "call me" },
+    { phone: "12" },
+    { area: "x".repeat(201) },
+    { area: "Portland\u0000" },
+  ])
+    assert.equal(
+      (await f.call({ branding: { ...contact, ...bad }, version: 1 })).status,
+      400,
+    );
+  assert.deepEqual(
+    (
+      await brandingForConnection(f.env, {
+        google_subject: "a",
+        mode: "test",
+      })
+    ).phone,
+    "(503) 555-0100",
+  );
+  // Clearing both removes them, restoring the original profile shape.
+  const cleared = await (
+    await f.call({ branding: { ...profile, phone: "", area: " " }, version: 1 })
+  ).json();
+  assert.deepEqual(cleared.branding, profile);
+});

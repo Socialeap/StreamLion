@@ -7,6 +7,7 @@ import {
   handoverDocument,
   reportStyles,
 } from "./handover.js";
+import { providerContact } from "./provider-contact.js";
 
 async function thumbnail(blob) {
   const url = URL.createObjectURL(blob);
@@ -42,10 +43,12 @@ export default function HandoverReport({
   returnFocusElement,
   onClose,
   onBusy,
+  provider,
 }) {
   const dialog = useRef(null),
     running = useRef(false);
   const [generatedAt] = useState(() => new Date().toISOString());
+  const [contact] = useState(() => provider || providerContact());
   const [includePayment, setIncludePayment] = useState(false),
     [includeUnreviewed, setIncludeUnreviewed] = useState(false);
   const [images, setImages] = useState({}),
@@ -58,6 +61,7 @@ export default function HandoverReport({
     generatedAt,
     includePayment,
     includeUnreviewed,
+    provider: contact,
   });
   useEffect(() => {
     // Loading disables the opener briefly, which can move focus to the body.
