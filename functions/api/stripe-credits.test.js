@@ -17,6 +17,7 @@ import {
 } from "../../server/ai-credit-ledger.js";
 import { handleAI } from "../../server/ai-pilot.js";
 import { hash } from "../../server/google-auth.js";
+import { reserveProject, finishProject } from "../../server/shared-credits.js";
 function fixture(t) {
   const sql = new DatabaseSync(":memory:");
   for (const name of [
@@ -119,11 +120,11 @@ function fixture(t) {
       );
       if (existing) return Response.json(existing);
       const price = prices[p.get("line_items[0][price]")],
-        id = "cs_test_" + ++creates;
+        id = `cs_${price.livemode ? "live" : "test"}_` + ++creates;
       const session = {
         id,
         mode: "payment",
-        livemode: false,
+        livemode: price.livemode,
         status: "open",
         payment_status: "unpaid",
         metadata: { app: "streamlion", kind: "ai_credits", order_id: orderId },
@@ -162,9 +163,14 @@ function fixture(t) {
   function license(subject = "a") {
     sql
       .prepare(
-        "INSERT INTO streamlion_purchases_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,status,created_at,expires_at,updated_at) VALUES(?,'test',?,?,'price_app','prod_app',3995,'usd','paid',1,2,1)",
+        "INSERT INTO streamlion_purchases_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,status,created_at,expires_at,updated_at) VALUES(?,?,?,?,'price_app','prod_app',3995,'usd','paid',1,2,1)",
       )
-      .run("app-" + subject, subject, subject + "@example.com");
+      .run(
+        "app-" + subject,
+        env.STREAMLION_PAYMENTS_MODE,
+        subject,
+        subject + "@example.com",
+      );
   }
   async function request(
     path,
@@ -207,7 +213,7 @@ function fixture(t) {
       intent = {
         id: "pi_" + id,
         status: "succeeded",
-        livemode: false,
+        livemode: s.livemode,
         metadata: s.metadata,
         latest_charge: {
           id: "ch_" + id,
@@ -274,6 +280,358 @@ function fixture(t) {
     },
   };
 }
+function coordinationTopups(f, mode = "live") {
+  for (const name of [
+    "0009_client_coordination",
+    "0010_coordination_notifications",
+    "0011_coordination_efficiency",
+  ])
+    f.sql.exec(
+      readFileSync(
+        new URL(`../../migrations/${name}.sql`, import.meta.url),
+        "utf8",
+      ),
+    );
+  Object.assign(f.env, {
+    STREAMLION_PAYMENTS_MODE: mode,
+    STREAMLION_AI_CREDITS_MODE: mode,
+    STREAMLION_LIVE_PAYMENTS_APPROVED: "true",
+    STREAMLION_CHECKOUT_MODE: "open",
+    STREAMLION_COORDINATION_CREDIT_SALES_ENABLED: "true",
+    STREAMLION_AI_CREDIT_SALES_ENABLED: "false",
+    STREAMLION_AI_COST_APPROVED: "false",
+    ENABLE_CLIENT_COORDINATION: "true",
+    STRIPE_SECRET_KEY: `sk_${mode}_synthetic` + crypto.randomUUID(),
+  });
+  for (const price of Object.values(f.prices)) price.livemode = mode === "live";
+  f.sql
+    .prepare(
+      "UPDATE streamlion_coordination_policy_v1 SET active=1 WHERE mode=?",
+    )
+    .run(mode);
+}
+async function signedCreditEvent(f, event) {
+  const body = JSON.stringify(event),
+    timestamp = Math.floor(Date.now() / 1000);
+  const signature = createHmac("sha256", f.env.STRIPE_AI_WEBHOOK_SECRET)
+    .update(timestamp + "." + body)
+    .digest("hex");
+  return f.request("webhook", {
+    method: "POST",
+    body,
+    headers: { "Stripe-Signature": `t=${timestamp},v1=${signature}` },
+  });
+}
+test("live coordination top-ups fund projects with AI off and retain refund/replay recovery", async (t) => {
+  const f = fixture(t),
+    cookie = await f.login();
+  coordinationTopups(f);
+  f.license();
+  const policies = f.sql
+    .prepare("SELECT * FROM streamlion_credit_policy_v1")
+    .all();
+  assert.equal((await (await f.request("config")).json()).enabled, true);
+  const started = await f.request("checkout", {
+    method: "POST",
+    cookie,
+    body: { packId: "small" },
+  });
+  assert.equal(started.status, 200);
+  const session = [...f.sessions.values()][0],
+    intent = f.pay(session.id);
+  // Closing both sales paths must still permit confirmation and reconciliation.
+  f.env.STREAMLION_COORDINATION_CREDIT_SALES_ENABLED = "false";
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  assert.equal(
+    (
+      await f.request("confirm", {
+        method: "POST",
+        cookie,
+        body: { sessionId: session.id },
+      })
+    ).status,
+    200,
+  );
+  const completion = {
+    id: "evt_coordination_paid",
+    type: "checkout.session.completed",
+    livemode: true,
+    data: { object: session },
+  };
+  assert.equal((await signedCreditEvent(f, completion)).status, 200);
+  assert.equal((await signedCreditEvent(f, completion)).status, 200);
+  assert.equal(
+    (await creditAccount(f.db, "live", "a")).balance_micros,
+    10000000,
+  );
+  const fundedAI = await handleAI({
+    env: f.env,
+    request: new Request("https://app.example/api/ai/answer", {
+      method: "POST",
+      headers: {
+        Origin: f.env.GOOGLE_AUTH_ORIGIN,
+        Cookie: "__Host-streamlion-session=" + cookie,
+      },
+      body: "{}",
+    }),
+  });
+  assert.equal(fundedAI.status, 503);
+  assert.equal((await creditAccount(f.db, "test", "a")).balance_micros, 0);
+  assert.equal((await creditAccount(f.db, "live", "b")).balance_micros, 0);
+  await reserveProject(f.db, "live", "a", "qa-job", Date.now());
+  await finishProject(f.db, "live", "a", "qa-job", "complete");
+  await reserveProject(f.db, "live", "a", "qa-job", Date.now());
+  assert.equal(
+    (await creditAccount(f.db, "live", "a")).balance_micros,
+    7000000,
+  );
+  intent.latest_charge.amount_refunded = 100;
+  const refund = {
+    id: "evt_coordination_partial_refund",
+    type: "charge.refunded",
+    livemode: true,
+    data: { object: { payment_intent: intent.id } },
+  };
+  assert.equal((await signedCreditEvent(f, refund)).status, 200);
+  assert.equal(
+    (await creditAccount(f.db, "live", "a")).balance_micros,
+    6000000,
+  );
+  intent.latest_charge.amount_refunded = 1000;
+  assert.equal(
+    (
+      await signedCreditEvent(f, {
+        ...refund,
+        id: "evt_coordination_full_refund",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await signedCreditEvent(f, {
+        ...completion,
+        id: "evt_coordination_old_completion",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await creditAccount(f.db, "live", "a")).balance_micros,
+    -3000000,
+  );
+  assert.equal(
+    (await (await f.request("status", { cookie })).json()).creditHold,
+    true,
+  );
+  await assert.rejects(
+    reserveProject(f.db, "live", "a", "another-job", Date.now()),
+  );
+  const ai = await handleAI({
+    env: f.env,
+    request: new Request("https://app.example/api/ai/answer", {
+      method: "POST",
+      body: "{}",
+    }),
+  });
+  assert.equal(ai.status, 503);
+  assert.deepEqual(
+    f.sql.prepare("SELECT * FROM streamlion_credit_policy_v1").all(),
+    policies,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_credit_turns_v1").get().n,
+    0,
+  );
+  assert.equal(f.creates(), 1);
+});
+test("coordination sales never enable AI or bypass its cost, policy, key and budget checks", async (t) => {
+  const f = fixture(t),
+    cookie = await f.login();
+  coordinationTopups(f);
+  f.license();
+  f.env.ENABLE_AI_PILOT = "true";
+  f.env.OPENAI_API_KEY = "synthetic";
+  f.env.DEEPINFRA_API_KEY = "synthetic";
+  const ai = () =>
+    handleAI({
+      env: f.env,
+      request: new Request("https://app.example/api/ai/config", {
+        headers: { Cookie: "__Host-streamlion-session=" + cookie },
+      }),
+    });
+  assert.equal((await (await ai()).json()).enabled, false);
+  f.env.STREAMLION_AI_COST_APPROVED = "true";
+  assert.equal((await (await ai()).json()).enabled, false); // Inactive, zero-budget policy.
+  f.sql.exec(
+    "UPDATE streamlion_credit_policy_v1 SET active=1,cost_micros=6000,daily_budget_micros=0,total_budget_micros=0,daily_requests=1 WHERE mode='live'",
+  );
+  assert.equal((await (await ai()).json()).enabled, false);
+  delete f.env.OPENAI_API_KEY;
+  assert.equal((await (await ai()).json()).enabled, false);
+  assert.equal((await (await f.request("config")).json()).enabled, true);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_credit_turns_v1").get().n,
+    0,
+  );
+});
+test("the existing AI top-up path still requires its independent approvals and available budget", async (t) => {
+  const f = fixture(t);
+  coordinationTopups(f);
+  f.env.STREAMLION_COORDINATION_CREDIT_SALES_ENABLED = "false";
+  f.env.STREAMLION_AI_CREDIT_SALES_ENABLED = "true";
+  f.env.ENABLE_AI_PILOT = "true";
+  f.env.OPENAI_API_KEY = "synthetic";
+  f.env.DEEPINFRA_API_KEY = "synthetic";
+  f.sql.exec(
+    "UPDATE streamlion_credit_policy_v1 SET active=1,cost_micros=6000,daily_budget_micros=6000,total_budget_micros=6000,daily_requests=1 WHERE mode='live'",
+  );
+  assert.equal((await (await f.request("config")).json()).enabled, false);
+  f.env.STREAMLION_AI_COST_APPROVED = "true";
+  assert.equal((await (await f.request("config")).json()).enabled, true);
+  f.sql.exec(
+    "UPDATE streamlion_credit_policy_v1 SET daily_budget_micros=0 WHERE mode='live'",
+  );
+  assert.equal((await (await f.request("config")).json()).enabled, false);
+});
+test("coordination top-ups fail closed for missing approval, mode, service or schema readiness", async (t) => {
+  const f = fixture(t),
+    cookie = await f.login();
+  coordinationTopups(f);
+  f.license();
+  for (const [key, blocked] of [
+    ["STREAMLION_COORDINATION_CREDIT_SALES_ENABLED", undefined],
+    ["STREAMLION_COORDINATION_CREDIT_SALES_ENABLED", "false"],
+    ["STREAMLION_COORDINATION_CREDIT_SALES_ENABLED", "TRUE"],
+    ["ENABLE_CLIENT_COORDINATION", "false"],
+    ["ENABLE_PERSISTENT_GOOGLE", "false"],
+    ["STREAMLION_LIVE_PAYMENTS_APPROVED", "false"],
+    ["STREAMLION_AI_CREDITS_MODE", "test"],
+  ]) {
+    const before = f.env[key];
+    f.env[key] = blocked;
+    const config = await f.request("config");
+    assert(
+      config.status === 503 || (await config.json()).enabled === false,
+      key,
+    );
+    assert.equal(
+      (
+        await f.request("checkout", {
+          method: "POST",
+          cookie,
+          body: { packId: "small" },
+        })
+      ).status,
+      503,
+      key,
+    );
+    f.env[key] = before;
+  }
+  f.sql.exec(
+    "UPDATE streamlion_coordination_policy_v1 SET active=CASE mode WHEN 'test' THEN 1 ELSE 0 END",
+  );
+  assert.equal((await (await f.request("config")).json()).enabled, false);
+  f.sql.exec(
+    "UPDATE streamlion_coordination_policy_v1 SET active=1 WHERE mode='live'; DELETE FROM streamlion_coordination_notifications_schema_v1",
+  );
+  assert.equal((await (await f.request("config")).json()).enabled, false);
+  f.sql.exec(
+    "INSERT INTO streamlion_coordination_notifications_schema_v1 VALUES(1)",
+  );
+  f.sql.exec("DELETE FROM streamlion_credit_policy_v1 WHERE mode='live'");
+  assert.equal((await f.request("config")).status, 503);
+  assert.equal(
+    (
+      await f.request("checkout", {
+        method: "POST",
+        cookie,
+        body: { packId: "small" },
+      })
+    ).status,
+    503,
+  );
+  assert.equal(f.creates(), 0);
+});
+test("coordination-only sales retain owner QA, account, license and pending-checkout gates", async (t) => {
+  const f = fixture(t),
+    owner = await f.login(),
+    other = await f.login("b");
+  coordinationTopups(f);
+  f.license();
+  f.env.STREAMLION_CHECKOUT_MODE = "owner_qa";
+  f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = '["a"]';
+  assert.equal((await (await f.request("config")).json()).enabled, false);
+  assert.equal(
+    (await (await f.request("config", { cookie: owner })).json()).enabled,
+    true,
+  );
+  assert.equal(
+    (
+      await f.request("checkout", {
+        method: "POST",
+        cookie: other,
+        subject: "b",
+        account: "a",
+        body: { packId: "small" },
+      })
+    ).status,
+    403,
+  );
+  f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = '["a","b"]';
+  assert.equal(
+    (
+      await (
+        await f.request("checkout", {
+          method: "POST",
+          cookie: other,
+          subject: "b",
+          body: { packId: "small" },
+        })
+      ).json()
+    ).licenseRequired,
+    true,
+  );
+  const first = await (
+    await f.request("checkout", {
+      method: "POST",
+      cookie: owner,
+      body: { packId: "small" },
+    })
+  ).json();
+  const retry = await (
+    await f.request("checkout", {
+      method: "POST",
+      cookie: owner,
+      body: { packId: "small" },
+    })
+  ).json();
+  assert.equal(first.url, retry.url);
+  f.env.STREAMLION_COORDINATION_CREDIT_SALES_ENABLED = "false";
+  assert.equal(
+    (
+      await f.request("checkout", {
+        method: "POST",
+        cookie: owner,
+        body: { packId: "small" },
+      })
+    ).status,
+    503,
+  );
+  f.env.STREAMLION_COORDINATION_CREDIT_SALES_ENABLED = "true";
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  assert.equal(
+    (
+      await f.request("checkout", {
+        method: "POST",
+        cookie: owner,
+        body: { packId: "small" },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(f.creates(), 1);
+});
 test("30 percent markup uses exact integer ceiling; unknown cost fails closed", () => {
   assert.equal(creditPrice(6000), 7800);
   assert.equal(creditPrice(10001), 13002);

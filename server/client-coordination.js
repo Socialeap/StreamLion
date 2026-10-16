@@ -1,3 +1,5 @@
+import { coordinationReady } from "./coordination-readiness.js";
+export { coordinationReady };
 import { pricingProfiles } from "./provider-pricing.js";
 import { brandingForConnection } from "./provider-branding.js";
 import {
@@ -24,7 +26,6 @@ import {
   emailReady,
   emailDeliveryStatus,
   pushReady,
-  notificationsSchema,
   notificationSettings,
   rememberProviderEmail,
 } from "./coordination-notifications.js";
@@ -35,11 +36,7 @@ import {
   DAY,
   readiness,
 } from "../src/client-workflow.js";
-import {
-  efficiencySchema,
-  beginRead,
-  finishRead,
-} from "./coordination-runtime.js";
+import { beginRead, finishRead } from "./coordination-runtime.js";
 import {
   selectedIntakeTemplate,
   reviseIntakeTemplate,
@@ -89,33 +86,6 @@ export const json = (value, status = 200, extra = {}) =>
       ...extra,
     },
   });
-export async function coordinationReady(env) {
-  if (
-    env.ENABLE_CLIENT_COORDINATION !== "true" ||
-    !googleConfigurationReady(env) ||
-    !["test", "live"].includes(paymentMode(env)) ||
-    env.STREAMLION_AI_CREDITS_MODE !== paymentMode(env)
-  )
-    return false;
-  try {
-    const schema = await env.GOOGLE_SESSIONS.prepare(
-      "SELECT version FROM streamlion_coordination_schema_v1 WHERE version=1",
-    ).first();
-    const policy = await env.GOOGLE_SESSIONS.prepare(
-      "SELECT active FROM streamlion_coordination_policy_v1 WHERE mode=?",
-    )
-      .bind(paymentMode(env))
-      .first();
-    return Boolean(
-      schema &&
-      policy?.active === 1 &&
-      (await notificationsSchema(env)) &&
-      (await efficiencySchema(env)),
-    );
-  } catch {
-    return false;
-  }
-}
 // Public landing copy may be 30 seconds old. Authorization and mutations always
 // use coordinationReady directly; this probe never grants access or spends.
 const availabilityProbes = new WeakMap();
