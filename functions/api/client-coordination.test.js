@@ -3652,3 +3652,148 @@ test("saved business branding follows the link owner; a forwarded TM preset form
     0,
   );
 });
+
+test("public form retry after a lost response survives branding changes and retains immutable identity guards", async (t) => {
+  const f = await publicFixture(t);
+  const branding = {
+    name: "Renamed Provider",
+    website: "https://example.com",
+    logo: "",
+    shape: "square",
+  };
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_provider_branding_v1 VALUES('test','a',?,1,?)",
+    )
+    .run(JSON.stringify(branding), Date.now());
+  const retry = () =>
+    createPublicForm(f.env, f.connection, "public-form-test", { intake: null });
+  assert.deepEqual(await retry(), f.form);
+  assert.equal((await openPublicForm(f.env, f.token)).brand, branding.name);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_public_forms_v1").get()
+      .n,
+    1,
+  );
+  await assert.rejects(
+    createPublicForm(
+      f.env,
+      { ...f.connection, id: "other-owner" },
+      "public-form-test",
+      { intake: null },
+    ),
+    /Form identity changed/,
+  );
+  await assert.rejects(
+    createPublicForm(f.env, f.connection, "public-form-test", {
+      intake: { id: "different-template" },
+    }),
+    /Form identity changed/,
+  );
+  await assert.rejects(
+    createPublicForm(
+      f.env,
+      f.connection,
+      "public-form-test",
+      { intake: null },
+      true,
+    ),
+    /Form identity changed/,
+  );
+  // Recovery does not need the current branding store to be available.
+  const offlineBranding = {
+    ...f.env,
+    GOOGLE_SESSIONS: {
+      ...f.db,
+      prepare(query) {
+        if (query.includes("streamlion_provider_branding_v1"))
+          throw new Error("Branding store unavailable");
+        return f.db.prepare(query);
+      },
+    },
+  };
+  const recovered = await createPublicForm(
+    offlineBranding,
+    f.connection,
+    "public-form-test",
+    { intake: null },
+  );
+  assert.equal(recovered.url, f.form.url);
+  assert.equal(recovered.id, f.form.id);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1").get()
+      .n,
+    0,
+  );
+});
+
+test("concurrent form retry with different branding recovers the winning insert without duplicating the form", async (t) => {
+  const f = await publicFixture(t),
+    operation = "concurrent-branding",
+    job = { intake: null };
+  let winner,
+    raced = false;
+  const env = {
+    ...f.env,
+    GOOGLE_SESSIONS: {
+      ...f.db,
+      prepare(query) {
+        const statement = f.db.prepare(query);
+        if (
+          !query.startsWith("INSERT OR IGNORE INTO streamlion_public_forms_v1")
+        )
+          return statement;
+        return {
+          ...statement,
+          bind(...args) {
+            const bound = statement.bind(...args);
+            return {
+              ...bound,
+              async run() {
+                if (!raced) {
+                  raced = true;
+                  f.sql
+                    .prepare(
+                      "INSERT INTO streamlion_provider_branding_v1 VALUES('test','a',?,1,?)",
+                    )
+                    .run(
+                      JSON.stringify({
+                        name: "New Profile",
+                        website: "",
+                        logo: "",
+                        shape: "rounded",
+                      }),
+                      Date.now(),
+                    );
+                  winner = await createPublicForm(
+                    f.env,
+                    f.connection,
+                    operation,
+                    job,
+                  );
+                }
+                return bound.run();
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+  const recovered = await createPublicForm(env, f.connection, operation, job);
+  assert.equal(raced, true);
+  assert.deepEqual(recovered, winner);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_public_forms_v1 WHERE id=?",
+      )
+      .get("form-" + operation).n,
+    1,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1").get()
+      .n,
+    0,
+  );
+});

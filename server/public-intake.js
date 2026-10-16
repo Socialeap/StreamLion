@@ -101,27 +101,33 @@ export async function createPublicForm(
     throw new CoordinationError("Public forms await activation.", 503);
   if (!operationID(operation))
     throw new CoordinationError("Invalid form identity.");
-  const id = "form-" + operation,
-    descriptor = {
-      brand: (await brandingForConnection(env, c)).name,
-      intake: job.intake || null,
-    },
-    token = randomProspectToken();
+  const id = "form-" + operation;
+  async function assertIdentity(row) {
+    if (row.connection_id !== c.id)
+      throw new CoordinationError("Form identity changed.", 409);
+    const stored = await unseal(env, row.descriptor, "public-form:" + id);
+    // Branding is presentation resolved from the owner at open time, not an
+    // operation input. A lost-response retry must survive a later profile edit.
+    if (
+      stableJSON(stored.intake || null) !== stableJSON(job.intake || null) ||
+      Boolean(row.verification_required) !== verificationRequired
+    )
+      throw new CoordinationError("Form identity changed.", 409);
+  }
   const old = await env.GOOGLE_SESSIONS.prepare(
     "SELECT * FROM streamlion_public_forms_v1 WHERE id=?",
   )
     .bind(id)
     .first();
   if (old) {
-    if (
-      old.connection_id !== c.id ||
-      stableJSON(await unseal(env, old.descriptor, "public-form:" + id)) !==
-        stableJSON(descriptor) ||
-      Boolean(old.verification_required) !== verificationRequired
-    )
-      throw new CoordinationError("Form identity changed.", 409);
+    await assertIdentity(old);
     return formView(env, old);
   }
+  const descriptor = {
+      brand: (await brandingForConnection(env, c)).name,
+      intake: job.intake || null,
+    },
+    token = randomProspectToken();
   await env.GOOGLE_SESSIONS.prepare(
     "INSERT OR IGNORE INTO streamlion_public_forms_v1(id,connection_id,token_hash,token_cipher,descriptor,verification_required,created_at) SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_public_forms_v1 WHERE connection_id=?)<20",
   )
@@ -147,13 +153,7 @@ export async function createPublicForm(
       409,
     );
   // A concurrent retry may have inserted this identity first.
-  if (
-    saved.connection_id !== c.id ||
-    stableJSON(await unseal(env, saved.descriptor, "public-form:" + id)) !==
-      stableJSON(descriptor) ||
-    Boolean(saved.verification_required) !== verificationRequired
-  )
-    throw new CoordinationError("Form identity changed.", 409);
+  await assertIdentity(saved);
   return formView(env, saved);
 }
 export async function updatePublicForm(env, c, body) {
