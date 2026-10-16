@@ -1,3 +1,4 @@
+import { SubmittedPricing, FormPricingControls } from "./PricingEstimate.jsx";
 import ProviderBrand from "./ProviderBrand.jsx";
 import React, {
   useEffect,
@@ -1071,7 +1072,7 @@ export default function CoordinationPortal({
                     >
                       <option value="">Standard work order</option>
                       <option value="preset:tm-spatial">
-                        Optional TM preset · Transcendence Media pricing
+                        Optional TM service questions
                       </option>
                       {createdInvitation &&
                         selectedJob?.intake &&
@@ -1214,17 +1215,15 @@ export default function CoordinationPortal({
                     )}
                   </div>
                   <div className="coord-invite-submit">
-                    {selectedTemplate === "preset:tm-spatial" && (
-                      <p>
-                        Optional template with Transcendence Media’s estimate
-                        rates. Your link still sends requests to the business
-                        shown above. USD $0.15/sq ft through 5,000; $0.12 at
-                        5,001–19,999; $0.10 at 20,000+. Optional Creative
-                        Direction: 6 hours / $900. Review these rates before
-                        sharing, or choose Standard work order / your own
-                        service template.
-                      </p>
-                    )}
+                    <p>
+                      Estimates use your published Account pricing, or the
+                      pricing profile selected for this service.{" "}
+                      <a href="/?page=Account">
+                        Review Pricing &amp; Estimates
+                      </a>
+                      . Without published pricing, the provider prepares a
+                      quote.
+                    </p>
                     {!createdInvitation && (
                       <button
                         disabled={
@@ -1285,6 +1284,24 @@ export default function CoordinationPortal({
                     <article key={form.id} className="coord-public-form">
                       <div>
                         <h3>{form.intake?.name || "Public work-order form"}</h3>
+                        <p>
+                          Pricing:{" "}
+                          {form.pricing
+                            ? `${form.pricing.name} · version ${form.pricing.version}`
+                            : form.pricingKey === "legacy"
+                              ? "Legacy saved estimate settings"
+                              : "Provider prepares a quote"}
+                          . Submitted requests keep their original prices.
+                        </p>
+                        <FormPricingControls
+                          form={form}
+                          profiles={status.pricingProfiles || []}
+                          available={status.pricingAvailable}
+                          busy={busy}
+                          update={(body) =>
+                            perform("provider/form-pricing", body)
+                          }
+                        />
                         <p>
                           Requests go to{" "}
                           <strong>
@@ -1531,6 +1548,7 @@ export default function CoordinationPortal({
             <div id="coord-services" className="coord-section" tabIndex={-1}>
               <IntakeTemplateSettings
                 templates={templates}
+                pricingProfiles={status.pricingProfiles || []}
                 busy={busy}
                 recovering={pending.length > 0}
                 save={(body) =>
@@ -2114,6 +2132,7 @@ function JobPanel({
         activity={activity}
         client={client}
       />
+      <SubmittedPricing request={job.pricingRequest} />
       {job.estimate && (
         <p className="coord-estimate">
           Submitted estimate:{" "}

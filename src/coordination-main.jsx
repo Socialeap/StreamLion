@@ -1,3 +1,4 @@
+import "./provider-pricing.css";
 import "./provider-branding.css";
 import React from "react";
 import { createRoot } from "react-dom/client";

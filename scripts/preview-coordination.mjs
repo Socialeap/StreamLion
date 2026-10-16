@@ -1,3 +1,8 @@
+import {
+  validatePricing,
+  pricingRequest,
+  pricingKey,
+} from "../src/provider-pricing.js";
 // Local synthetic UI preview. No Google, mail, Stripe or AI calls.
 import { createServer } from "vite";
 import {
@@ -85,7 +90,50 @@ let previewBranding = {
   shape: "rounded",
 };
 let brandingVersion = 0;
+const previewPrices = new Map();
+const priceSnapshot = (id = "default") => {
+  const row = previewPrices.get(id);
+  return row
+    ? {
+        profileId: row.id,
+        name: row.name,
+        version: row.version,
+        key: row.id + ":" + row.version,
+        config: row.config,
+      }
+    : null;
+};
 const handler = async (req, res, next) => {
+  if (req.url.split("?")[0] === "/api/provider-pricing") {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method === "POST") {
+      try {
+        const value = JSON.parse(body);
+        previewPrices.set(value.id, {
+          id: value.id,
+          name: value.name,
+          version: (previewPrices.get(value.id)?.version || 0) + 1,
+          config: validatePricing(value.config),
+        });
+      } catch (error) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: error.message }));
+        return;
+      }
+    }
+    res.end(
+      JSON.stringify({
+        subject: "synthetic-provider",
+        account: "qa@example.com",
+        available: true,
+        profiles: [...previewPrices.values()],
+      }),
+    );
+    return;
+  }
   if (req.url.split("?")[0] === "/api/provider-branding") {
     let body = "";
     for await (const chunk of req) body += chunk;
@@ -167,6 +215,7 @@ const handler = async (req, res, next) => {
         delivery: { email: true, push: false },
         shareLinks: true,
         publicForms: true,
+        pricingProfiles: [...previewPrices.values()],
       };
     else if (path === "provider/jobs")
       result = {
@@ -260,12 +309,14 @@ const handler = async (req, res, next) => {
           brand: previewBranding.name,
           branding: previewBranding,
           intake: job.intake,
+          pricing: priceSnapshot(job.intake?.pricingProfile),
           active: true,
           verificationRequired: data.verificationRequired === true,
           url:
             `http://127.0.0.1:${process.env.STREAMLION_QA_PORT || 5175}/api/client-portal#form=` +
             "P".repeat(43),
         };
+        form.pricingKey = pricingKey(form);
         publicForms.set(form.id, form);
         result = { form };
       } else {
@@ -284,6 +335,14 @@ const handler = async (req, res, next) => {
         }
         result = { jobId: job.id, url, shareLink: data.shareLink };
       }
+    } else if (path === "provider/form-pricing") {
+      const data = JSON.parse(body),
+        form = publicForms.get(data.formId);
+      form.pricing = priceSnapshot(
+        form.pricing?.profileId || form.intake?.pricingProfile,
+      );
+      form.pricingKey = pricingKey(form);
+      result = { updated: true };
     } else if (path === "provider/form") {
       const data = JSON.parse(body),
         form = publicForms.get(data.formId);
@@ -315,6 +374,7 @@ const handler = async (req, res, next) => {
       job.submittedAt = now;
       job.openedAt = now;
       job.intake = form.intake;
+      job.pricingRequest = pricingRequest(form, data);
       job.source = "public-form";
       job.emailVerified = false;
       job.requestExpiresAt = now + 30 * 86400000;

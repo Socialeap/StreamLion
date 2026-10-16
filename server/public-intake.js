@@ -1,3 +1,5 @@
+import { pricingForConnection, pricingProfiles } from "./provider-pricing.js";
+import { pricingRequest, pricingKey } from "../src/provider-pricing.js";
 import { brandingForConnection } from "./provider-branding.js";
 import { hash, seal, unseal } from "./google-auth.js";
 import { hasPurchase, paymentMode } from "./purchase-access.js";
@@ -70,6 +72,7 @@ async function formView(env, row) {
     ...descriptor,
     active: Boolean(row.active),
     verificationRequired: Boolean(row.verification_required),
+    pricingKey: pricingKey(descriptor),
     openedAt: row.opened_at,
     requestCount: row.request_count || 0,
     url: env.GOOGLE_AUTH_ORIGIN + "/api/client-portal#form=" + token,
@@ -126,6 +129,11 @@ export async function createPublicForm(
   const descriptor = {
       brand: (await brandingForConnection(env, c)).name,
       intake: job.intake || null,
+      pricing: await pricingForConnection(
+        env,
+        c,
+        job.intake?.pricingProfile || "default",
+      ),
     },
     token = randomProspectToken();
   await env.GOOGLE_SESSIONS.prepare(
@@ -175,6 +183,57 @@ export async function updatePublicForm(env, c, body) {
     )
     .run();
   if (result.meta.changes !== 1) throw unavailable();
+  return { updated: true };
+}
+export async function updateFormPricing(env, connection, body) {
+  const row = await env.GOOGLE_SESSIONS.prepare(
+    "SELECT * FROM streamlion_public_forms_v1 WHERE id=? AND connection_id=?",
+  )
+    .bind(body.formId, connection.id)
+    .first();
+  if (!row) throw unavailable();
+  const descriptor = await unseal(env, row.descriptor, "public-form:" + row.id);
+  if (pricingKey(descriptor) === body.targetPricingKey)
+    return { updated: true };
+  if (
+    !(await pricingProfiles(env, connection.google_subject, connection.mode))
+      .available
+  )
+    throw new CoordinationError("Form pricing updates await activation.", 503);
+  const pricing = await pricingForConnection(
+    env,
+    connection,
+    descriptor.pricing?.profileId ||
+      descriptor.intake?.pricingProfile ||
+      "default",
+  );
+  const target = pricing?.key || "quote";
+  if (body.targetPricingKey !== target)
+    throw new CoordinationError(
+      "Account pricing changed. Refresh and review before updating this form.",
+      409,
+    );
+  if (pricingKey(descriptor) === target) return { updated: true };
+  if (body.expectedPricingKey !== pricingKey(descriptor))
+    throw new CoordinationError(
+      "Form pricing changed in another tab. Refresh and review.",
+      409,
+    );
+  const result = await env.GOOGLE_SESSIONS.prepare(
+    "UPDATE streamlion_public_forms_v1 SET descriptor=? WHERE id=? AND connection_id=? AND descriptor=?",
+  )
+    .bind(
+      await seal(env, { ...descriptor, pricing }, "public-form:" + row.id),
+      row.id,
+      connection.id,
+      row.descriptor,
+    )
+    .run();
+  if (result.meta.changes !== 1)
+    throw new CoordinationError(
+      "Form pricing changed. Refresh and review.",
+      409,
+    );
   return { updated: true };
 }
 export async function openPublicForm(env, token) {
@@ -287,6 +346,13 @@ export async function submitPublicForm(
       fields: patch,
       email,
       creative: body.creative === true,
+      ...(Object.hasOwn(body, "pricingKey")
+        ? {
+            pricingKey: body.pricingKey,
+            quantities: body.quantities || {},
+            budget: body.budget || "",
+          }
+        : {}),
       access: await hash(body.accessToken),
     }),
   );
@@ -341,8 +407,25 @@ export async function submitPublicForm(
         throw unavailable();
       job.openedAt = v.openedAt;
     }
+    let prices;
+    try {
+      prices = pricingRequest(descriptor, body);
+    } catch (error) {
+      throw Object.assign(
+        new CoordinationError(
+          error.message,
+          /Pricing changed/.test(error.message) ? 409 : 400,
+        ),
+        {
+          code: /Pricing changed/.test(error.message)
+            ? "pricing_changed"
+            : "invalid_pricing",
+        },
+      );
+    }
+    if (prices) job.pricingRequest = prices;
     const estimate = captureEstimate(
-      descriptor.intake?.estimateProfile,
+      prices ? undefined : descriptor.intake?.estimateProfile,
       fields.propertySizeSqFt,
       body.creative === true,
     );
@@ -357,7 +440,7 @@ export async function submitPublicForm(
     // One transaction enforces the workspace bound even for concurrent public submissions.
     await env.GOOGLE_SESSIONS.batch([
       env.GOOGLE_SESSIONS.prepare(
-        "INSERT OR IGNORE INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL)<100 AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id WHERE f.id=? AND f.active=1 AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND EXISTS(SELECT 1 FROM streamlion_purchases_v1 p WHERE p.google_subject=c.google_subject AND p.mode=c.mode AND p.status='paid'))",
+        "INSERT OR IGNORE INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL)<100 AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id WHERE f.id=? AND f.descriptor=? AND f.active=1 AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND EXISTS(SELECT 1 FROM streamlion_purchases_v1 p WHERE p.google_subject=c.google_subject AND p.mode=c.mode AND p.status='paid'))",
       ).bind(
         id,
         connection.id,
@@ -366,6 +449,7 @@ export async function submitPublicForm(
         now,
         connection.id,
         row.id,
+        row.descriptor,
         now,
         paymentMode(env),
       ),
@@ -395,11 +479,21 @@ export async function submitPublicForm(
     )
       .bind(op)
       .first();
-    if (!s)
+    if (!s) {
+      const current = await publicForm(env, body.token);
+      if (current.row.descriptor !== row.descriptor)
+        throw Object.assign(
+          new CoordinationError(
+            "Pricing changed. Review current pricing; your answers are kept.",
+            409,
+          ),
+          { code: "pricing_changed" },
+        );
       throw new CoordinationError(
         "The provider's request inbox is full. Contact them directly.",
         409,
       );
+    }
     if (s.fingerprint !== fingerprint || s.form_id !== row.id)
       throw new CoordinationError("Submission identity changed.", 409);
   }

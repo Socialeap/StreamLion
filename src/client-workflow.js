@@ -40,7 +40,8 @@ function validateBriefFields(input, options) {
 }
 export function isMaterialField(job, key) {
   return (
-    (key === "propertySizeSqFt" && Boolean(job.intake?.estimateProfile)) ||
+    (key === "propertySizeSqFt" &&
+      Boolean(job.intake?.estimateProfile || job.pricingRequest?.pricing)) ||
     MATERIAL_FIELDS.has(key) ||
     (!OPERATIONAL_FIELDS.has(key) &&
       (job.intake?.questions || []).some(
@@ -206,6 +207,7 @@ export function reduceClientJob(previous, command, actor, now) {
       job.submittedAt = now;
       job.openedAt = command.openedAt;
       if (command.estimate) job.estimate = command.estimate;
+      if (command.pricingRequest) job.pricingRequest = command.pricingRequest;
       job.providerApproved = false;
       job.clientApproved = false;
       break;
