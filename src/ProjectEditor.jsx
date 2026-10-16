@@ -65,6 +65,8 @@ export default function ProjectEditor({
   savedStep = null,
   savedNotice = "",
   templates = [],
+  defaults = {},
+  usualDeliverables = [],
 }) {
   const key = projectDraftKey(draftScope, project?.id || draftId || "new");
   const initial = project
@@ -76,7 +78,11 @@ export default function ProjectEditor({
   const [stale, setStale] = useState(
     !!cached?.base && cached.base !== baseline,
   );
-  const [fields, setFields] = useState(() => cached?.fields || initial);
+  // Provider identity from setup fills a fresh project only. The draft
+  // baseline stays blank so it never reads as a changed Google record.
+  const [fields, setFields] = useState(
+    () => cached?.fields || (project ? initial : { ...initial, ...defaults }),
+  );
   const firstStep =
     savedStep ??
     (project || Object.values(cached?.fields || {}).some(Boolean) ? 1 : 0);
@@ -626,6 +632,22 @@ export default function ProjectEditor({
                           }
                         />
                       )}
+                      {field.key === "deliverables" &&
+                        usualDeliverables.length > 0 &&
+                        !fields.deliverables.trim() && (
+                          <button
+                            type="button"
+                            className="usual-deliverables"
+                            onClick={() =>
+                              update({
+                                ...fields,
+                                deliverables: usualDeliverables.join("\n"),
+                              })
+                            }
+                          >
+                            Add my usual deliverables
+                          </button>
+                        )}
                     </div>
                   );
                 })}

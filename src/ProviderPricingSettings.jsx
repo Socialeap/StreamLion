@@ -26,6 +26,7 @@ export default function ProviderPricingSettings({
   disabled = false,
   onBusy = () => {},
   api = pricingAPI,
+  suggestion = null,
 }) {
   const [state, setState] = useState(null),
     [draft, setDraft] = useState({
@@ -40,18 +41,23 @@ export default function ProviderPricingSettings({
     [attempt, setAttempt] = useState(0);
   const generation = useRef(0),
     ownsBusy = useRef(false),
-    busyCallback = useRef(onBusy);
+    busyCallback = useRef(onBusy),
+    suggestionRef = useRef(suggestion);
   busyCallback.current = onBusy;
+  suggestionRef.current = suggestion;
   const loadProfile = (data, id = "default") => {
     setState(data);
+    // An unpublished default starts from the setup assistant's pricing.
+    const suggested = id === "default" && suggestionRef.current;
     setDraft(
       data.profiles.find((p) => p.id === id) || {
         id,
         name: "Default pricing",
         version: 0,
-        config: blankPricing(),
+        config: suggested ? structuredClone(suggested) : blankPricing(),
       },
     );
+    return !data.profiles.some((p) => p.id === id) && !!suggested;
   };
   useEffect(() => {
     const current = ++generation.current;
@@ -64,7 +70,14 @@ export default function ProviderPricingSettings({
         .then((data) => {
           if (data.account && data.account !== account)
             throw new Error("Your Google account changed. Reopen Account.");
-          if (generation.current === current) loadProfile(data);
+          if (
+            generation.current === current &&
+            loadProfile(data) &&
+            data.available
+          )
+            setNotice(
+              "Filled in from your setup assistant answers. Preview, then publish when ready.",
+            );
         })
         .catch((e) => {
           if (generation.current === current) setError(e.message);

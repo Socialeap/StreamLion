@@ -70,11 +70,13 @@ test.after(() => {
   dom.window.close();
 });
 
-test("cold start presents the branded opener and explicit Google account choices before workspace navigation", async () => {
+test("cold start presents the branded opener, the setup assistant and explicit Google account choices before workspace navigation", async () => {
   const ui = render(<App />);
   await ui.findByRole("heading", { name: "StreamLion", exact: true });
   await ui.findByRole("link", { name: "Sign in with Google" });
-  assert(ui.getByRole("link", { name: "Sign up" }));
+  assert(ui.getByRole("button", { name: "Get started" }));
+  assert(ui.getByRole("button", { name: "Continue on this device" }));
+  assert.equal(ui.queryByRole("link", { name: "Sign up" }), null);
   assert.equal(ui.queryByRole("navigation", { name: "Main" }), null);
   assert.equal(ui.queryByRole("button", { name: "Create project" }), null);
   assert.equal((await loadWorkspace()).jobs.length, 0);
@@ -375,10 +377,7 @@ test("Google setup explains sign-in and workbook selection without starting OAut
   await ui.findByRole("heading", { name: "StreamLion", exact: true });
   const signIn = await ui.findByRole("link", { name: "Sign in with Google" });
   assert.equal(signIn.getAttribute("href"), "/api/google/start");
-  assert.equal(
-    ui.getByRole("link", { name: "Sign up" }).getAttribute("href"),
-    "/api/google/start",
-  );
+  assert(ui.getByRole("button", { name: "Get started" }));
   await enterWorkspace(ui);
   fireEvent.click(ui.getByRole("button", { name: /Account: Not signed in/ }));
   await ui.findByRole("heading", { name: "Connections" });

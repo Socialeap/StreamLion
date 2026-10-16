@@ -74,6 +74,7 @@ export default function ProviderBrandingSettings({
   onBusy = () => {},
   api = brandingAPI,
   convertLogo = prepareLogo,
+  suggestion = null,
 }) {
   const [state, setState] = useState(null),
     [draft, setDraft] = useState(emptyBranding),
@@ -83,8 +84,10 @@ export default function ProviderBrandingSettings({
     [attempt, setAttempt] = useState(0);
   const ownsBusy = useRef(false);
   const generation = useRef(0),
-    onBusyRef = useRef(onBusy);
+    onBusyRef = useRef(onBusy),
+    suggestionRef = useRef(suggestion);
   onBusyRef.current = onBusy;
+  suggestionRef.current = suggestion;
   function changeBusy(value) {
     ownsBusy.current = value;
     setBusy(value);
@@ -106,7 +109,25 @@ export default function ProviderBrandingSettings({
             );
           if (generation.current === id) {
             setState(data);
-            setDraft(data.branding);
+            // Unsaved branding starts from the setup assistant's answers.
+            const suggested = !data.version && suggestionRef.current;
+            setDraft(
+              suggested
+                ? {
+                    ...data.branding,
+                    name: data.branding.name || suggested.name,
+                    website: data.branding.website || suggested.website,
+                    logo: data.branding.logo || suggested.logo,
+                    shape: data.branding.logo
+                      ? data.branding.shape
+                      : suggested.shape,
+                  }
+                : data.branding,
+            );
+            if (suggested && data.available)
+              setNotice(
+                "Filled in from your setup assistant answers. Review, then save to show them to clients.",
+              );
           }
         })
         .catch((e) => {
