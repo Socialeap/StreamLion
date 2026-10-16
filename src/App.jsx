@@ -23,8 +23,19 @@ import {
   SectionNavigation,
   usePageSections,
 } from "./AppNavigation.jsx";
-import { DEVICE_SETUP_KEY } from "./WorkspaceSetup.jsx";
+import {
+  DEVICE_SETUP_KEY,
+  deviceSetupChosen,
+  hasDeviceDrafts,
+} from "./WorkspaceSetup.jsx";
 import WelcomeScreen from "./WelcomeScreen.jsx";
+import SetupAssistant from "./SetupAssistant.jsx";
+import {
+  brandingSuggestion,
+  providerDefaults,
+  setupProfile,
+  setupStatus,
+} from "./setup-assistant.js";
 import LicenseGate from "./LicenseGate.jsx";
 import InstallApp from "./InstallApp.jsx";
 import { googleSignInFailure } from "./google-signin-errors.js";
@@ -136,6 +147,16 @@ export default function App() {
       ),
   );
   const [animateWelcome, setAnimateWelcome] = useState(true);
+  // An unfinished setup resumes after Google's sign-in page returns here.
+  const [setupOpen, setSetupOpen] = useState(
+    () =>
+      setupStatus() === "active" &&
+      ["connected", "expired", "cancelled", "failed"].includes(
+        new URLSearchParams(window.location.search).get("google"),
+      ),
+  );
+  const setupFrom = useRef("welcome");
+  const [profile, setProfile] = useState(() => setupProfile());
   const pageRoot = useRef(null);
   const [pageElement, setPageElement] = useState(null);
   const bindPageRoot = useCallback((element) => {
@@ -145,7 +166,10 @@ export default function App() {
   const pageSections = usePageSections(
     pageRoot,
     `${page}:${!!editing}`,
-    !!pageElement && !welcomeOpen && (page !== "Projects" || !!editing),
+    !!pageElement &&
+      !welcomeOpen &&
+      !setupOpen &&
+      (page !== "Projects" || !!editing),
   );
   useEffect(() => {
     if (requestedPage()) {
@@ -277,17 +301,21 @@ export default function App() {
       }
     }
   }
+  async function rememberSiteCopy() {
+    assertSaveDestination(bookId, remote);
+    if (!hasGoogleSession())
+      throw new Error("Reconnect Google to prepare a site copy.");
+    const copy = await saveSiteCopy(bookId, remote);
+    cacheLoadEpoch.current++;
+    setSiteCopy(copy);
+    cacheEnabled.current = true;
+  }
   async function keepSiteCopy(keep) {
     setSyncBusy(true);
     setError("");
     try {
       if (keep) {
-        assertSaveDestination(bookId, remote);
-        if (!hasGoogleSession())
-          throw new Error("Reconnect Google to prepare a site copy.");
-        const copy = await saveSiteCopy(bookId, remote);
-        cacheLoadEpoch.current++;
-        setSiteCopy(copy);
+        await rememberSiteCopy();
       } else {
         await removeSiteCopy(bookId);
         cacheLoadEpoch.current++;
@@ -969,6 +997,36 @@ export default function App() {
     setAnimateWelcome(false);
     navigate(destination);
   }
+  function openSetup(from) {
+    if (disabled) return;
+    setupFrom.current = from;
+    setWelcomeOpen(false);
+    setSetupOpen(true);
+  }
+  function closeSetup(destination) {
+    const saved = setupProfile();
+    setProfile(saved);
+    setSetupOpen(false);
+    setAnimateWelcome(false);
+    if (!destination) {
+      if (setupFrom.current === "welcome") setWelcomeOpen(true);
+      else navigate(setupFrom.current);
+      return;
+    }
+    if (saved?.storage === "device") {
+      try {
+        localStorage.setItem(DEVICE_SETUP_KEY, "device");
+      } catch {
+        /* optional preference */
+      }
+    }
+    navigate("Projects");
+    if (destination === "new")
+      setEditing({
+        draftId: `draft-${crypto.randomUUID()}`,
+        draftScope: bookId || "local",
+      });
+  }
   async function signOut() {
     if (disabled || checkingConnection) return;
     setSyncBusy(true);
@@ -983,9 +1041,38 @@ export default function App() {
       setSyncBusy(false);
     }
   }
+  if (setupOpen)
+    return (
+      <LicenseGate>
+        <SetupAssistant
+          connected={hasGoogleSession()}
+          account={googleAccount()}
+          checking={checkingConnection}
+          bookId={bookId}
+          workbookReady={!!remote}
+          siteCopy={!!siteCopy}
+          notice={error || restoreError}
+          onWorkbook={connectBook}
+          onSiteCopy={rememberSiteCopy}
+          onFinish={closeSetup}
+          onExit={() => closeSetup("")}
+        />
+      </LicenseGate>
+    );
+  const firstRun =
+    ready &&
+    !hasGoogleSession() &&
+    !bookId &&
+    !local.jobs.length &&
+    !local.notes.length &&
+    setupStatus() !== "complete" &&
+    !deviceSetupChosen() &&
+    !hasDeviceDrafts();
   if (welcomeOpen)
     return (
       <WelcomeScreen
+        setup={firstRun ? setupStatus() : ""}
+        onSetup={() => openSetup("welcome")}
         ready={ready}
         checking={checkingConnection}
         connected={hasGoogleSession()}
@@ -1150,6 +1237,8 @@ export default function App() {
             savedNotice={editing.savedNotice}
             bookId={bookId}
             googleReady={!!remote && hasGoogleSession()}
+            defaults={providerDefaults(profile)}
+            usualDeliverables={profile?.deliverables}
             onSave={saveProject}
             onCancel={() => {
               refreshDrafts();
@@ -1288,6 +1377,7 @@ export default function App() {
                 notes={workspace.notes}
                 scope={noteControls.draftScope}
                 disabled={disabled}
+                units={profile?.units}
                 onSave={(context, id, base) =>
                   id
                     ? updateNote(id, context.text, context.reviewed, base)
@@ -1410,17 +1500,39 @@ export default function App() {
                     <a href="/api/credits">Credits</a>
                   </p>
                 </section>
+                <section className="account-setup">
+                  <h2>Setup assistant</h2>
+                  <p>
+                    {profile?.business
+                      ? [profile.business, profile.email, ...profile.hardware]
+                          .filter(Boolean)
+                          .join(" · ")
+                      : "Answer a few quick questions to set up your business details, storage, units and pricing."}
+                  </p>
+                  <button
+                    disabled={disabled}
+                    onClick={() => openSetup("Account")}
+                  >
+                    {setupStatus() === "complete"
+                      ? "Rerun setup assistant"
+                      : setupStatus() === "active"
+                        ? "Resume setup assistant"
+                        : "Start setup assistant"}
+                  </button>
+                </section>
                 <ProviderBrandingSettings
                   connected={hasGoogleSession()}
                   account={googleAccount()}
                   disabled={disabled || checkingConnection}
                   onBusy={setSyncBusy}
+                  suggestion={brandingSuggestion(profile)}
                 />
                 <ProviderPricingSettings
                   connected={hasGoogleSession()}
                   account={googleAccount()}
                   disabled={disabled || checkingConnection}
                   onBusy={setSyncBusy}
+                  suggestion={profile?.pricing}
                 />
                 <InstallApp disabled={disabled} />
               </section>

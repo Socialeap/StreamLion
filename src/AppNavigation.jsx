@@ -325,6 +325,7 @@ export function usePageSections(root, scope, enabled = true) {
           const label =
             {
               "Sign-in and security": "Security",
+              "Setup assistant": "Setup",
               "Your business branding": "Branding",
               "Pricing & Estimates": "Pricing",
               "Rates & tiers": "Rates",

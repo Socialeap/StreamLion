@@ -139,3 +139,49 @@ test("branding POST uses bounded fetch and is never retried on a server failure"
   );
   assert.equal(calls, 1);
 });
+test("unsaved branding starts from setup answers, while saved branding is never replaced", async (t) => {
+  t.after(cleanup);
+  const suggestion = {
+    name: "Setup Studio",
+    website: "https://setup.example/",
+    logo: "",
+    shape: "rounded",
+  };
+  const fresh = async () => ({
+    subject: "a",
+    available: true,
+    version: 0,
+    branding: { name: "", website: "", logo: "", shape: "rounded" },
+  });
+  const ui = render(
+    <Settings
+      connected
+      account="a@example.com"
+      api={fresh}
+      suggestion={suggestion}
+    />,
+  );
+  await ui.findByDisplayValue("Setup Studio");
+  assert.equal(
+    ui.getByLabelText("Business website (optional)").value,
+    "https://setup.example/",
+  );
+  assert(ui.getByText(/Filled in from your setup assistant answers/));
+  cleanup();
+  const saved = async () => ({
+    subject: "a",
+    available: true,
+    version: 2,
+    branding: profile,
+  });
+  const kept = render(
+    <Settings
+      connected
+      account="a@example.com"
+      api={saved}
+      suggestion={suggestion}
+    />,
+  );
+  await kept.findByDisplayValue("Harbor Capture");
+  assert.equal(kept.queryByText(/setup assistant/), null);
+});

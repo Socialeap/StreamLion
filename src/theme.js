@@ -11,6 +11,20 @@ export function preferredTheme() {
     ? "dark"
     : "light";
 }
+// Apply, remember and announce a theme so a mounted ThemeSwitch stays in sync.
+export function saveTheme(theme) {
+  applyTheme(theme);
+  let saved = true;
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    saved = false;
+  }
+  window.dispatchEvent(
+    new window.CustomEvent("streamlion-theme-changed", { detail: theme }),
+  );
+  return saved;
+}
 export function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   document

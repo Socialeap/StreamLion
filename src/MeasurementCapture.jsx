@@ -30,6 +30,7 @@ export default function Measurements({
   notes,
   scope,
   disabled = false,
+  units = "",
   onSave,
 }) {
   const key = `${scope}:measurements:${project.id}`;
@@ -307,7 +308,11 @@ export default function Measurements({
             onChange={(e) =>
               retain({ ...draft, checked: false }, e.target.value)
             }
-            placeholder="Length 12 ft 4 3/8 in. Width 10 ft 6 in."
+            placeholder={
+              units === "metric"
+                ? "Length 3.76 m. Width 3.2 m."
+                : "Length 12 ft 4 3/8 in. Width 10 ft 6 in."
+            }
           />
         </label>
         {draft.clarifyingIssue != null && (

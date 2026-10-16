@@ -244,3 +244,29 @@ test("pricing writes are bounded and are never automatically retried", async (t)
   await assert.rejects(pricingAPI({ id: "default" }, "a"), /Unavailable/);
   assert.equal(calls, 1);
 });
+test("an unpublished default starts from setup pricing without publishing it", async (t) => {
+  t.after(cleanup);
+  const writes = [];
+  const api = async (body) => {
+    if (body) writes.push(body);
+    return { subject: "a", available: true, profiles: [] };
+  };
+  const suggestion = validatePricing({
+    ...blankPricing(),
+    method: "area",
+    currency: "CAD",
+    rate: "0.22",
+  });
+  const ui = render(
+    <Settings
+      connected
+      account="a@example.com"
+      api={api}
+      suggestion={suggestion}
+    />,
+  );
+  await ui.findByText(/Filled in from your setup assistant answers/);
+  assert.equal(ui.getByLabelText("Rate per square foot").value, "0.22");
+  assert.equal(ui.getByLabelText("Currency (ISO code)").value, "CAD");
+  assert.equal(writes.length, 0);
+});

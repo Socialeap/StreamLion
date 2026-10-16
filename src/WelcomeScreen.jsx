@@ -20,6 +20,8 @@ export default function WelcomeScreen({
   error,
   busy,
   animate = true,
+  setup = "",
+  onSetup,
   onProjects,
   onConnect,
   onDevice,
@@ -265,6 +267,15 @@ export default function WelcomeScreen({
           ? "Reconnect with Google"
           : "Sign in with Google";
   const action = connected && !error ? onProjects : onConnect;
+  // A first visit leads with the setup assistant; Google stays one tap away.
+  const guided = !!setup && !!onSetup && !connected && !error && !checking;
+  const signIn = oauthReady ? (
+    <a href="/api/google/start">Sign in with Google</a>
+  ) : (
+    <button disabled={disabled || configLoading} onClick={onConnect}>
+      Sign in with Google
+    </button>
+  );
   return (
     <main
       className="welcome-screen"
@@ -338,7 +349,16 @@ export default function WelcomeScreen({
             {error}
           </p>
         )}
-        {oauthReady ? (
+        {guided ? (
+          <button
+            className="welcome-primary"
+            disabled={disabled}
+            onClick={onSetup}
+          >
+            <span>{setup === "active" ? "Continue setup" : "Get started"}</span>
+            <ArrowRight size={19} aria-hidden="true" />
+          </button>
+        ) : oauthReady ? (
           <a className="welcome-primary" href="/api/google/start">
             <span className="welcome-google" aria-hidden="true">
               G
@@ -357,7 +377,12 @@ export default function WelcomeScreen({
           </button>
         )}
         <p className="welcome-secondary">
-          {connected ? (
+          {guided ? (
+            <>
+              <span>Already use StreamLion?</span>
+              {signIn}
+            </>
+          ) : connected ? (
             <button disabled={disabled} onClick={onSignOut}>
               {busy ? "Signing out…" : "Sign out"}
             </button>
