@@ -20,6 +20,7 @@ import {
   creditCapacity,
 } from "./ai-credit-ledger.js";
 import { AI_LIMITS } from "./ai-providers.js";
+import { coordinationReady } from "./coordination-readiness.js";
 
 export const CREDIT_PACKS = [
   {
@@ -134,6 +135,18 @@ async function projectCharge(env, mode) {
   }
 }
 async function salesReady(env, mode) {
+  // A project top-up never approves AI spend. Keep the existing AI-only sales
+  // path below, and require explicit approval plus real coordination readiness.
+  if (
+    env.STREAMLION_COORDINATION_CREDIT_SALES_ENABLED === "true" &&
+    (await coordinationReady(env)) &&
+    (await projectCharge(env, mode)) !== null
+  ) {
+    // Status/confirmation still use this ledger row. Its inactive, zero-budget
+    // policy is valid for coordination; a missing/unreadable ledger is not.
+    await creditAccount(env.GOOGLE_SESSIONS, mode, "");
+    return true;
+  }
   if (env.STREAMLION_AI_CREDIT_SALES_ENABLED !== "true") return false;
   if (mode === "test") return true; // Fake test funds never authorize provider spending.
   if (
