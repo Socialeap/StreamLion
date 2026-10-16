@@ -15,6 +15,15 @@ function clean(value) {
     return null;
   }
 }
+// Reads stored card text, e.g. from a device backup; null when invalid.
+export function parseProviderContact(text) {
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === "object" ? clean(value) : null;
+  } catch {
+    return null;
+  }
+}
 export function rememberProviderContact(value) {
   const contact = clean(value);
   if (!contact) return false;

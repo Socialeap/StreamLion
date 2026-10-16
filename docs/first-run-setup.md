@@ -52,6 +52,8 @@ unpublished default price from the answers, still behind their explicit
 Save/Publish buttons. New projects start with the business name and email as
 the capture provider, the deliverables field offers **Add my usual
 deliverables**, and measurement examples follow the chosen unit system.
+Device backups include the setup answers and the handover contact card; a
+restore adds them only where this device has none and rejects damaged ones.
 Account shows the setup summary with **Rerun setup assistant**, which reopens
 on the review card.
 
