@@ -21,6 +21,15 @@ export default function ProviderBrand({ branding, name, recipient = false }) {
             {new URL(b.website).hostname} ↗
           </a>
         )}
+        {b.phone && (
+          <a
+            className="provider-brand-phone"
+            href={`tel:${b.phone.replace(/[^\d+]/g, "")}`}
+          >
+            {b.phone}
+          </a>
+        )}
+        {b.area && <span className="provider-brand-area">{b.area}</span>}
       </div>
     </div>
   );

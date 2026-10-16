@@ -5,10 +5,40 @@ export const emptyBranding = () => ({
   logo: "",
   shape: "rounded",
 });
+// Optional public contact details. Digits, spaces, +, ( ) . and - only.
+export function brandingPhone(value = "") {
+  if (typeof value !== "string")
+    throw new Error("Use digits, spaces, +, ( ) or - with 7 to 15 digits.");
+  const phone = value.replace(/\s+/g, " ").trim();
+  const digits = phone.replace(/\D/g, "").length;
+  if (
+    phone &&
+    (phone.length > 40 ||
+      !/^\+?[\d\s().-]+$/.test(phone) ||
+      digits < 7 ||
+      digits > 15)
+  )
+    throw new Error("Use digits, spaces, +, ( ) or - with 7 to 15 digits.");
+  return phone;
+}
+export function brandingArea(value = "") {
+  const area =
+    typeof value === "string" ? value.replace(/\s+/g, " ").trim() : null;
+  if (area === null || area.length > 200 || /[\x00-\x1f\x7f]/.test(area))
+    throw new Error("Keep the service area under 200 characters.");
+  return area;
+}
 export function validateBranding(input) {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("Enter your business details.");
-  const { name, website = "", logo = "", shape = "rounded" } = input;
+  const {
+    name,
+    website = "",
+    logo = "",
+    shape = "rounded",
+    phone = "",
+    area = "",
+  } = input;
   if (
     typeof name !== "string" ||
     !name.trim() ||
@@ -70,5 +100,13 @@ export function validateBranding(input) {
     if (!w || !h || w > 640 || h > 640)
       throw new Error("Logo dimensions exceed 640 pixels. Upload it again.");
   }
-  return { name: name.trim(), website: address, logo, shape };
+  const contact = { phone: brandingPhone(phone), area: brandingArea(area) };
+  // Saved profiles without contact details keep their original shape.
+  return {
+    name: name.trim(),
+    website: address,
+    logo,
+    shape,
+    ...Object.fromEntries(Object.entries(contact).filter(([, v]) => v)),
+  };
 }

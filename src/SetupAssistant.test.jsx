@@ -463,3 +463,72 @@ test("start over clears answers only after confirmation", async () => {
   assert.equal(ui.queryByText(/Nice to meet you/), null);
   assert.deepEqual(JSON.parse(localStorage.getItem(SETUP_KEY)).answers, {});
 });
+
+test("saving publishes phone and service area with branding and keeps them for handovers", async () => {
+  const { answerStep, newSetup } = await import("./setup-assistant.js");
+  const { providerContact } = await import("./provider-contact.js");
+  let state = newSetup();
+  for (const [id, value] of [
+    ["name", "Alex"],
+    ["business", "Harbor Spatial"],
+    [
+      "contact",
+      {
+        email: "alex@harbor.example",
+        phone: "5035550100",
+        area: "Portland, OR",
+        website: "",
+      },
+    ],
+    ["focus", ["requests"]],
+    ["hardware", ["dslr"]],
+    ["deliverables", []],
+    ["storage", "device"],
+    ["pricingMethod", "skip"],
+    ["logo", null],
+    ["theme", "light"],
+  ])
+    state = answerStep(state, id, value, { online: true });
+  localStorage.setItem(SETUP_KEY, JSON.stringify(state));
+  const writes = [];
+  const brandingApi = async (body, subject) => {
+    if (body) {
+      writes.push([body, subject]);
+      return { available: true, version: 1, branding: body.branding };
+    }
+    return {
+      subject: "subject-a",
+      account: "a@b.co",
+      available: true,
+      version: 1,
+      branding: {
+        name: "Old",
+        website: "https://old.example/",
+        logo: "",
+        shape: "rounded",
+        phone: "(206) 555-0199",
+      },
+    };
+  };
+  const ui = await open(
+    <SetupAssistant {...props({ brandingApi })} connected account="a@b.co" />,
+  );
+  await ui.findByText(
+    /Save “Harbor Spatial”, your phone and service area to your client request pages/,
+  );
+  assert(ui.getByText(/Show your phone and service area on job handovers/));
+  await choose(ui, "Save & finish");
+  await ui.findByText("Business branding saved to your client pages");
+  assert.deepEqual(writes[0][0].branding, {
+    name: "Harbor Spatial",
+    website: "https://old.example/",
+    logo: "",
+    shape: "rounded",
+    phone: "(503) 555-0100",
+    area: "Portland, OR",
+  });
+  assert.deepEqual(providerContact(), {
+    phone: "(503) 555-0100",
+    area: "Portland, OR",
+  });
+});

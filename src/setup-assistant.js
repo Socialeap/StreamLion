@@ -2,7 +2,11 @@
 // validated, committed to this device immediately, and the next question is
 // the first applicable step that is not yet confirmed. Editing an answer
 // re-asks only that step; steps that depend on it are re-asked as well.
-import { validateBranding } from "./provider-branding.js";
+import {
+  brandingArea,
+  brandingPhone,
+  validateBranding,
+} from "./provider-branding.js";
 import {
   blankPricing,
   decimalUnits,
@@ -270,7 +274,7 @@ export const STEPS = [
     kind: "form",
     prompt: () => ({
       text: "Great. Which contact details should clients see on work orders and project summaries?",
-      hint: "Only the email is required. Your website is shown on client request pages.",
+      hint: "Only the email is required. Phone, service area and website appear on your client request pages and handovers.",
     }),
     fields: [
       {
@@ -309,23 +313,14 @@ export const STEPS = [
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
         errors.email = "Enter a valid email address, like you@business.com.";
       result.email = email;
-      const phone = String(input.phone ?? "")
-        .replace(/\s+/g, " ")
-        .trim();
-      const digits = phone.replace(/\D/g, "").length;
-      if (
-        phone &&
-        (!/^\+?[\d\s().-]+$/.test(phone) || digits < 7 || digits > 15)
-      )
-        errors.phone = "Use digits, spaces, +, ( ) or - with 7 to 15 digits.";
-      result.phone = phone ? formatPhone(phone) : "";
+      // Phone and service area follow the same rules as saved branding.
       try {
-        result.area = plain(
-          String(input.area ?? ""),
-          200,
-          "Keep the service area under 200 characters.",
-          false,
-        );
+        result.phone = formatPhone(brandingPhone(String(input.phone ?? "")));
+      } catch (error) {
+        errors.phone = error.message;
+      }
+      try {
+        result.area = brandingArea(String(input.area ?? ""));
       } catch (error) {
         errors.area = error.message;
       }
@@ -922,6 +917,8 @@ export function brandingSuggestion(profile = setupProfile()) {
   return {
     name: profile.business,
     website: profile.website,
+    phone: profile.phone,
+    area: profile.area,
     logo: profile.logo?.logo || "",
     shape: profile.logo?.shape || "rounded",
   };

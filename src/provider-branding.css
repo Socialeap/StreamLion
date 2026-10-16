@@ -22,6 +22,13 @@
 .provider-brand-copy strong {
   font-size: 1.1rem;
 }
+.provider-brand-phone {
+  font-variant-numeric: tabular-nums;
+}
+.provider-brand-area {
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
 .provider-logo {
   width: 72px;
   height: 72px;

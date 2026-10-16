@@ -407,6 +407,8 @@ test("progress, locale currency and profile defaults stay small and predictable"
   assert.deepEqual(brandingSuggestion(profile), {
     name: "Harbor Spatial",
     website: "",
+    phone: "",
+    area: "",
     logo: "",
     shape: "rounded",
   });

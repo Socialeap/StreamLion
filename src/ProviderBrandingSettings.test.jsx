@@ -10,6 +10,7 @@ Object.assign(globalThis, {
   window: dom.window,
   document: dom.window.document,
   HTMLElement: dom.window.HTMLElement,
+  localStorage: dom.window.localStorage,
   IS_REACT_ACT_ENVIRONMENT: true,
 });
 Object.defineProperty(globalThis, "navigator", {
@@ -29,6 +30,8 @@ const profile = {
   logo: "",
   shape: "rounded",
 };
+const { providerContact, PROVIDER_CONTACT_KEY } =
+  await import("./provider-contact.js");
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7XcAAAAASUVORK5CYII=";
 test("Account saves business name, normalized logo shape and website explicitly; failed save retains edits", async (t) => {
@@ -184,4 +187,89 @@ test("unsaved branding starts from setup answers, while saved branding is never 
   );
   await kept.findByDisplayValue("Harbor Capture");
   assert.equal(kept.queryByText(/setup assistant/), null);
+});
+
+test("phone and service area are previewed for clients, saved explicitly and kept for handovers", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const writes = [];
+  const api = async (body) => {
+    if (body) {
+      writes.push(body);
+      return {
+        subject: "a",
+        available: true,
+        version: 1,
+        branding: body.branding,
+      };
+    }
+    return { subject: "a", available: true, version: 0, branding: profile };
+  };
+  const ui = render(<Settings connected account="a@example.com" api={api} />);
+  fireEvent.change(await ui.findByLabelText("Business phone (optional)"), {
+    target: { value: "+1 503 555 0100" },
+  });
+  fireEvent.change(
+    ui.getByLabelText("Service area or business address (optional)"),
+    { target: { value: "Portland, OR" } },
+  );
+  const phone = ui.getByRole("link", { name: "+1 503 555 0100" });
+  assert.equal(phone.getAttribute("href"), "tel:+15035550100");
+  assert(ui.getByText("Portland, OR"));
+  assert.equal(writes.length, 0);
+  fireEvent.click(ui.getByRole("button", { name: "Save business branding" }));
+  await ui.findByText(/Business branding saved/);
+  assert.equal(writes[0].branding.phone, "+1 503 555 0100");
+  assert.equal(writes[0].branding.area, "Portland, OR");
+  assert.deepEqual(providerContact(), {
+    phone: "+1 503 555 0100",
+    area: "Portland, OR",
+  });
+  // An invalid phone is rejected before any request.
+  fireEvent.change(ui.getByLabelText("Business phone (optional)"), {
+    target: { value: "call me" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Save business branding" }));
+  await ui.findByText(/7 to 15 digits/);
+  assert.equal(writes.length, 1);
+});
+test("loaded branding refreshes this device's handover contact, and setup answers fill unsaved branding", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const saved = async () => ({
+    subject: "a",
+    available: true,
+    version: 3,
+    branding: { ...profile, phone: "(503) 555-0100", area: "Portland, OR" },
+  });
+  const ui = render(<Settings connected account="a@example.com" api={saved} />);
+  await ui.findByDisplayValue("(503) 555-0100");
+  assert.deepEqual(JSON.parse(localStorage.getItem(PROVIDER_CONTACT_KEY)), {
+    phone: "(503) 555-0100",
+    area: "Portland, OR",
+  });
+  cleanup();
+  const fresh = async () => ({
+    subject: "a",
+    available: true,
+    version: 0,
+    branding: { name: "", website: "", logo: "", shape: "rounded" },
+  });
+  const prefilled = render(
+    <Settings
+      connected
+      account="a@example.com"
+      api={fresh}
+      suggestion={{
+        name: "Setup Studio",
+        website: "",
+        phone: "(206) 555-0199",
+        area: "Seattle, WA",
+        logo: "",
+        shape: "rounded",
+      }}
+    />,
+  );
+  await prefilled.findByDisplayValue("(206) 555-0199");
+  assert(prefilled.getByDisplayValue("Seattle, WA"));
 });
