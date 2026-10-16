@@ -29,6 +29,79 @@ const { PROJECT_FIELDS, intakeFor } = await import("./project-schema.js");
 const { readDraft, projectDraftKey } = await import("./drafts.js");
 const { default: Jobs } = await import("./Jobs.jsx");
 
+test("mocked in-app brief requires explicit review, preserves existing draft fields and never saves Google automatically", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const original = globalThis.fetch;
+  t.after(() => (globalThis.fetch = original));
+  const proposed = intakeFor({
+    title: "Prepared title",
+    address: "10 Example Street",
+    unresolved: "Confirm visit date",
+  });
+  let saves = 0,
+    prepares = 0;
+  globalThis.fetch = async (url, options) => {
+    assert(String(url).startsWith("/api/brief-import/"));
+    if (String(url).endsWith("config"))
+      return new Response(
+        JSON.stringify({
+          enabled: true,
+          canPrepare: true,
+          priceMicros: 150000,
+          balanceMicros: 1000000,
+          scope: "scope",
+          quoteKey: "quote",
+        }),
+      );
+    if (options?.method === "POST") prepares++;
+    return new Response(
+      JSON.stringify({ state: "complete", project: proposed }),
+    );
+  };
+  const ui = render(
+    <ProjectEditor
+      draftScope="native-review"
+      onSave={async () => saves++}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 2: Identify the project" }),
+  );
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "My existing title" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 1: Start with your project brief" }),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() => assert(ui.getByText(/12 credits \(\$0.15\)/)));
+  fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
+    target: { value: "Capture 10 Example Street" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
+  );
+  await waitFor(() =>
+    assert(ui.getByRole("region", { name: "Review prepared brief" })),
+  );
+  const key = projectDraftKey("native-review", "new");
+  assert.equal(readDraft(key).fields.address, "");
+  fireEvent.click(
+    ui.getByRole("button", { name: "Fill empty fields with these details" }),
+  );
+  await waitFor(() =>
+    assert.equal(ui.getByLabelText("Project name").value, "My existing title"),
+  );
+  assert.equal(readDraft(key).fields.address, "10 Example Street");
+  assert.equal(readDraft(key).fields.unresolved, "Confirm visit date");
+  assert.equal(saves, 0);
+  assert.equal(prepares, 1);
+});
+
 test("ChatGPT preparation and return stay together, with file first and a paste alternative", async (t) => {
   t.after(cleanup);
   localStorage.clear();

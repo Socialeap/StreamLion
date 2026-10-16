@@ -8,6 +8,8 @@
       "vars": {
         "ENABLE_CHATGPT_EXTENSION": "true",
         "ENABLE_AI_PILOT": "true",
+        "ENABLE_BRIEF_IMPORT": "false",
+        "STREAMLION_BRIEF_IMPORT_COST_APPROVED": "false",
         "ENABLE_CLIENT_COORDINATION": "true",
         "ENABLE_RESEND_EMAIL": "true",
         "ENABLE_WEB_PUSH": "true",

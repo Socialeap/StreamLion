@@ -1,0 +1,318 @@
+import React from "react";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { JSDOM } from "jsdom";
+const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+  url: "http://localhost",
+});
+Object.assign(globalThis, {
+  React,
+  window: dom.window,
+  document: dom.window.document,
+  HTMLElement: dom.window.HTMLElement,
+  localStorage: dom.window.localStorage,
+  IS_REACT_ACT_ENVIRONMENT: true,
+});
+Object.defineProperty(globalThis, "navigator", {
+  value: dom.window.navigator,
+  configurable: true,
+});
+const { render, fireEvent, cleanup, waitFor } =
+  await import("@testing-library/react");
+const { default: BriefImporter } = await import("./BriefImporter.jsx");
+const { intakeFor } = await import("./project-schema.js");
+const { fillEmptyBriefFields, readPendingBrief, briefRequest } =
+  await import("./brief-import.js");
+const fields = intakeFor({
+  title: "Existing draft",
+  notes: "Keep this note",
+}).fields;
+const config = {
+  enabled: true,
+  canPrepare: true,
+  priceMicros: 150000,
+  balanceMicros: 1000000,
+  scope: "scope",
+  quoteKey: "quote",
+};
+const completed = {
+  state: "complete",
+  project: intakeFor({
+    title: "AI title",
+    address: "10 Example Street",
+    unresolved: "Check visit date",
+  }),
+};
+
+test("disabled importer exposes PDF tips and preserves source text without preparing or changing drafts", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let preparations = 0,
+    uses = 0;
+  const request = async (route) => {
+    if (route !== "config") preparations++;
+    return { enabled: false, reason: "not_open" };
+  };
+  const ui = render(
+    <BriefImporter
+      draftKey="draft"
+      fields={fields}
+      onUse={() => uses++}
+      request={request}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() =>
+    assert(ui.getByRole("status").textContent.includes("not open")),
+  );
+  assert(
+    ui
+      .getByText("Easy ways to turn emails or messages into a PDF")
+      .closest("details"),
+  );
+  fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
+    target: { value: "My email thread" },
+  });
+  assert(ui.getByRole("button", { name: "Prepare my project" }).disabled);
+  fireEvent.click(ui.getByRole("button", { name: "Hide brief preparation" }));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() =>
+    assert.equal(
+      ui.getByLabelText(/Or, paste the PDF text/).value,
+      "My email thread",
+    ),
+  );
+  assert.equal(preparations, 0);
+  assert.equal(uses, 0);
+});
+
+test("PDF text and quoted price lead to review; explicit use fills only empty fields", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let imported,
+    prepared,
+    reads = 0;
+  const request = async (route, body) => {
+    if (route === "config") return config;
+    if (route === "prepare") {
+      prepared = body;
+      return completed;
+    }
+    reads++;
+    return completed;
+  };
+  const ui = render(
+    <BriefImporter
+      draftKey="draft"
+      fields={fields}
+      onUse={(value) => (imported = fillEmptyBriefFields(fields, value))}
+      request={request}
+      readFile={async () => ({
+        text: "Capture 10 Example Street.",
+        sourceName: "capture.pdf",
+      })}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() => assert(ui.getByText(/12 credits \(\$0.15\)/)));
+  fireEvent.change(ui.getByLabelText("Choose brief PDF"), {
+    target: { files: [{ name: "capture.pdf" }] },
+  });
+  await waitFor(() =>
+    assert.equal(
+      ui.getByLabelText(/Or, paste the PDF text/).value,
+      "Capture 10 Example Street.",
+    ),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
+  );
+  await waitFor(() =>
+    assert(ui.getByRole("region", { name: "Review prepared brief" })),
+  );
+  assert.equal(imported, undefined);
+  assert.equal(prepared.sourceName, "capture.pdf");
+  assert.equal(prepared.priceMicros, 150000);
+  assert.equal(readPendingBrief("draft").requestId, prepared.requestId);
+  assert(ui.getByText(/Keeping your existing detail: Existing draft/));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Fill empty fields with these details" }),
+  );
+  await waitFor(() => assert.equal(imported?.address, "10 Example Street"));
+  assert.equal(imported.title, "Existing draft");
+  assert.equal(imported.notes, "Keep this note");
+  assert.equal(reads, 1);
+  assert.equal(readPendingBrief("draft"), null);
+});
+
+test("interrupted preparation survives remount and recovers without another paid POST", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let posts = 0;
+  const request = async (route) => {
+    if (route === "config") return config;
+    if (route === "prepare") {
+      posts++;
+      throw new Error("Connection lost");
+    }
+    return completed;
+  };
+  let ui = render(
+    <BriefImporter
+      draftKey="draft"
+      fields={fields}
+      onUse={() => {}}
+      request={request}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() => assert(ui.getByText(/12 credits \(\$0.15\)/)));
+  fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
+    target: { value: "Capture the lobby" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
+  );
+  await waitFor(() =>
+    assert(
+      ui.getByRole("alert").textContent.includes("Recover prepared brief"),
+    ),
+  );
+  const marker = readPendingBrief("draft");
+  assert(marker);
+  assert.equal(Object.keys(marker).length, 2);
+  ui.unmount();
+  ui = render(
+    <BriefImporter
+      draftKey="draft"
+      fields={fields}
+      onUse={() => {}}
+      request={request}
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Recover prepared brief" }));
+  await waitFor(() =>
+    assert(ui.getByRole("region", { name: "Review prepared brief" })),
+  );
+  assert.equal(posts, 1);
+  assert.equal(readPendingBrief("draft").requestId, marker.requestId);
+});
+
+test("unreadable PDF and failed preparation keep existing fields and return to a usable input", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let uses = 0;
+  const ui = render(
+    <BriefImporter
+      draftKey="draft"
+      fields={fields}
+      onUse={() => uses++}
+      readFile={async () => {
+        throw new Error("Page 1 has no readable text");
+      }}
+      request={async (route) =>
+        route === "config"
+          ? config
+          : { state: "failed", error: "Reserved credits were returned." }
+      }
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() => assert(ui.getByText(/12 credits \(\$0.15\)/)));
+  const input = ui.getByLabelText(/Or, paste the PDF text/);
+  fireEvent.change(input, { target: { value: "Keep this pasted source" } });
+  fireEvent.change(ui.getByLabelText("Choose brief PDF"), {
+    target: { files: [{ name: "scan.pdf" }] },
+  });
+  await waitFor(() =>
+    assert(ui.getByRole("alert").textContent.includes("no readable text")),
+  );
+  assert.equal(input.value, "Keep this pasted source");
+  fireEvent.click(
+    ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
+  );
+  await waitFor(() => assert(ui.getByText("Reserved credits were returned.")));
+  assert.equal(readPendingBrief("draft"), null);
+  assert.equal(input.disabled, false);
+  assert.equal(uses, 0);
+  assert.equal(fields.title, "Existing draft");
+});
+
+test("brief POST timeout is bounded and never automatically retried", async () => {
+  let calls = 0;
+  await assert.rejects(
+    briefRequest("prepare", { text: "brief" }, async (_url, options) => {
+      calls++;
+      assert(options.signal instanceof AbortSignal);
+      assert.equal(options.method, "POST");
+      throw new DOMException("Timeout", "TimeoutError");
+    }),
+    /Timeout/,
+  );
+  assert.equal(calls, 1);
+});
+
+test("blocked device storage prevents a paid request; failed draft import keeps its recoverable result", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let posts = 0;
+  const request = async (route) => {
+    if (route === "config") return config;
+    if (route === "prepare") posts++;
+    return completed;
+  };
+  const ui = render(
+    <BriefImporter
+      draftKey="storage"
+      fields={fields}
+      request={request}
+      onUse={() => {
+        throw new Error("Draft storage is full");
+      }}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() => assert(ui.getByText(/12 credits \(\$0.15\)/)));
+  fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
+    target: { value: "Capture the lobby" },
+  });
+  const original = dom.window.Storage.prototype.setItem;
+  dom.window.Storage.prototype.setItem = () => {
+    throw new Error("Storage full");
+  };
+  t.after(() => (dom.window.Storage.prototype.setItem = original));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
+  );
+  await waitFor(() =>
+    assert(ui.getByRole("alert").textContent.includes("No request was sent")),
+  );
+  assert.equal(posts, 0);
+  dom.window.Storage.prototype.setItem = original;
+  fireEvent.click(
+    ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
+  );
+  await waitFor(() =>
+    assert(ui.getByRole("region", { name: "Review prepared brief" })),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Fill empty fields with these details" }),
+  );
+  await waitFor(() =>
+    assert(ui.getByRole("alert").textContent.includes("Draft storage is full")),
+  );
+  assert(readPendingBrief("storage"));
+  assert.equal(posts, 1);
+});
