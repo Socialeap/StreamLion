@@ -1,3 +1,5 @@
+import { EstimateInputs, EstimatePreview } from "./PricingEstimate.jsx";
+import { pricingKey } from "./provider-pricing.js";
 import React, { useState, useRef } from "react";
 import { captureEstimate, estimateMoney } from "./capture-estimate.js";
 import { PROJECT_FIELDS } from "./project-schema.js";
@@ -22,7 +24,20 @@ const fieldKeys = [
   "companyName",
   "contact1Phone",
 ];
-export default function ProspectIntake({ descriptor, token, api }) {
+export default function ProspectIntake({
+  descriptor: initialDescriptor,
+  token,
+  api,
+}) {
+  const [pricingNotice, setPricingNotice] = useState("");
+  const [descriptor, setDescriptor] = useState(initialDescriptor),
+    [quantities, setQuantities] = useState({}),
+    [budget, setBudget] = useState(""),
+    [pricingChanged, setPricingChanged] = useState(false);
+  const modernPricing = Object.hasOwn(descriptor, "pricing"),
+    config = descriptor.pricing?.config;
+  const legacyEstimate =
+    !modernPricing && Boolean(descriptor.intake?.estimateProfile);
   const attempt = useRef(null);
   const [fields, setFields] = useState({}),
     [email, setEmail] = useState(""),
@@ -34,7 +49,7 @@ export default function ProspectIntake({ descriptor, token, api }) {
     [notice, setNotice] = useState(""),
     [receipt, setReceipt] = useState(null);
   const estimate = captureEstimate(
-    descriptor.intake?.estimateProfile,
+    legacyEstimate ? descriptor.intake?.estimateProfile : undefined,
     fields.propertySizeSqFt,
     creative,
   );
@@ -65,15 +80,20 @@ export default function ProspectIntake({ descriptor, token, api }) {
         StreamLion provides the form and coordination tools.
       </p>
       <p>
-        Fill out the details you know and get an estimate. The provider reviews
-        scope and availability before either side agrees to work.
+        {legacyEstimate || (config && config.method !== "quote")
+          ? "Fill out the details you know and preview an estimate using this provider’s prices."
+          : "Fill out the details you know. Your provider will prepare a quote."}{" "}
+        The provider reviews scope and availability before either side agrees to
+        work.
         {(!descriptor.reusable || descriptor.verificationRequired) &&
           " This provider requires email confirmation before submission."}
       </p>
       {descriptor.intake && (
         <p>
           <strong>{descriptor.intake.name}</strong> ·{" "}
-          {descriptor.intake.description}
+          {modernPricing && descriptor.intake.id === "intake-tm-spatial"
+            ? "Optional spatial-capture questions. Prices come from this provider’s published pricing profile."
+            : descriptor.intake.description}
         </p>
       )}
       <form
@@ -86,7 +106,7 @@ export default function ProspectIntake({ descriptor, token, api }) {
               fields.notes,
               propertyType && `Property type: ${propertyType}`,
               complexity && `Capture scope: ${complexity}`,
-              descriptor.intake?.estimateProfile &&
+              legacyEstimate &&
                 `Creative Direction: ${creative ? "Requested · 6 hours / $900" : "Not requested"}`,
             ]
               .filter(Boolean)
@@ -95,7 +115,14 @@ export default function ProspectIntake({ descriptor, token, api }) {
               token,
               email,
               fields: { ...fields, notes },
-              creative,
+              creative: legacyEstimate ? creative : false,
+              ...(modernPricing
+                ? {
+                    pricingKey: pricingKey(descriptor),
+                    quantities,
+                    budget: config?.allowBudget ? budget : "",
+                  }
+                : {}),
             };
             if (descriptor.reusable && !attempt.current)
               attempt.current = {
@@ -119,13 +146,114 @@ export default function ProspectIntake({ descriptor, token, api }) {
             if (result.url) setReceipt(result);
           } catch (e) {
             if (e.status === 400) attempt.current = null;
+            if (e.code === "pricing_changed") setPricingChanged(true);
             setError(e.message);
           } finally {
             setBusy(false);
           }
         }}
       >
-        {descriptor.intake?.estimateProfile && (
+        {modernPricing && (
+          <section
+            className="coord-estimate"
+            aria-label="Provider pricing estimate"
+          >
+            <h3>
+              {descriptor.pricing
+                ? `Pricing · ${descriptor.pricing.name}`
+                : "Provider will prepare a quote"}
+            </h3>
+            {descriptor.pricing && (
+              <p>
+                Published pricing version {descriptor.pricing.version} ·{" "}
+                {config.currency}. This estimate uses the provider’s saved
+                rates.
+              </p>
+            )}
+            {config && (
+              <>
+                <EstimateInputs
+                  config={config}
+                  area={fields.propertySizeSqFt}
+                  onArea={(area) =>
+                    setFields({ ...fields, propertySizeSqFt: area })
+                  }
+                  quantities={quantities}
+                  onQuantities={setQuantities}
+                  disabled={busy || Boolean(attempt.current)}
+                />
+                <EstimatePreview
+                  config={config}
+                  area={fields.propertySizeSqFt}
+                  quantities={quantities}
+                />
+                {config.allowBudget && (
+                  <label>
+                    Your proposed budget (optional, {config.currency})
+                    <input
+                      inputMode="decimal"
+                      disabled={busy || Boolean(attempt.current)}
+                      value={budget}
+                      onChange={(e) => setBudget(e.target.value)}
+                      placeholder="Amount you would like the provider to consider"
+                    />
+                    <small>
+                      A proposal for review; this does not replace the
+                      calculated estimate or agree a fee.
+                    </small>
+                  </label>
+                )}
+              </>
+            )}
+            <p>
+              Preliminary estimate. Final scope, travel, taxes, availability and
+              price require provider review. No payment or booking occurs here.
+            </p>
+          </section>
+        )}
+        {pricingNotice && <p role="status">{pricingNotice}</p>}
+        {pricingChanged && (
+          <div role="alert">
+            <p>
+              Pricing changed before your request was saved. Your answers are
+              kept. Review the current prices before submitting.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const updated = await api(
+                    descriptor.reusable ? "public/open" : "prospect/open",
+                    { token },
+                  );
+                  setDescriptor(updated);
+                  setQuantities((old) =>
+                    Object.fromEntries(
+                      Object.entries(old).filter(([id]) =>
+                        updated.pricing?.config.extras.some((e) => e.id === id),
+                      ),
+                    ),
+                  );
+                  attempt.current = null;
+                  setPricingChanged(false);
+                  setError("");
+                  setPricingNotice(
+                    "Pricing refreshed. Your answers are kept; review the updated estimate before submitting.",
+                  );
+                } catch (e) {
+                  setError(e.message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Review updated pricing
+            </button>
+          </div>
+        )}
+        {legacyEstimate && (
           <section
             className="coord-estimate"
             aria-label="Preliminary capture estimate"
@@ -140,6 +268,7 @@ export default function ProspectIntake({ descriptor, token, api }) {
                 step="1"
                 max="999999999"
                 value={fields.propertySizeSqFt || ""}
+                disabled={busy || Boolean(attempt.current)}
                 onChange={(e) =>
                   setFields({ ...fields, propertySizeSqFt: e.target.value })
                 }
@@ -149,6 +278,7 @@ export default function ProspectIntake({ descriptor, token, api }) {
               <input
                 type="checkbox"
                 checked={creative}
+                disabled={busy || Boolean(attempt.current)}
                 onChange={(e) => setCreative(e.target.checked)}
               />
               Add Creative Direction · 6 hours / $900
@@ -182,6 +312,7 @@ export default function ProspectIntake({ descriptor, token, api }) {
             Property type
             <select
               value={propertyType}
+              disabled={busy || Boolean(attempt.current)}
               onChange={(e) => setPropertyType(e.target.value)}
             >
               <option value="">Not known yet</option>
@@ -201,6 +332,7 @@ export default function ProspectIntake({ descriptor, token, api }) {
             Capture complexity
             <select
               value={complexity}
+              disabled={busy || Boolean(attempt.current)}
               onChange={(e) => setComplexity(e.target.value)}
             >
               <option value="">Please review my details</option>
@@ -217,7 +349,8 @@ export default function ProspectIntake({ descriptor, token, api }) {
             .filter(
               (k) =>
                 !(
-                  descriptor.intake?.estimateProfile && k === "propertySizeSqFt"
+                  (legacyEstimate || (config && config.method !== "quote")) &&
+                  k === "propertySizeSqFt"
                 ),
             )
             .map((k) => {
@@ -288,7 +421,7 @@ export default function ProspectIntake({ descriptor, token, api }) {
             ? "After submission, save your private request link. Unaccepted requests expire after 30 days."
             : "This invitation is for one client."}
         </p>
-        <button disabled={busy || Boolean(notice)}>
+        <button disabled={busy || Boolean(notice) || pricingChanged}>
           {busy
             ? "Submitting…"
             : attempt.current && error

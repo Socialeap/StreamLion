@@ -23,7 +23,7 @@ export const MANUAL_STAGES = [
         where:
           "Client requests → Enable your client workspace / Service intake templates",
         action:
-          "Set your business name, logo, logo shape and website in Account → Your business branding. If client coordination is available to your account, complete the setup shown there. Review the service questions your customers will answer, including required details and conditional questions.",
+          "Set your business name, logo, logo shape and website in Account → Your business branding. Publish default or named service pricing in Account → Pricing & Estimates; choose a profile in each service template. If client coordination is available to your account, complete the setup shown there. Review the service questions your customers will answer, including required details and conditional questions.",
         benefit:
           "Ask for the information your service needs before you spend time chasing it.",
         tip: "An existing request keeps its template version. Editing a template changes future requests. If coordination is unavailable, you can still create a project in Projects.",
@@ -41,7 +41,7 @@ export const MANUAL_STAGES = [
         title: "Share a form or invite a known client",
         where: "Client requests → Invite a client",
         action:
-          "Check “Request goes to” shows your business, then create your own public form link and share its link or QR code. A copied link always belongs to its original provider; a template never changes that recipient. The optional TM preset uses Transcendence Media pricing, so review the rates or use your own service template. Each submission creates a separate private request. For a known customer, use the private invitation option instead.",
+          "Check “Request goes to” shows your business, then create your own public form link and share its link or QR code. A copied link always belongs to its original provider; a template never changes that recipient. Pricing comes from your published profile. Optional TM sample rates can be loaded, edited and explicitly published from Account. Update an existing form’s pricing explicitly for future requests; submitted estimates stay unchanged. Each submission creates a separate private request. For a known customer, use the private invitation option instead.",
         benefit:
           "Collect enquiries from a website, a message or an in-person conversation in the same workflow.",
         tip: "Public forms do not require an email by default; verification can be enabled. Without email, the customer must keep the private status link shown after submission. Creating a form or request uses no project credits.",

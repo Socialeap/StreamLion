@@ -2177,6 +2177,21 @@ async function prospectFixture(t, email = "") {
     .get(job.id);
   const url = await createProspectLink(f.env, row, job, f.connection),
     token = new URLSearchParams(new URL(url).hash.slice(1)).get("invite");
+  // Model a link sealed before provider pricing existed, preserving legacy quote recovery tests.
+  const legacy = f.sql
+    .prepare("SELECT * FROM streamlion_prospect_links_v1 WHERE job_id=?")
+    .get(job.id);
+  const descriptor = await unseal(
+    f.env,
+    legacy.public_intake,
+    "prospect-public:" + job.id,
+  );
+  delete descriptor.pricing;
+  f.sql
+    .prepare(
+      "UPDATE streamlion_prospect_links_v1 SET public_intake=? WHERE job_id=?",
+    )
+    .run(await seal(f.env, descriptor, "prospect-public:" + job.id), job.id);
   const engine = new CoordinationEngine(f.env, f.connection, google);
   return { ...f, google, job, row, url, token, engine };
 }
@@ -3796,4 +3811,225 @@ test("concurrent form retry with different branding recovers the winning insert 
       .n,
     0,
   );
+});
+
+const { updateFormPricing } = await import("../../server/public-intake.js");
+const { blankPricing, validatePricing } =
+  await import("../../src/provider-pricing.js");
+async function pricedPublicFixture(t) {
+  const f = await publicFixture(t),
+    config = validatePricing({
+      ...blankPricing(),
+      method: "area",
+      rate: "0.15",
+      allowBudget: true,
+      extras: [
+        {
+          id: "editing",
+          name: "Editing",
+          unit: "hour",
+          price: "50",
+          required: false,
+          maxQuantity: "10",
+          defaultQuantity: "1",
+        },
+      ],
+    });
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_provider_pricing_v1 VALUES('test','a','default','Capture pricing',?,1,?)",
+    )
+    .run(JSON.stringify(config), Date.now());
+  const form = await createPublicForm(
+    f.env,
+    f.connection,
+    "provider-priced-form",
+    { intake: null },
+  );
+  f.token = new URLSearchParams(new URL(form.url).hash.slice(1)).get("form");
+  f.form = form;
+  return { ...f, config };
+}
+test("provider pricing is recomputed server-side; client budgets and extras survive Google readback without becoming agreed fees", async (t) => {
+  const f = await pricedPublicFixture(t),
+    body = {
+      ...publicBody(f, "priced-request"),
+      pricingKey: "default:1",
+      quantities: { editing: "3" },
+      budget: "600",
+    };
+  body.fields.propertySizeSqFt = "5000";
+  body.estimate = { totalCents: 1 };
+  const result = await f.submit(body),
+    job = f.google.heads.get(result.jobId);
+  assert.equal(job.pricingRequest.estimate.totalCents, 90000);
+  assert.equal(job.pricingRequest.budgetCents, 60000);
+  assert.equal(job.fields.agreedFee, "");
+  assert.equal(job.pricingRequest.pricing.version, 1);
+  assert.equal(job.estimate, undefined);
+  assert.deepEqual(await f.submit(body), result);
+  assert.equal(f.google.events.size, 1);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1").get()
+      .n,
+    0,
+  );
+});
+test("explicit form repricing rejects stale fresh submissions but recovers an already-saved original submission", async (t) => {
+  const f = await pricedPublicFixture(t),
+    body = {
+      ...publicBody(f, "lost-price-ack"),
+      pricingKey: "default:1",
+      quantities: {},
+      budget: "600",
+    };
+  body.fields.propertySizeSqFt = "5000";
+  const saved = await f.submit(body);
+  f.sql
+    .prepare(
+      "UPDATE streamlion_provider_pricing_v1 SET config=?,version=2 WHERE google_subject='a'",
+    )
+    .run(JSON.stringify({ ...f.config, rate: "0.20" }));
+  const publish = {
+    formId: f.form.id,
+    expectedPricingKey: "default:1",
+    targetPricingKey: "default:2",
+  };
+  await updateFormPricing(f.env, f.connection, publish);
+  assert.deepEqual(await f.submit(body), saved);
+  assert.equal(
+    f.google.heads.get(saved.jobId).pricingRequest.estimate.totalCents,
+    75000,
+  );
+  const stale = {
+    ...body,
+    operation: "new-stale-price",
+    accessToken: randomProspectToken(),
+  };
+  await assert.rejects(
+    f.submit(stale),
+    (e) => e.code === "pricing_changed" && e.status === 409,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_public_submissions_v1")
+      .get().n,
+    1,
+  );
+  const latest = { ...stale, pricingKey: "default:2" };
+  const result = await f.submit(latest);
+  assert.equal(
+    f.google.heads.get(result.jobId).pricingRequest.estimate.totalCents,
+    100000,
+  );
+  assert.equal((await openPublicForm(f.env, f.token)).pricing.version, 2);
+  // A lost publish response can recover even after Account pricing changes again.
+  f.sql
+    .prepare(
+      "UPDATE streamlion_provider_pricing_v1 SET version=3 WHERE google_subject='a'",
+    )
+    .run();
+  assert.deepEqual(await updateFormPricing(f.env, f.connection, publish), {
+    updated: true,
+  });
+  await assert.rejects(
+    updateFormPricing(f.env, { ...f.connection, id: "other-owner" }, publish),
+  );
+});
+test("new TM question presets use only explicitly published pricing; no default rates leak between providers", async (t) => {
+  const f = await publicFixture(t),
+    form = await createPublicForm(f.env, f.connection, "no-silent-tm", {
+      intake: { estimateProfile: TM_ESTIMATE },
+    });
+  const token = new URLSearchParams(new URL(form.url).hash.slice(1)).get(
+    "form",
+  );
+  assert.equal((await openPublicForm(f.env, token)).pricing, null);
+  const result = await f.submit({
+    ...publicBody({ ...f, token }, "quote-only"),
+    fields: { ...publicBody(f).fields, propertySizeSqFt: "5000" },
+    creative: true,
+  });
+  assert.equal(f.google.heads.get(result.jobId).estimate, undefined);
+  assert.equal(f.google.heads.get(result.jobId).pricingRequest.pricing, null);
+});
+
+test("a service pricing override resolves only within its provider account and retains its published version", async (t) => {
+  const f = await pricedPublicFixture(t);
+  for (const [subject, rate] of [
+    ["a", "0.25"],
+    ["b", "9"],
+  ])
+    f.sql
+      .prepare(
+        "INSERT INTO streamlion_provider_pricing_v1 VALUES('test',?,'floor-plan','Floor plan',?,1,?)",
+      )
+      .run(subject, JSON.stringify({ ...f.config, rate }), Date.now());
+  const form = await createPublicForm(f.env, f.connection, "service-priced", {
+      intake: { pricingProfile: "floor-plan" },
+    }),
+    token = new URLSearchParams(new URL(form.url).hash.slice(1)).get("form");
+  const opened = await openPublicForm(f.env, token);
+  assert.equal(opened.pricing.profileId, "floor-plan");
+  assert.equal(opened.pricing.config.rate, "0.25");
+  const result = await f.submit({
+    ...publicBody({ ...f, token }, "service-lead"),
+    pricingKey: "floor-plan:1",
+    quantities: {},
+    budget: "",
+    fields: { ...publicBody(f).fields, propertySizeSqFt: "5000" },
+  });
+  assert.equal(
+    f.google.heads.get(result.jobId).pricingRequest.estimate.totalCents,
+    125000,
+  );
+});
+test("a pricing publish racing a fresh submission fails atomically without a partial job or duplicate append", async (t) => {
+  const f = await pricedPublicFixture(t);
+  f.sql
+    .prepare(
+      "UPDATE streamlion_provider_pricing_v1 SET version=2,config=? WHERE google_subject='a'",
+    )
+    .run(JSON.stringify({ ...f.config, rate: "0.20" }));
+  let raced = false;
+  const originalDB = f.db;
+  f.env.GOOGLE_SESSIONS = {
+    ...originalDB,
+    batch: async (statements) => {
+      if (!raced) {
+        raced = true;
+        await updateFormPricing(
+          { ...f.env, GOOGLE_SESSIONS: originalDB },
+          f.connection,
+          {
+            formId: f.form.id,
+            expectedPricingKey: "default:1",
+            targetPricingKey: "default:2",
+          },
+        );
+      }
+      return originalDB.batch(statements);
+    },
+  };
+  const body = {
+    ...publicBody(f, "racing-price"),
+    pricingKey: "default:1",
+    quantities: {},
+    fields: { ...publicBody(f).fields, propertySizeSqFt: "5000" },
+  };
+  await assert.rejects(f.submit(body), (e) => e.code === "pricing_changed");
+  assert.equal(raced, true);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_public_submissions_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_jobs_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(f.google.events.size, 0);
 });

@@ -1,3 +1,5 @@
+import { pricingForConnection } from "./provider-pricing.js";
+import { pricingRequest } from "../src/provider-pricing.js";
 import { brandingForConnection } from "./provider-branding.js";
 import { hash, seal, unseal } from "./google-auth.js";
 import {
@@ -51,6 +53,11 @@ export async function createProspectLink(env, row, job, connection) {
   const descriptor = {
     brand: (await brandingForConnection(env, connection)).name,
     intake: job.intake || null,
+    pricing: await pricingForConnection(
+      env,
+      connection,
+      job.intake?.pricingProfile || "default",
+    ),
   };
   await env.GOOGLE_SESSIONS.prepare(
     "INSERT OR IGNORE INTO streamlion_prospect_links_v1(job_id,token_hash,token_cipher,public_intake,expected_email_hash,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
@@ -175,8 +182,14 @@ export async function requestProspectVerification(env, body) {
     "prospect-public:" + row.job_id,
   );
   validateIntakeAnswers({ intake: descriptor.intake }, checked);
+  let prices;
+  try {
+    prices = pricingRequest(descriptor, body);
+  } catch (error) {
+    throw new CoordinationError(error.message);
+  }
   const estimate = captureEstimate(
-    descriptor.intake?.estimateProfile,
+    prices ? undefined : descriptor.intake?.estimateProfile,
     checked.propertySizeSqFt,
     body.creative === true,
   );
@@ -185,6 +198,7 @@ export async function requestProspectVerification(env, body) {
     openedAt: row.opened_at || Date.now(),
     fields: Object.fromEntries(Object.keys(fields).map((k) => [k, checked[k]])),
     ...(estimate ? { estimate } : {}),
+    ...(prices ? { pricingRequest: prices } : {}),
   };
   const token = randomProspectToken(),
     tokenHash = await hash(token),

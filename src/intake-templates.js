@@ -67,6 +67,7 @@ export function validateIntakeConfig(input) {
     "defaults",
     "questions",
     "estimateProfile",
+    "pricingProfile",
   ]);
   if (input.schemaVersion !== undefined && input.schemaVersion !== 1)
     throw new CoordinationError("Unsupported service template version.");
@@ -168,6 +169,9 @@ export function validateIntakeConfig(input) {
       Object.keys(defaults).map((k) => [k, checked[k]]),
     ),
     questions,
+    ...(input.pricingProfile
+      ? { pricingProfile: text(input.pricingProfile, 80, true) }
+      : {}),
     ...(input.estimateProfile
       ? { estimateProfile: input.estimateProfile }
       : {}),
@@ -177,6 +181,8 @@ export function validateIntakeConfig(input) {
     input.estimateProfile !== TM_ESTIMATE
   )
     throw new CoordinationError("Select a supported estimate preset.");
+  if (config.pricingProfile && !/^[\w-]{1,80}$/.test(config.pricingProfile))
+    throw new CoordinationError("Choose a valid pricing profile.");
   validateIntakeAnswers({ intake: config }, checked);
   if (stableJSON(config).length > 12000)
     throw new CoordinationError(
@@ -251,6 +257,9 @@ export function pinIntakeTemplate(record) {
     name: record.config.name,
     description: record.config.description,
     questions: structuredClone(record.config.questions),
+    ...(record.config.pricingProfile
+      ? { pricingProfile: record.config.pricingProfile }
+      : {}),
     ...(record.config.estimateProfile
       ? { estimateProfile: record.config.estimateProfile }
       : {}),

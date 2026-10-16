@@ -1,3 +1,4 @@
+import { pricingProfiles } from "./provider-pricing.js";
 import { brandingForConnection } from "./provider-branding.js";
 import {
   getSession,
@@ -61,6 +62,7 @@ import {
   syncPublicSubmission,
   createPublicForm,
   updatePublicForm,
+  updateFormPricing,
   formsForProvider,
 } from "./public-intake.js";
 const COOKIE = "__Host-streamlion-client";
@@ -692,7 +694,12 @@ export async function handleCoordination({ request, env, params = {} }) {
     )
       .bind(paymentMode(env))
       .first();
-    if (route === "provider/status" && request.method === "GET")
+    if (route === "provider/status" && request.method === "GET") {
+      const prices = await pricingProfiles(
+        env,
+        session.google_subject,
+        paymentMode(env),
+      );
       return json({
         enabled: true,
         subject: session.google_subject,
@@ -714,6 +721,8 @@ export async function handleCoordination({ request, env, params = {} }) {
         delivery: { ...(await emailDeliveryStatus(env)), push: pushReady(env) },
         shareLinks: await prospectSchema(env),
         publicForms: await publicIntakeSchema(env),
+        pricingProfiles: prices.profiles,
+        pricingAvailable: prices.available,
         expiresAt: connection?.expires_at,
         projectMicros: policy.project_micros,
         wallet: await sharedWallet(
@@ -722,6 +731,7 @@ export async function handleCoordination({ request, env, params = {} }) {
           session.google_subject,
         ),
       });
+    }
     const body =
       request.method === "POST"
         ? await bodyJSON(request, route === "provider/upload" ? 750000 : 50000)
@@ -1053,6 +1063,8 @@ export async function handleCoordination({ request, env, params = {} }) {
         shareLink: body.shareLink === true,
       });
     }
+    if (route === "provider/form-pricing" && request.method === "POST")
+      return json(await updateFormPricing(env, connection, body));
     if (route === "provider/form" && request.method === "POST")
       return json(await updatePublicForm(env, connection, body));
     if (
@@ -1131,7 +1143,11 @@ export async function handleCoordination({ request, env, params = {} }) {
             ? error.message
             : "Coordination is temporarily unavailable. Your original operation is preserved.",
         ...(error instanceof CoordinationError &&
-        error.code === "invalid_project_fields"
+        [
+          "invalid_project_fields",
+          "pricing_changed",
+          "invalid_pricing",
+        ].includes(error.code)
           ? { code: error.code }
           : {}),
       },

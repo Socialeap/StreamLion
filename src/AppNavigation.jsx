@@ -13,6 +13,7 @@ import {
   Download,
   UserRound,
   Image as ImageIcon,
+  Calculator,
 } from "lucide-react";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import ProviderManualButton from "./ProviderManual.jsx";
@@ -312,7 +313,7 @@ export function usePageSections(root, scope, enabled = true) {
       return;
     }
     function update() {
-      const next = [...element.querySelectorAll("h2")]
+      const next = [...element.querySelectorAll("h2, h3[data-page-section]")]
         .filter(
           (heading) =>
             !heading.closest("[hidden],dialog,.sr-only,.page-head") &&
@@ -325,25 +326,32 @@ export function usePageSections(root, scope, enabled = true) {
             {
               "Sign-in and security": "Security",
               "Your business branding": "Branding",
+              "Pricing & Estimates": "Pricing",
+              "Rates & tiers": "Rates",
+              "Named extras": "Extras",
+              "Client budgets": "Budget",
+              "Try your calculation": "Preview",
               "Keep StreamLion on your home screen": "Install",
               "Google Sheets & Drive": "Google",
               "Site copy on this device": "Offline copy",
               "Keep a device backup": "Backup",
               "Help & privacy": "Help",
             }[title] || title;
-          const icon = /branding/i.test(label)
-            ? ImageIcon
-            : /backup/i.test(label)
-              ? Archive
-              : /google|connection/i.test(label)
-                ? Link
-                : /install|download/i.test(label)
-                  ? Download
-                  : /account|security/i.test(label)
-                    ? UserRound
-                    : /note/i.test(label)
-                      ? NotebookPen
-                      : LayoutList;
+          const icon = /pricing|rates|budget|preview/i.test(label)
+            ? Calculator
+            : /branding/i.test(label)
+              ? ImageIcon
+              : /backup/i.test(label)
+                ? Archive
+                : /google|connection/i.test(label)
+                  ? Link
+                  : /install|download/i.test(label)
+                    ? Download
+                    : /account|security/i.test(label)
+                      ? UserRound
+                      : /note/i.test(label)
+                        ? NotebookPen
+                        : LayoutList;
           return { id: heading.id, label, title, icon };
         })
         .filter((section) => section.label);

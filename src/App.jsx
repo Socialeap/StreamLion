@@ -1,3 +1,4 @@
+import ProviderPricingSettings from "./ProviderPricingSettings.jsx";
 import ProviderBrandingSettings from "./ProviderBrandingSettings.jsx";
 import {
   readDraft,
@@ -1410,6 +1411,12 @@ export default function App() {
                   </p>
                 </section>
                 <ProviderBrandingSettings
+                  connected={hasGoogleSession()}
+                  account={googleAccount()}
+                  disabled={disabled || checkingConnection}
+                  onBusy={setSyncBusy}
+                />
+                <ProviderPricingSettings
                   connected={hasGoogleSession()}
                   account={googleAccount()}
                   disabled={disabled || checkingConnection}
