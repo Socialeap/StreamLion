@@ -1,3 +1,4 @@
+import { brandingForConnection } from "./provider-branding.js";
 import { hash, seal, unseal } from "./google-auth.js";
 import { hasPurchase, paymentMode } from "./purchase-access.js";
 import { randomProspectToken } from "./prospect-intake.js";
@@ -81,7 +82,13 @@ export async function formsForProvider(env, c) {
   )
     .bind(c.id)
     .all();
-  return Promise.all(rows.results.map((row) => formView(env, row)));
+  const branding = await brandingForConnection(env, c);
+  return Promise.all(
+    rows.results.map(async (row) => ({
+      ...(await formView(env, row)),
+      brand: branding.name,
+    })),
+  );
 }
 export async function createPublicForm(
   env,
@@ -94,24 +101,33 @@ export async function createPublicForm(
     throw new CoordinationError("Public forms await activation.", 503);
   if (!operationID(operation))
     throw new CoordinationError("Invalid form identity.");
-  const id = "form-" + operation,
-    descriptor = { brand: c.client_brand, intake: job.intake || null },
-    token = randomProspectToken();
+  const id = "form-" + operation;
+  async function assertIdentity(row) {
+    if (row.connection_id !== c.id)
+      throw new CoordinationError("Form identity changed.", 409);
+    const stored = await unseal(env, row.descriptor, "public-form:" + id);
+    // Branding is presentation resolved from the owner at open time, not an
+    // operation input. A lost-response retry must survive a later profile edit.
+    if (
+      stableJSON(stored.intake || null) !== stableJSON(job.intake || null) ||
+      Boolean(row.verification_required) !== verificationRequired
+    )
+      throw new CoordinationError("Form identity changed.", 409);
+  }
   const old = await env.GOOGLE_SESSIONS.prepare(
     "SELECT * FROM streamlion_public_forms_v1 WHERE id=?",
   )
     .bind(id)
     .first();
   if (old) {
-    if (
-      old.connection_id !== c.id ||
-      stableJSON(await unseal(env, old.descriptor, "public-form:" + id)) !==
-        stableJSON(descriptor) ||
-      Boolean(old.verification_required) !== verificationRequired
-    )
-      throw new CoordinationError("Form identity changed.", 409);
+    await assertIdentity(old);
     return formView(env, old);
   }
+  const descriptor = {
+      brand: (await brandingForConnection(env, c)).name,
+      intake: job.intake || null,
+    },
+    token = randomProspectToken();
   await env.GOOGLE_SESSIONS.prepare(
     "INSERT OR IGNORE INTO streamlion_public_forms_v1(id,connection_id,token_hash,token_cipher,descriptor,verification_required,created_at) SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_public_forms_v1 WHERE connection_id=?)<20",
   )
@@ -137,13 +153,7 @@ export async function createPublicForm(
       409,
     );
   // A concurrent retry may have inserted this identity first.
-  if (
-    saved.connection_id !== c.id ||
-    stableJSON(await unseal(env, saved.descriptor, "public-form:" + id)) !==
-      stableJSON(descriptor) ||
-    Boolean(saved.verification_required) !== verificationRequired
-  )
-    throw new CoordinationError("Form identity changed.", 409);
+  await assertIdentity(saved);
   return formView(env, saved);
 }
 export async function updatePublicForm(env, c, body) {
@@ -168,7 +178,7 @@ export async function updatePublicForm(env, c, body) {
   return { updated: true };
 }
 export async function openPublicForm(env, token) {
-  const { row } = await publicForm(env, token),
+  const { row, connection } = await publicForm(env, token),
     now = Date.now();
   await env.GOOGLE_SESSIONS.prepare(
     "UPDATE streamlion_public_forms_v1 SET opened_at=COALESCE(opened_at,?) WHERE id=?",
@@ -176,8 +186,15 @@ export async function openPublicForm(env, token) {
     .bind(now, row.id)
     .run();
   const descriptor = await unseal(env, row.descriptor, "public-form:" + row.id);
+  const branding = await brandingForConnection(
+    env,
+    connection,
+    descriptor.brand,
+  );
   return {
     ...descriptor,
+    brand: branding.name,
+    branding,
     reusable: true,
     verificationRequired: Boolean(row.verification_required),
     visit: await seal(env, { formId: row.id, openedAt: now }, "public-visit"),

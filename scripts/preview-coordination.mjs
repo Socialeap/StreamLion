@@ -78,7 +78,39 @@ job = reduceClientJob(
   { role: "client" },
   Date.now(),
 );
+let previewBranding = {
+  name: "Harbor Capture Studio",
+  website: "https://example.com",
+  logo: "",
+  shape: "rounded",
+};
+let brandingVersion = 0;
 const handler = async (req, res, next) => {
+  if (req.url.split("?")[0] === "/api/provider-branding") {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    if (req.method === "POST") {
+      const value = JSON.parse(body);
+      previewBranding = value.branding;
+      brandingVersion++;
+    }
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "no-store");
+    res.end(
+      JSON.stringify({
+        subject: "synthetic-provider",
+        available: true,
+        version: brandingVersion,
+        branding: previewBranding,
+      }),
+    );
+    return;
+  }
+  if (req.url.split("?")[0] === "/api/google-config") {
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ enabled: false }));
+    return;
+  }
   if (
     ["/api/purchase/status", "/api/google/session"].includes(
       req.url.split("?")[0],
@@ -90,7 +122,14 @@ const handler = async (req, res, next) => {
       JSON.stringify(
         req.url.startsWith("/api/purchase/")
           ? { enabled: false, required: false, purchased: false }
-          : { enabled: true, connected: false },
+          : {
+              enabled: true,
+              connected: true,
+              subject: "synthetic-provider",
+              account: "qa@example.com",
+              bookId: "",
+              folderId: "",
+            },
       ),
     );
     return;
@@ -121,6 +160,7 @@ const handler = async (req, res, next) => {
         enabled: true,
         connected: true,
         subject: "synthetic-provider",
+        branding: previewBranding,
         projectMicros: 3000000,
         expiresAt: Date.now() + 365 * 86400000,
         wallet: { available: 7500000 },
@@ -217,7 +257,8 @@ const handler = async (req, res, next) => {
       if (data.publicForm) {
         const form = {
           id: "form-" + data.operation,
-          brand: "Synthetic provider",
+          brand: previewBranding.name,
+          branding: previewBranding,
           intake: job.intake,
           active: true,
           verificationRequired: data.verificationRequired === true,
@@ -251,7 +292,12 @@ const handler = async (req, res, next) => {
       result = { updated: true };
     } else if (path === "public/open") {
       const form = [...publicForms.values()].at(-1);
-      result = { ...form, reusable: true };
+      result = {
+        ...form,
+        brand: previewBranding.name,
+        branding: previewBranding,
+        reusable: true,
+      };
     } else if (path === "public/submit") {
       const data = JSON.parse(body),
         form = [...publicForms.values()].at(-1),
@@ -288,7 +334,8 @@ const handler = async (req, res, next) => {
       templateRevision++;
       result = {
         jobId: job.id,
-        brand: "Synthetic provider",
+        brand: previewBranding.name,
+        branding: previewBranding,
         intake: job.intake,
         expiresAt: link.expiresAt,
       };
@@ -334,7 +381,8 @@ const handler = async (req, res, next) => {
       result = {
         synthetic: true,
         job: clientView(job),
-        brand: "Synthetic provider",
+        brand: previewBranding.name,
+        branding: previewBranding,
         activity: [
           {
             id: "sample-event",

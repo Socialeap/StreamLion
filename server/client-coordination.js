@@ -1,3 +1,4 @@
+import { brandingForConnection } from "./provider-branding.js";
 import {
   getSession,
   hash,
@@ -627,9 +628,11 @@ export async function handleCoordination({ request, env, params = {} }) {
             "Project access expired. Contact your provider.",
             401,
           );
+        const branding = await brandingForConnection(env, principal.connection);
         const view = {
           job: clientView(job),
-          brand: principal.connection.client_brand,
+          brand: branding.name,
+          branding,
           activity: activityFor(snapshot, principal.row.id, true),
         };
         await finishRead(
@@ -693,6 +696,13 @@ export async function handleCoordination({ request, env, params = {} }) {
       return json({
         enabled: true,
         subject: session.google_subject,
+        branding: await brandingForConnection(
+          env,
+          connection || {
+            google_subject: session.google_subject,
+            mode: paymentMode(env),
+          },
+        ),
         email: session.email,
         workbook: session.workbook_id,
         folder: session.folder_id,
@@ -753,7 +763,13 @@ export async function handleCoordination({ request, env, params = {} }) {
         mode: paymentMode(env),
         workbook_id: session.workbook_id,
         folder_id: session.folder_id,
-        client_brand: body.brand.trim(),
+        client_brand: (
+          await brandingForConnection(
+            env,
+            { google_subject: session.google_subject, mode: paymentMode(env) },
+            body.brand.trim(),
+          )
+        ).name,
         credentials: await seal(env, credentials, id),
         expires_at: Date.now() + 365 * DAY,
         revoked: 0,

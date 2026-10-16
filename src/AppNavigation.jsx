@@ -12,6 +12,7 @@ import {
   Archive,
   Download,
   UserRound,
+  Image as ImageIcon,
 } from "lucide-react";
 import ThemeSwitch from "./ThemeSwitch.jsx";
 import ProviderManualButton from "./ProviderManual.jsx";
@@ -323,23 +324,26 @@ export function usePageSections(root, scope, enabled = true) {
           const label =
             {
               "Sign-in and security": "Security",
+              "Your business branding": "Branding",
               "Keep StreamLion on your home screen": "Install",
               "Google Sheets & Drive": "Google",
               "Site copy on this device": "Offline copy",
               "Keep a device backup": "Backup",
               "Help & privacy": "Help",
             }[title] || title;
-          const icon = /backup/i.test(label)
-            ? Archive
-            : /google|connection/i.test(label)
-              ? Link
-              : /install|download/i.test(label)
-                ? Download
-                : /account|security/i.test(label)
-                  ? UserRound
-                  : /note/i.test(label)
-                    ? NotebookPen
-                    : LayoutList;
+          const icon = /branding/i.test(label)
+            ? ImageIcon
+            : /backup/i.test(label)
+              ? Archive
+              : /google|connection/i.test(label)
+                ? Link
+                : /install|download/i.test(label)
+                  ? Download
+                  : /account|security/i.test(label)
+                    ? UserRound
+                    : /note/i.test(label)
+                      ? NotebookPen
+                      : LayoutList;
           return { id: heading.id, label, title, icon };
         })
         .filter((section) => section.label);

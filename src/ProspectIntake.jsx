@@ -60,6 +60,11 @@ export default function ProspectIntake({ descriptor, token, api }) {
       </p>
       <h2>Estimate & work-order request</h2>
       <p>
+        Your request goes to{" "}
+        <strong>{descriptor.branding?.name || descriptor.brand}</strong>.
+        StreamLion provides the form and coordination tools.
+      </p>
+      <p>
         Fill out the details you know and get an estimate. The provider reviews
         scope and availability before either side agrees to work.
         {(!descriptor.reusable || descriptor.verificationRequired) &&

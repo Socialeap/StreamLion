@@ -1,3 +1,4 @@
+import { brandingForConnection } from "./provider-branding.js";
 import { hash, seal, unseal } from "./google-auth.js";
 import {
   CoordinationError,
@@ -48,7 +49,7 @@ export async function createProspectLink(env, row, job, connection) {
   // Deliberately public service wording only. Never publish the private job,
   // starting contact details, provider ID, files, financial records or history.
   const descriptor = {
-    brand: connection.client_brand,
+    brand: (await brandingForConnection(env, connection)).name,
     intake: job.intake || null,
   };
   await env.GOOGLE_SESSIONS.prepare(
@@ -119,15 +120,27 @@ async function eligible(env, token) {
   return { row, connection };
 }
 export async function openProspect(env, token) {
-  const { row } = await eligible(env, token);
+  const { row, connection } = await eligible(env, token);
   await env.GOOGLE_SESSIONS.prepare(
     "UPDATE streamlion_prospect_links_v1 SET opened_at=COALESCE(opened_at,?) WHERE job_id=? AND revoked=0 AND claimed_at IS NULL",
   )
     .bind(Date.now(), row.job_id)
     .run();
+  const descriptor = await unseal(
+    env,
+    row.public_intake,
+    "prospect-public:" + row.job_id,
+  );
+  const branding = await brandingForConnection(
+    env,
+    connection,
+    descriptor.brand,
+  );
   return {
     jobId: row.job_id,
-    ...(await unseal(env, row.public_intake, "prospect-public:" + row.job_id)),
+    ...descriptor,
+    brand: branding.name,
+    branding,
     expiresAt: row.expires_at,
   };
 }

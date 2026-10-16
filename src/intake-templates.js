@@ -375,9 +375,9 @@ export const INTAKE_PRESETS = [
 ];
 export const TM_CAPTURE_PRESET = {
   schemaVersion: 1,
-  name: "Transcendence Media · spatial capture",
+  name: "Optional TM preset · spatial capture",
   description:
-    "Request a preliminary 3D capture estimate and availability. Final scope, hosting, handoff, scheduling and invoice require provider review.",
+    "Uses Transcendence Media’s example estimate rates. Your request goes to the provider named above. Final scope, hosting, handoff, scheduling and invoice require that provider’s review.",
   estimateProfile: TM_ESTIMATE,
   defaults: {
     deliverables:
