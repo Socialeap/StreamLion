@@ -27,7 +27,7 @@ import { ChatGPTLaunch } from "./ChatGPTPanel";
 import { reusableFields } from "./workflow";
 import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
 import BriefImporter from "./BriefImporter.jsx";
-import { fillEmptyBriefFields } from "./brief-import.js";
+import { fillEmptyBriefFields, readPendingBrief } from "./brief-import.js";
 
 const STEPS = [
   { label: "Start", group: null, title: "Start with your project brief" },
@@ -186,6 +186,16 @@ export default function ProjectEditor({
   }
 
   async function save(asReviewed) {
+    // A save can assign an ID/remount this editor. Keep the paid recovery
+    // reference bound to its original draft until import, discard or failure.
+    // Read storage at action time: the importer may have unmounted on navigation.
+    if (readPendingBrief(key)) {
+      setError(
+        "Recover this brief before saving. Use or discard its prepared details first. Your draft stays on this device.",
+      );
+      goTo(0);
+      return;
+    }
     if (stale) {
       setError(
         "This project changed in Google. Download your draft, then load the current record before saving.",
@@ -384,6 +394,7 @@ export default function ProjectEditor({
                   draftKey={key}
                   fields={fields}
                   onUse={usePreparedBrief}
+                  disabled={busy}
                 />
                 <section aria-label="Prepare my project brief with ChatGPT">
                   <MessageCircle size={28} aria-hidden="true" />

@@ -29,6 +29,7 @@ export default function BriefImporter({
   draftKey,
   fields,
   onUse,
+  disabled = false,
   request = briefRequest,
   readFile = readBrief,
 }) {
@@ -41,7 +42,8 @@ export default function BriefImporter({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const locked = busy || !!pending;
+  const working = busy || disabled;
+  const locked = working || !!pending;
 
   function acceptResult(data) {
     if (data.state === "complete") {
@@ -101,6 +103,7 @@ export default function BriefImporter({
     }
   }
   async function prepare() {
+    if (disabled) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -186,7 +189,7 @@ export default function BriefImporter({
         type="button"
         aria-expanded={open}
         aria-controls="native-brief-input"
-        disabled={busy}
+        disabled={working}
         onClick={() => {
           setOpen(!open);
           if (!open) check();
@@ -284,7 +287,7 @@ export default function BriefImporter({
           )}
           <div className="brief-actions">
             {pending ? (
-              <button type="button" disabled={busy} onClick={check}>
+              <button type="button" disabled={working} onClick={check}>
                 Recover prepared brief
               </button>
             ) : (
@@ -293,7 +296,7 @@ export default function BriefImporter({
                   type="button"
                   className="primary"
                   disabled={
-                    busy ||
+                    working ||
                     !config?.enabled ||
                     !config.canPrepare ||
                     !text.trim() ||
@@ -307,7 +310,7 @@ export default function BriefImporter({
                       ? `Prepare my project · ${creditLabel(config.priceMicros)}`
                       : "Prepare my project"}
                 </button>
-                <button type="button" disabled={busy} onClick={check}>
+                <button type="button" disabled={working} onClick={check}>
                   Check brief availability
                 </button>
               </>
@@ -349,14 +352,14 @@ export default function BriefImporter({
               <button
                 type="button"
                 className="primary"
-                disabled={busy}
+                disabled={working}
                 onClick={useResult}
               >
                 Fill empty fields with these details
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={working}
                 onClick={() => {
                   forgetPendingBrief(draftKey);
                   setPending(null);

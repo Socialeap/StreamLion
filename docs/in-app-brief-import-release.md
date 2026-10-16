@@ -56,6 +56,14 @@ on the next account check/recovery or scheduled cleanup. It is never run again.
 Completed preparation is charged even if the user later discards the result.
 Re-importing fills empty fields only and never duplicates a Google save.
 
+Saving either a draft or a reviewed project is blocked while that draft has a
+recoverable preparation reference. The editor returns to Start with recovery
+instructions; import/discard the result or recover a failed attempt before saving.
+This keeps a new draft from gaining an ID and stranding its recovery marker.
+Starting preparation is also disabled during an active save, closing the reverse
+race. Local edits and draft backups remain available; no marker is migrated or
+silently deleted to allow a save.
+
 Results cease to be recoverable after 24 hours. Account access removes expired
 payloads; the existing daily session-cleanup Worker also erases them, normally
 within 48 hours of creation. Financial metadata remains for budgets/refunds.

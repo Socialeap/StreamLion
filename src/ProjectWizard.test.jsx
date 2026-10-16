@@ -28,6 +28,92 @@ const { FIELD_HELP } = await import("./FieldHelp.jsx");
 const { PROJECT_FIELDS, intakeFor } = await import("./project-schema.js");
 const { readDraft, projectDraftKey } = await import("./drafts.js");
 const { default: Jobs } = await import("./Jobs.jsx");
+const { keepPendingBrief, readPendingBrief } =
+  await import("./brief-import.js");
+
+test("a recoverable brief prevents draft identity changes on both save paths until recovery clears", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let saves = 0;
+  const key = projectDraftKey("pending-save", "new");
+  const marker = {
+    requestId: "11111111-1111-4111-8111-111111111111",
+    scope: "original-scope",
+  };
+  const ui = render(
+    <ProjectEditor
+      draftScope="pending-save"
+      onSave={async () => saves++}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 2: Identify the project" }),
+  );
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Keep this draft" },
+  });
+  keepPendingBrief(key, marker); // Written by preparation even if its editor section subsequently unmounts.
+  fireEvent.click(ui.getByRole("button", { name: "Save draft on device" }));
+  await waitFor(() =>
+    assert(
+      ui
+        .getByRole("alert")
+        .textContent.includes("Recover this brief before saving"),
+    ),
+  );
+  assert.equal(saves, 0);
+  assert.deepEqual(readPendingBrief(key), marker);
+  assert.equal(readDraft(key).fields.title, "Keep this draft");
+  fireEvent.click(ui.getByRole("button", { name: "Step 9: Review and save" }));
+  const review = ui.getByRole("checkbox");
+  fireEvent.click(review);
+  const finish = ui.getByRole("button", { name: /Save reviewed/ });
+  fireEvent.click(finish);
+  await waitFor(() =>
+    assert(
+      ui
+        .getByRole("alert")
+        .textContent.includes("Recover this brief before saving"),
+    ),
+  );
+  assert.equal(saves, 0);
+  assert.deepEqual(readPendingBrief(key), marker);
+  localStorage.removeItem(key + ":brief-import-v1"); // Equivalent to recovered failure/import/discard.
+  fireEvent.click(ui.getByRole("button", { name: "Save draft on device" }));
+  await waitFor(() => assert.equal(saves, 1));
+});
+
+test("starting a preparation is disabled while saving a new draft", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let release;
+  const held = new Promise((resolve) => (release = resolve));
+  const ui = render(
+    <ProjectEditor
+      draftScope="saving-brief"
+      onSave={() => held}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 2: Identify the project" }),
+  );
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Saving draft" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 1: Start with your project brief" }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Save draft on device" }));
+  try {
+    assert(
+      ui.getByRole("button", { name: "Upload a brief or paste text" }).disabled,
+    );
+  } finally {
+    await act(async () => release());
+  }
+});
 
 test("mocked in-app brief requires explicit review, preserves existing draft fields and never saves Google automatically", async (t) => {
   t.after(cleanup);
@@ -100,6 +186,8 @@ test("mocked in-app brief requires explicit review, preserves existing draft fie
   assert.equal(readDraft(key).fields.unresolved, "Confirm visit date");
   assert.equal(saves, 0);
   assert.equal(prepares, 1);
+  fireEvent.click(ui.getByRole("button", { name: "Save draft on device" }));
+  await waitFor(() => assert.equal(saves, 1));
 });
 
 test("ChatGPT preparation and return stay together, with file first and a paste alternative", async (t) => {
