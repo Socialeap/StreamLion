@@ -17,7 +17,7 @@ Object.defineProperty(globalThis, "navigator", {
   value: dom.window.navigator,
   configurable: true,
 });
-const { render, fireEvent, act, cleanup } =
+const { render, fireEvent, act, cleanup, within } =
   await import("@testing-library/react");
 const { default: Credits } = await import("./Credits.jsx");
 function assertBillingNavigation(ui) {
@@ -65,6 +65,7 @@ test("project value and verified USD cost lead the wallet even while sales are c
     name: "One shared brief. Less time chasing details.",
   });
   const wallet = ui.getByRole("region", { name: "Credit wallet" });
+  assert.ok(within(wallet).getByText(/Buying credits does not turn them on/));
   assert(
     value.compareDocumentPosition(wallet) &
       window.Node.DOCUMENT_POSITION_FOLLOWING,

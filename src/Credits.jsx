@@ -239,6 +239,10 @@ export default function Credits() {
               Add credits when you need them. No subscription or automatic
               recharge.
             </p>
+            <p>
+              AI answers are optional and separately enabled. Buying credits
+              does not turn them on.
+            </p>
             {(config?.mode || account?.mode) === "test" && (
               <p className="purchase-test" role="note">
                 Stripe test checkout. Test credits have no monetary value and
