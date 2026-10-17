@@ -56,6 +56,7 @@ import {
   openPublicForm,
   submitPublicForm,
   verifyPublicSubmission,
+  renewPublicVerification,
   syncPublicSubmission,
   createPublicForm,
   updatePublicForm,
@@ -446,8 +447,10 @@ export async function handleCoordination({ request, env, params = {} }) {
         if (
           typeof body.email === "string" &&
           email.toLowerCase() === body.email.trim().toLowerCase()
-        )
-          await invite(env, row);
+        ) {
+          if (!(await renewPublicVerification(env, row)))
+            await invite(env, row);
+        }
       }
       return json({
         message:

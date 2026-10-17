@@ -25,6 +25,14 @@ const approvedResendRecipient = (env, to) =>
     env.RESEND_TEST_RECIPIENTS?.split(",")
       .map((x) => x.trim().toLowerCase())
       .includes(to.toLowerCase()));
+export function emailRecipientAllowed(env, to) {
+  return (
+    emailPattern.test(to || "") &&
+    (resendReady(env)
+      ? approvedResendRecipient(env, to)
+      : Boolean(env.COORDINATION_MAILER?.fetch))
+  );
+}
 export function resendReady(env) {
   return (
     env.ENABLE_RESEND_EMAIL === "true" &&
