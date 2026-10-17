@@ -6,13 +6,16 @@ import {
   FolderSync,
   HardDrive,
   Inbox,
+  MessageCircle,
   Minus,
   Moon,
   PackageCheck,
   Plus,
   Ruler,
+  Sparkles,
   Sun,
   Upload,
+  Volume2,
 } from "lucide-react";
 import ProviderBrand from "./ProviderBrand.jsx";
 
@@ -28,6 +31,10 @@ const ICONS = {
   "units:metric": Ruler,
   "theme:light": Sun,
   "theme:dark": Moon,
+  "aiUses:brief": FileText,
+  "aiUses:ask": MessageCircle,
+  "aiUses:helper": Sparkles,
+  "aiVoice:aloud": Volume2,
 };
 const iconFor = (step, option) => ICONS[`${step.id}:${option.id}`];
 

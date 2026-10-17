@@ -931,6 +931,13 @@ export async function handleCoordination({ request, env, params = {} }) {
       } else await requireInvitationDelivery(env);
       if (!operationID(body.operation))
         throw new CoordinationError("Invalid operation identity.");
+      if (
+        body.clientBudget !== undefined &&
+        typeof body.clientBudget !== "boolean"
+      )
+        throw new CoordinationError(
+          "Choose whether this client may propose a budget.",
+        );
       const id = "job-" + body.operation;
       const existing = await env.GOOGLE_SESSIONS.prepare(
         "SELECT * FROM streamlion_coordination_jobs_v1 WHERE id=?",
@@ -986,6 +993,7 @@ export async function handleCoordination({ request, env, params = {} }) {
             body.operation,
             job,
             body.verificationRequired === true,
+            body.clientBudget,
           ),
         });
       }
@@ -1024,7 +1032,13 @@ export async function handleCoordination({ request, env, params = {} }) {
         .first();
       const url =
         body.shareLink === true
-          ? await createProspectLink(env, row, job, connection)
+          ? await createProspectLink(
+              env,
+              row,
+              job,
+              connection,
+              body.clientBudget,
+            )
           : env.GOOGLE_AUTH_ORIGIN + "/api/client-portal?job=" + id;
       if (body.shareLink !== true) await invite(env, row);
       return json({

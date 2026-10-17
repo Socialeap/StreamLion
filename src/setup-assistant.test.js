@@ -53,6 +53,7 @@ test("a device-first provider is asked only what their answers make relevant", (
     ["hardware", ["leica-blk360"]],
     ["deliverables", ["e57", "pointcloud"]],
     ["storage", "device"],
+    ["aiUses", []],
     ["theme", "dark"],
     ["review", true],
   ]);
@@ -84,6 +85,8 @@ test("hardware drives deliverable options, 360 hosting and the custom system que
   const options = (hardware) =>
     deliverableOptions({ hardware }).map((item) => item.id);
   assert(options(["matterport-pro3"]).includes("space"));
+  assert(options(["matterport-pro2"]).includes("transfer"));
+  assert(!options(["insta360", "leica-blk360"]).includes("transfer"));
   assert(!options(["drone"]).includes("space"));
   assert(options(["drone"]).includes("orthomosaic"));
   const state = run([
@@ -91,7 +94,7 @@ test("hardware drives deliverable options, 360 hosting and the custom system que
     ["focus", ["handover"]],
     ["hardware", ["matterport-pro2", "insta360", "other"]],
     ["hardwareOther", "NavVis VLX"],
-    ["deliverables", ["space", "tour"]],
+    ["deliverables", ["space", "transfer", "tour"]],
     ["tourHosting", ["kuula", "cloudpano"]],
     ["storage", "device"],
   ]);
@@ -103,6 +106,7 @@ test("hardware drives deliverable options, 360 hosting and the custom system que
   ]);
   assert.deepEqual(profile.deliverables, [
     "Matterport Space link",
+    "Matterport Model Transfer",
     "360° virtual tour link (Kuula, CloudPano)",
   ]);
   assert.throws(
@@ -218,6 +222,19 @@ test("every pricing path produces a configuration the existing pricing contract 
     pricingConfig(run([...lead, ["pricingMethod", "skip"]]).answers),
     null,
   );
+  const perClient = run([
+    ...lead,
+    ["pricingMethod", "area"],
+    ["currency", "USD"],
+    ["rate", "0.15"],
+    ["budget", "per-client"],
+  ]);
+  assert.equal(pricingConfig(perClient.answers).allowBudget, false);
+  assert.equal(pricingConfig(perClient.answers).budgetPerClient, true);
+  assert.equal(
+    walk(perClient, online).history.at(-1).step.summary("per-client"),
+    "Set per client",
+  );
   const rateStep = run([
     ...lead,
     ["pricingMethod", "area"],
@@ -309,7 +326,7 @@ test("offline providers cannot choose Google now, but stored answers survive goi
     /offline/,
   );
   const device = answerStep(pending, "storage", "device", offline);
-  assert.equal(walk(device, offline).current.id, "theme");
+  assert.equal(walk(device, offline).current.id, "aiUses");
   const unavailable = { online: true, googleAvailable: false };
   assert.throws(
     () => answerStep(pending, "storage", "google", unavailable),
@@ -332,6 +349,7 @@ test("editing re-asks only that answer, while dependent answers are asked again"
     ["currency", "USD"],
     ["rate", "0.15"],
     ["budget", "no"],
+    ["aiUses", []],
     ["logo", null],
     ["theme", "light"],
     ["review", true],
@@ -393,7 +411,7 @@ test("progress, locale currency and profile defaults stay small and predictable"
   assert.deepEqual(stageProgress(walk(state, online)), {
     stage: 2,
     label: "Your work",
-    percent: 33,
+    percent: 29,
   });
   assert.equal(currencyForLocale("en-CA"), "CAD");
   assert.equal(currencyForLocale("de-DE"), "EUR");
@@ -414,4 +432,41 @@ test("progress, locale currency and profile defaults stay small and predictable"
   });
   assert.deepEqual(providerDefaults(null), {});
   assert.equal(brandingSuggestion(null), null);
+});
+
+test("ChatGPT questions branch: credits only for built-in AI, read-aloud only for project questions", () => {
+  const lead = [
+    ...identity,
+    ["focus", ["briefs"]],
+    ["hardware", ["dslr"]],
+    ["deliverables", []],
+    ["storage", "device"],
+  ];
+  const helperOnly = run([...lead, ["aiUses", ["helper"]]]);
+  assert.equal(walk(helperOnly, online).current.id, "theme");
+  assert.deepEqual(setupProfile(helperOnly).ai, {
+    uses: ["Briefing Helper in my own ChatGPT"],
+    readAloud: null,
+    credits: "",
+  });
+  const asking = run([
+    ...lead,
+    ["aiUses", ["ask", "helper"]],
+    ["aiVoice", "aloud"],
+    ["aiCredits", "later"],
+  ]);
+  assert.equal(walk(asking, online).current.id, "theme");
+  assert.equal(setupProfile(asking).ai.readAloud, true);
+  assert.equal(setupProfile(asking).ai.credits, "later");
+  const briefs = run([...lead, ["aiUses", ["brief"]]]);
+  assert.equal(walk(briefs, online).current.id, "aiCredits");
+  assert.throws(
+    () => answerStep(briefs, "aiCredits", "maybe", online),
+    /Choose an option/,
+  );
+  // Dropping built-in AI no longer asks about credits or read-aloud.
+  let edited = editStep(asking, "aiUses");
+  edited = answerStep(edited, "aiUses", ["helper"], online);
+  assert.equal(walk(edited, online).current.id, "theme");
+  assert.equal(setupProfile(edited).ai.credits, "");
 });

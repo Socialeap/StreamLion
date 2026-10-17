@@ -31,6 +31,7 @@ test.beforeEach(() =>
   window.history.replaceState(null, "", "/client/?job=job-a"),
 );
 const { coordinationDraftKey } = await import("./coordination-drafts.js");
+const { blankPricing } = await import("./provider-pricing.js");
 const { offerUpdate } = await import("./updates.js");
 const { reviseIntakeTemplate, INTAKE_PRESETS } =
   await import("./intake-templates.js");
@@ -1670,4 +1671,76 @@ test("clients see the provider's phone and service area with the business name",
     "tel:5035550100",
   );
   assert(within(card).getByText("Portland, OR"));
+});
+test("pricing set per client asks on each share link whether that client may propose a budget", async (t) => {
+  t.after(cleanup);
+  const calls = [];
+  const perClient = {
+    ...blankPricing(),
+    method: "area",
+    allowBudget: false,
+    budgetPerClient: true,
+  };
+  const status = (profiles) => ({
+    connected: true,
+    subject: "a",
+    shareLinks: true,
+    wallet: { available: 7500000 },
+    projectMicros: 3000000,
+    delivery: { email: false },
+    pricingProfiles: profiles,
+  });
+  let profiles = [
+    { id: "default", name: "Default", version: 1, config: perClient },
+  ];
+  const ui = render(
+    <Portal
+      api={async (path, body) => {
+        if (path === "provider/status") return status(profiles);
+        if (path === "provider/jobs")
+          return { jobs: [], links: [], pending: [], archives: [] };
+        if (path === "provider/notifications")
+          return { enabled: false, devices: [] };
+        if (path === "provider/create") {
+          calls.push(body);
+          throw new Error("Stop after capturing the request");
+        }
+        throw new Error("Unexpected fixture " + path);
+      }}
+    />,
+  );
+  const toggle = await ui.findByLabelText(
+    "Let this client propose their own budget",
+  );
+  assert.equal(toggle.checked, false, "starts from the profile's setting");
+  fireEvent.click(toggle);
+  fireEvent.click(ui.getByRole("button", { name: "Create request link" }));
+  await waitFor(() => assert.equal(calls.length, 1));
+  assert.equal(calls[0].clientBudget, true);
+  cleanup();
+  profiles = [
+    {
+      id: "default",
+      name: "Default",
+      version: 1,
+      config: { ...blankPricing(), allowBudget: true },
+    },
+  ];
+  const fixed = render(
+    <Portal
+      api={async (path) => {
+        if (path === "provider/status") return status(profiles);
+        if (path === "provider/jobs")
+          return { jobs: [], links: [], pending: [], archives: [] };
+        if (path === "provider/notifications")
+          return { enabled: false, devices: [] };
+        throw new Error("Unexpected fixture " + path);
+      }}
+    />,
+  );
+  await fixed.findByRole("button", { name: "Create request link" });
+  assert.equal(
+    fixed.queryByLabelText("Let this client propose their own budget"),
+    null,
+  );
 });

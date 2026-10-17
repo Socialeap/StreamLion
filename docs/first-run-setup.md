@@ -14,14 +14,15 @@ The flow is a deterministic list of conditional steps in
 `src/setup-assistant.js`. The next question is the first step that applies and
 is not yet confirmed, so answers drive branching:
 
-| Stage           | Questions (asked when)                                                                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| About you       | Preferred name; business or trade name (client pages, project records, handovers)                                                                                         |
-| Contact         | Form card: business email (required), phone, service area or address, website                                                                                             |
-| Your work       | How StreamLion will be used; capture systems; other system (if Other); usual deliverables (options follow the hardware); 360° tour hosting (Insta360, Ricoh Theta, Other) |
-| Storage         | Google or this device (Google disabled offline or when sign-in is unavailable); Google sign-in; create or choose a workbook; offline workbook copy (on-site work only)    |
-| Pricing & units | Measurement system (on-site work); pricing method, tier style, currency, per-sq-ft rate or size bands, client budgets (client requests only)                              |
-| Finish          | Logo (client requests only); theme; review card with Edit on every answer                                                                                                 |
+| Stage           | Questions (asked when)                                                                                                                                                                                                                                          |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| About you       | Preferred name; business or trade name (client pages, project records, handovers)                                                                                                                                                                               |
+| Contact         | Form card: business email (required), phone, service area or address, website                                                                                                                                                                                   |
+| Your work       | How StreamLion will be used; capture systems; other system (if Other); usual deliverables (options follow the hardware); 360° tour hosting (Insta360, Ricoh Theta, Other)                                                                                       |
+| Storage         | Google or this device (Google disabled offline or when sign-in is unavailable); Google sign-in; create or choose a workbook; offline workbook copy (on-site work only)                                                                                          |
+| Pricing & units | Measurement system (on-site work); pricing method, tier style, currency, per-sq-ft rate or size bands, client budgets (client requests only)                                                                                                                    |
+| ChatGPT & AI    | How ChatGPT will be used: smart project briefs and project questions (built-in, AI credits) or the free Briefing Helper in the user's own ChatGPT, with a link to the Credits page; read answers aloud (project questions only); add credits (built-in AI only) |
+| Finish          | Logo (client requests only); theme; review card with Edit on every answer                                                                                                                                                                                       |
 
 Every confirmed answer is written to this device immediately under
 `streamlion-setup-v1` (browser storage only; no identity or authorization).
@@ -40,6 +41,16 @@ Workbook creation, the workbook chooser and the offline copy use the existing
 `google.js` and App handlers and run only from an explicit choice. A restored
 account with a saved workbook is never asked to create another. Offline, the
 Google choice is disabled and setup continues on the device.
+
+The ChatGPT & AI stage explains credits in one line and links to the Credits
+page. The read-aloud answer sets the Ask page's existing switch. The credits
+step checks `/api/credits/config`: without Google it says credits need a Google
+account; while purchases are closed it keeps the choice and points to the free
+Briefing Helper; when open it lists the packs and opens the Credits page in a
+new tab, where the existing Stripe Checkout and disclosures handle payment.
+Purchases are one pack at a time; there is no stored card, subscription or
+automatic recharge. Whether briefs and project questions are switched on stays
+a separate server setting.
 
 **Save & finish** is the only write. When Google is connected it saves the
 business name, website, phone, service area and optional logo through

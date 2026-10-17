@@ -4033,3 +4033,73 @@ test("a pricing publish racing a fresh submission fails atomically without a par
   );
   assert.equal(f.google.events.size, 0);
 });
+test("per-client budgets follow each form's own choice and survive explicit repricing", async (t) => {
+  const f = await publicFixture(t);
+  const config = validatePricing({
+    ...blankPricing(),
+    method: "area",
+    rate: "0.15",
+    allowBudget: false,
+    budgetPerClient: true,
+  });
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_provider_pricing_v1 VALUES('test','a','default','Capture pricing',?,1,?)",
+    )
+    .run(JSON.stringify(config), Date.now());
+  const open = async (operation, clientBudget) => {
+    const form = await createPublicForm(
+      f.env,
+      f.connection,
+      operation,
+      { intake: null },
+      false,
+      clientBudget,
+    );
+    return {
+      form,
+      token: new URLSearchParams(new URL(form.url).hash.slice(1)).get("form"),
+    };
+  };
+  const budgeted = await open("per-client-yes", true),
+    fixed = await open("per-client-no", false);
+  const body = (token, op) => {
+    const value = {
+      ...publicBody({ token }, op),
+      pricingKey: "default:1",
+      quantities: {},
+      budget: "600",
+    };
+    value.fields.propertySizeSqFt = "5000";
+    return value;
+  };
+  const saved = await f.submit(body(budgeted.token, "budget-allowed"));
+  assert.equal(
+    f.google.heads.get(saved.jobId).pricingRequest.budgetCents,
+    60000,
+  );
+  await assert.rejects(
+    f.submit(body(fixed.token, "budget-refused")),
+    /not accepting proposed budgets/,
+  );
+  // A retry that changes the client's budget choice is a different form.
+  await assert.rejects(open("per-client-yes", false), /Form identity changed/);
+  // Publishing new rates keeps each form's budget choice.
+  f.sql
+    .prepare(
+      "UPDATE streamlion_provider_pricing_v1 SET config=?,version=2 WHERE google_subject='a'",
+    )
+    .run(JSON.stringify({ ...config, rate: "0.20" }));
+  await updateFormPricing(f.env, f.connection, {
+    formId: budgeted.form.id,
+    expectedPricingKey: "default:1",
+    targetPricingKey: "default:2",
+  });
+  const repriced = body(budgeted.token, "budget-after-reprice");
+  repriced.pricingKey = "default:2";
+  const after = await f.submit(repriced);
+  assert.equal(
+    f.google.heads.get(after.jobId).pricingRequest.budgetCents,
+    60000,
+  );
+});

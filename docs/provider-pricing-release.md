@@ -44,6 +44,17 @@ owner. Current form pricing and latest available version are visible before the
 update. Existing submitted requests retain their original snapshot, breakdown,
 quantities, currency and proposed budget in Google-owned records.
 
+Client budgets can also be **decided per client request**. With that pricing
+option on (`budgetPerClient`, stored only when on, so existing profiles keep
+their exact shape), each new share link or public form asks the provider
+whether that client may propose a budget; the profile's budget setting is the
+starting choice. The choice is sealed in the link's descriptor as
+`clientBudget`, survives an explicit form repricing, and is enforced again on
+submission. Private email invitations show no pricing, so they do not ask. A
+link's choice is set when it is created; to change it, create a new link. The
+setup assistant's "Set per client" answer turns the option on with budgets off
+by default.
+
 Server submission recomputes prices from the sealed snapshot. The client budget
 is a separate proposal, never the agreed fee. Fresh submissions with stale
 pricing fail with `pricing_changed`; the client can review current prices while
