@@ -7,11 +7,18 @@ import {
   FolderSearch,
   FolderSync,
   LoaderCircle,
-  Pencil,
   RotateCcw,
   ShieldCheck,
   WifiOff,
 } from "lucide-react";
+import {
+  AssistantMessage,
+  ChatHeader,
+  ReviewCard,
+  UserMessage,
+  focusAnswer,
+  scrollToLatest,
+} from "./ChatParts.jsx";
 import {
   STAGES,
   answerStep,
@@ -81,135 +88,13 @@ function initialSetup() {
   if (!saved) return newSetup();
   return saved.status === "complete" ? reopenSetup(saved) : saved;
 }
-function Avatar() {
-  return (
-    <span className="setup-avatar" aria-hidden="true">
-      <span className="workspace-lion" />
-    </span>
-  );
-}
-function AssistantMessage({ text, hint, link, fresh, children }) {
-  return (
-    <li className={`setup-message setup-assistant${fresh ? " is-new" : ""}`}>
-      <Avatar />
-      <div className="setup-bubble">
-        {text && <p>{text}</p>}
-        {(hint || link) && (
-          <p className="setup-hint">
-            {hint}
-            {hint && link && " "}
-            {link && (
-              <a href={link.href} target="_blank" rel="noopener noreferrer">
-                {link.label} ↗
-              </a>
-            )}
-          </p>
-        )}
-        {children}
-      </div>
-    </li>
-  );
-}
-function AnswerText({ value }) {
-  return Array.isArray(value) ? (
-    <span className="setup-answer-lines">
-      {value.map((line, i) => (
-        <span key={i}>{line}</span>
-      ))}
-    </span>
-  ) : (
-    <span>{value}</span>
-  );
-}
-function UserMessage({ step, value, answers, automatic, fresh, onEdit }) {
-  return (
-    <li
-      className={`setup-message setup-user${automatic ? " is-automatic" : ""}${fresh ? " is-new" : ""}`}
-    >
-      <div className="setup-bubble">
-        {automatic && <CircleCheck size={16} aria-hidden="true" />}
-        {step.id === "logo" && value?.logo ? (
-          <span className="setup-answer-logo">
-            <img
-              src={value.logo}
-              alt=""
-              className={`provider-logo provider-logo--${value.shape}`}
-            />
-            Logo added
-          </span>
-        ) : (
-          <AnswerText value={step.summary(value, answers)} />
-        )}
-      </div>
-      {onEdit && (
-        <button
-          type="button"
-          className="setup-edit"
-          aria-label={`Edit ${step.title.toLowerCase()}`}
-          onClick={onEdit}
-        >
-          <Pencil size={13} aria-hidden="true" />
-          Edit
-        </button>
-      )}
-    </li>
-  );
-}
-
-const REVIEW_GROUPS = STAGES.map((title, stage) => ({ title, stage }));
-function ReviewCard({ history, answers, disabled, onEdit }) {
-  return (
-    <div className="setup-review">
-      {REVIEW_GROUPS.map(({ title, stage }) => {
-        const rows = history.filter(
-          ({ step }) => step.stage === stage && step.id !== "review",
-        );
-        if (!rows.length) return null;
-        return (
-          <section key={title} aria-label={title}>
-            <h3>{title}</h3>
-            <dl>
-              {rows.map(({ step, value }) => (
-                <div key={step.id}>
-                  <dt>{step.title}</dt>
-                  <dd>
-                    {step.id === "logo" && value?.logo ? (
-                      <img
-                        src={value.logo}
-                        alt="Your logo"
-                        className={`provider-logo provider-logo--${value.shape}`}
-                      />
-                    ) : (
-                      <AnswerText value={step.summary(value, answers)} />
-                    )}
-                  </dd>
-                  {step.editable !== false && (
-                    <button
-                      type="button"
-                      className="setup-edit"
-                      disabled={disabled}
-                      aria-label={`Edit ${step.title.toLowerCase()}`}
-                      onClick={() => onEdit(step.id)}
-                    >
-                      <Pencil size={13} aria-hidden="true" />
-                      Edit
-                    </button>
-                  )}
-                </div>
-              ))}
-            </dl>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
 function applyPlan(profile, connected) {
   const plan = [];
   const shown = [
     profile.website && "website",
     profile.phone && "phone",
     profile.area && "service area",
+    profile.welcome && "welcome line",
     profile.logo && "logo",
   ].filter(Boolean);
   const details = shown.length
@@ -325,20 +210,11 @@ export default function SetupAssistant({
     };
   }, [creditStep]);
   useEffect(() => {
-    const element = feed.current;
-    const reduced = window.matchMedia?.(
-      "(prefers-reduced-motion: reduce)",
-    )?.matches;
-    element?.scrollTo?.({
-      top: element.scrollHeight,
-      behavior: reduced ? "auto" : "smooth",
-    });
+    scrollToLatest(feed.current);
   }, [current?.id, history.length, results]);
   useEffect(() => {
     if (!current || busy) return;
-    dock.current
-      ?.querySelector("[data-setup-focus]:not(:disabled)")
-      ?.focus({ preventScroll: true });
+    focusAnswer(dock.current);
   }, [current?.id, editing]);
 
   function commit(next) {
@@ -470,6 +346,7 @@ export default function SetupAssistant({
           website: profile.website || saved.website || "",
           phone: profile.phone || saved.phone || "",
           area: profile.area || saved.area || "",
+          welcome: profile.welcome || saved.welcome || "",
           logo: profile.logo?.logo || saved.logo || "",
           shape: profile.logo ? profile.logo.shape : saved.shape || "rounded",
         });
@@ -819,50 +696,36 @@ export default function SetupAssistant({
 
   return (
     <main className="setup-screen" aria-labelledby="setup-title">
-      <header className="setup-header">
-        <div className="setup-heading">
-          <Avatar />
-          <div>
-            <h1 id="setup-title">Setup assistant</h1>
-            <p>
-              {complete
-                ? "All set"
-                : `Step ${progress.stage + 1} of ${STAGES.length} · ${progress.label}`}
-            </p>
-          </div>
-        </div>
-        <div className="setup-header-actions">
+      <ChatHeader
+        title="Setup assistant"
+        label="Setup progress"
+        percent={progress.percent}
+        status={
+          complete
+            ? "All set"
+            : `Step ${progress.stage + 1} of ${STAGES.length} · ${progress.label}`
+        }
+      >
+        <button
+          type="button"
+          className="setup-quiet"
+          disabled={disabled}
+          onClick={restart}
+        >
+          <RotateCcw size={16} aria-hidden="true" />
+          <span>Start over</span>
+        </button>
+        {!complete && (
           <button
             type="button"
             className="setup-quiet"
             disabled={disabled}
-            onClick={restart}
+            onClick={onExit}
           >
-            <RotateCcw size={16} aria-hidden="true" />
-            <span>Start over</span>
+            Finish later
           </button>
-          {!complete && (
-            <button
-              type="button"
-              className="setup-quiet"
-              disabled={disabled}
-              onClick={onExit}
-            >
-              Finish later
-            </button>
-          )}
-        </div>
-        <div
-          className="setup-progress"
-          role="progressbar"
-          aria-label="Setup progress"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={progress.percent}
-        >
-          <span style={{ width: `${Math.max(progress.percent, 4)}%` }} />
-        </div>
-      </header>
+        )}
+      </ChatHeader>
       <div
         className="setup-feed"
         ref={feed}
@@ -894,6 +757,7 @@ export default function SetupAssistant({
             <AssistantMessage {...prompt(current)} fresh>
               {current.kind === "review" && (
                 <ReviewCard
+                  stages={STAGES}
                   history={history}
                   answers={answers}
                   disabled={disabled}

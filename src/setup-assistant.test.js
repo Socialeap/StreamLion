@@ -351,6 +351,7 @@ test("editing re-asks only that answer, while dependent answers are asked again"
     ["budget", "no"],
     ["aiUses", []],
     ["logo", null],
+    ["welcome", ""],
     ["theme", "light"],
     ["review", true],
   ]);
@@ -406,6 +407,48 @@ test("answers persist on the device and invalid saved state is ignored", () => {
   assert.equal(writeSetup(state, blocked), false);
 });
 
+test("client-request providers can write the request assistant's welcome line", () => {
+  const lead = [
+    ...identity,
+    ["focus", ["requests"]],
+    ["hardware", ["dslr"]],
+    ["deliverables", []],
+    ["storage", "device"],
+    ["pricingMethod", "skip"],
+    ["aiUses", []],
+    ["logo", null],
+  ];
+  const state = run(lead);
+  const step = walk(state, online).current;
+  assert.equal(step.id, "welcome");
+  assert.match(step.prompt(walk(state, online).answers).hint, /Harbor Spatial/);
+  assert.throws(
+    () => answerStep(state, "welcome", "x".repeat(281), online),
+    /under 280 characters/,
+  );
+  const written = answerStep(
+    state,
+    "welcome",
+    "  Welcome to Harbor!\n Let’s plan your capture. ",
+    online,
+  );
+  assert.equal(
+    written.answers.welcome,
+    "Welcome to Harbor! Let’s plan your capture.",
+  );
+  assert.equal(
+    brandingSuggestion(setupProfile(written)).welcome,
+    "Welcome to Harbor! Let’s plan your capture.",
+  );
+  // The standard greeting is an empty welcome; other providers are not asked.
+  assert.equal(
+    setupProfile(answerStep(state, "welcome", "", online)).welcome,
+    "",
+  );
+  const briefsOnly = run([...identity, ["focus", ["briefs"]]]);
+  assert.equal(setupProfile(briefsOnly).welcome, "");
+});
+
 test("progress, locale currency and profile defaults stay small and predictable", () => {
   const state = run(identity);
   assert.deepEqual(stageProgress(walk(state, online)), {
@@ -427,6 +470,7 @@ test("progress, locale currency and profile defaults stay small and predictable"
     website: "",
     phone: "",
     area: "",
+    welcome: "",
     logo: "",
     shape: "rounded",
   });

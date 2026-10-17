@@ -3,6 +3,7 @@ import { fetchRead } from "./network.js";
 import {
   emptyBranding,
   LOGO_LIMIT,
+  WELCOME_LIMIT,
   validateBranding,
 } from "./provider-branding.js";
 import ProviderBrand from "./ProviderBrand.jsx";
@@ -122,6 +123,7 @@ export default function ProviderBrandingSettings({
                     website: data.branding.website || suggested.website,
                     phone: data.branding.phone || suggested.phone,
                     area: data.branding.area || suggested.area,
+                    welcome: data.branding.welcome || suggested.welcome,
                     logo: data.branding.logo || suggested.logo,
                     shape: data.branding.logo
                       ? data.branding.shape
@@ -265,6 +267,23 @@ export default function ProviderBrandingSettings({
                   disabled={locked}
                   onChange={(e) => setDraft({ ...draft, area: e.target.value })}
                 />
+              </label>
+              <label>
+                Request assistant welcome (optional)
+                <textarea
+                  rows={2}
+                  maxLength={WELCOME_LIMIT}
+                  placeholder={`Hi there! I’m ${draft.name.trim() || "your business"}’s request assistant, and I’ll help you request a capture of your space.`}
+                  value={draft.welcome || ""}
+                  disabled={locked}
+                  onChange={(e) =>
+                    setDraft({ ...draft, welcome: e.target.value })
+                  }
+                />
+                <small>
+                  The first line clients read when they open your request form
+                  or invitation. Leave blank for the standard greeting.
+                </small>
               </label>
               <label>
                 Upload your logo (optional)
