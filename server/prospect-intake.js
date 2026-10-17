@@ -48,12 +48,26 @@ export async function createProspectLink(
       "Share-link intake awaits activation. Email invitations remain available.",
       503,
     );
+  // A retried operation must not keep a different client-budget choice.
+  async function existing(link) {
+    const stored = await unseal(
+      env,
+      link.public_intake,
+      "prospect-public:" + row.id,
+    );
+    if (
+      Object.hasOwn(stored, "clientBudget") &&
+      stored.clientBudget !== clientBudget
+    )
+      throw new CoordinationError("Request identity changed.", 409);
+    return prospectURL(env, link);
+  }
   const old = await env.GOOGLE_SESSIONS.prepare(
     "SELECT * FROM streamlion_prospect_links_v1 WHERE job_id=?",
   )
     .bind(row.id)
     .first();
-  if (old) return prospectURL(env, old);
+  if (old) return existing(old);
   const token = randomProspectToken();
   // Deliberately public service wording only. Never publish the private job,
   // starting contact details, provider ID, files, financial records or history.
@@ -82,8 +96,8 @@ export async function createProspectLink(
       row.created_at + 30 * DAY,
     )
     .run();
-  return prospectURL(
-    env,
+  // A concurrent retry may have inserted this link first.
+  return existing(
     await env.GOOGLE_SESSIONS.prepare(
       "SELECT * FROM streamlion_prospect_links_v1 WHERE job_id=?",
     )
