@@ -44,6 +44,66 @@ const completed = {
   }),
 };
 
+test("owner QA displays its remaining attempts and expiry without suggesting a credit purchase", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const request = async () => ({
+    ...config,
+    priceMicros: 100000,
+    canPrepare: false,
+    ownerQA: { attemptsRemaining: 2, expiresAt: "2026-10-17T20:00:00.000Z" },
+  });
+  const ui = render(
+    <BriefImporter
+      draftKey="qa-draft"
+      fields={fields}
+      onUse={() => {}}
+      request={request}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() => assert(ui.getByText(/Owner-only QA/)));
+  assert.match(
+    ui.getByText(/Owner-only QA/).textContent,
+    /2 of 3 attempts remaining/,
+  );
+  assert(ui.getByText(/do not buy or transfer credits/));
+  assert.equal(ui.queryByText("View credits"), null);
+  assert(
+    ui.getByRole("button", { name: "Prepare my project · 8 credits" }).disabled,
+  );
+});
+
+test("exhausted QA preserves pasted source and explains recovery instead of top-ups", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const ui = render(
+    <BriefImporter
+      draftKey="qa-draft"
+      fields={fields}
+      onUse={() => {}}
+      request={async () => ({ enabled: false, reason: "qa_exhausted" })}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
+    target: { value: "Synthetic venue brief" },
+  });
+  await waitFor(() => assert(ui.getByText(/All three owner QA attempts/)));
+  assert.equal(
+    ui.getByLabelText(/Or, paste the PDF text/).value,
+    "Synthetic venue brief",
+  );
+  assert(
+    ui.getByRole("button", { name: "Prepare my project", exact: true })
+      .disabled,
+  );
+});
+
 test("disabled importer exposes PDF tips and preserves source text without preparing or changing drafts", async (t) => {
   t.after(cleanup);
   localStorage.clear();
