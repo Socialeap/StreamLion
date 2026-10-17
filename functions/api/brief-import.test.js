@@ -731,6 +731,141 @@ test("owner QA cannot consume unexpected promotional funds or bypass a revoked t
   assert.equal(f.calls(), 0);
 });
 
+test("brief failure reports a safe cause and reference without exposing upstream or project data", async (t) => {
+  const f = await fixture(t);
+  f.activate();
+  const input = await f.input();
+  const logs = [];
+  t.mock.method(console, "warn", (line) => logs.push(JSON.parse(line)));
+  let calls = 0;
+  const response = await f.call("prepare", input, {
+    fetcher: async () => {
+      calls++;
+      return output({
+        ...project,
+        fields: { ...project.fields, offeredFee: "$1,500", currency: "USD" },
+      });
+    },
+  });
+  const result = await response.json();
+  assert.equal(result.state, "failed");
+  assert.equal(result.errorCode, "invalid_project");
+  assert.match(result.reference, /^[0-9a-f-]{36}$/);
+  assert.match(result.error, /credits were returned/);
+  assert.deepEqual(logs, [
+    {
+      service: "streamlion",
+      event: "brief_failure",
+      code: "invalid_project",
+      reference: result.reference,
+    },
+  ]);
+  assert(!JSON.stringify(result).includes("$1,500"));
+  assert(!JSON.stringify(logs).includes("Mock capture"));
+  assert.equal(f.balance(), 1050000);
+  assert.equal((await (await f.call("prepare", input)).json()).state, "failed");
+  assert.equal(calls, 1);
+  assert.equal(logs.length, 1);
+});
+
+test("provider failure categories expose no raw errors and never retry or refund twice", async (t) => {
+  const privateText =
+    "private source text sk-test-DO-NOT-LOG account@example.test";
+  const cases = [
+    [() => new Response(privateText, { status: 401 }), "provider_auth", 401],
+    [() => new Response(privateText, { status: 403 }), "provider_auth", 403],
+    [() => new Response(privateText, { status: 400 }), "provider_request", 400],
+    [
+      () => new Response(privateText, { status: 429 }),
+      "provider_capacity",
+      429,
+    ],
+    [
+      () => new Response(privateText, { status: 503 }),
+      "provider_unavailable",
+      503,
+    ],
+    [() => new Response(privateText), "invalid_response"],
+    [() => Response.json(null), "invalid_response"],
+    [() => output(project, { output: [null] }), "invalid_project"],
+    [() => output(project, { status: "incomplete" }), "incomplete_result"],
+    [
+      () =>
+        output(project, {
+          output: [{ content: [{ type: "refusal", refusal: privateText }] }],
+        }),
+      "refused",
+    ],
+    [
+      () => {
+        throw new DOMException(privateText, "TimeoutError");
+      },
+      "provider_timeout",
+    ],
+    [
+      () => {
+        throw new Error(privateText);
+      },
+      "provider_unavailable",
+    ],
+  ];
+  for (const [index, [respond, code, status]] of cases.entries())
+    await t.test(`${index}: ${code}`, async (t) => {
+      const f = await fixture(t);
+      f.activate();
+      const input = await f.input();
+      const logs = [];
+      t.mock.method(console, "warn", (line) => logs.push(JSON.parse(line)));
+      let calls = 0;
+      const fetcher = async () => {
+        calls++;
+        return respond();
+      };
+      const result = await (await f.call("prepare", input, { fetcher })).json();
+      assert.equal(result.state, "failed");
+      assert.equal(result.errorCode, code);
+      assert.equal(logs.length, 1);
+      assert.deepEqual(logs[0], {
+        service: "streamlion",
+        event: "brief_failure",
+        code,
+        reference: result.reference,
+        ...(status ? { status } : {}),
+      });
+      assert(!JSON.stringify([logs, result]).includes(privateText));
+      assert.equal(f.balance(), 1050000);
+      const retry = await (await f.call("prepare", input, { fetcher })).json();
+      assert.equal(retry.state, "failed");
+      assert.equal(retry.reference, undefined); // Historical reasons are never invented.
+      assert.equal(calls, 1);
+      assert.equal(logs.length, 1);
+      assert.equal(f.balance(), 1050000);
+    });
+});
+
+test("post-provider storage failure is safely classified and refunds exactly once", async (t) => {
+  const f = await fixture(t);
+  f.activate();
+  const input = await f.input();
+  const logs = [];
+  t.mock.method(console, "warn", (line) => logs.push(JSON.parse(line)));
+  const prepare = f.db.prepare;
+  f.db.prepare = (query) => {
+    if (
+      query.startsWith("UPDATE streamlion_brief_jobs_v1 SET state='complete'")
+    )
+      throw new Error("private database details and project text");
+    return prepare(query);
+  };
+  const result = await (await f.call("prepare", input)).json();
+  assert.equal(result.state, "failed");
+  assert.equal(result.errorCode, "processing_failed");
+  assert.equal(logs[0].code, "processing_failed");
+  assert(!JSON.stringify([result, logs]).includes("private database"));
+  assert.equal(f.balance(), 1050000);
+  assert.equal(f.calls(), 1);
+});
+
 test("model request is bounded and cannot inherit a premium processing tier", async (t) => {
   let calls = 0;
   await assert.rejects(

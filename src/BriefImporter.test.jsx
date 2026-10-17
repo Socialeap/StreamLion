@@ -75,6 +75,80 @@ test("replacement QA shows one attempt and preserves the original expiry", async
   assert(ui.getByRole("button", { name: "Prepare my project · 8 credits" }));
 });
 
+test("a classified failed replacement preserves source and draft and never suggests another paid attempt", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  localStorage.setItem("preserved-draft", "original draft contents");
+  const reference = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  let posts = 0,
+    imports = 0;
+  const ui = render(
+    <BriefImporter
+      draftKey="failed-replacement"
+      fields={fields}
+      onUse={() => imports++}
+      request={async (route) => {
+        if (route === "prepare") {
+          posts++;
+          return {
+            state: "failed",
+            errorCode: "invalid_project",
+            reference,
+            error: `The prepared details did not pass the project checks. Reserved credits were returned; your draft is unchanged. Reference: ${reference}. Recover this attempt before starting anything else.`,
+          };
+        }
+        return posts
+          ? { enabled: false, reason: "qa_replacement_exhausted" }
+          : {
+              ...config,
+              priceMicros: 100000,
+              ownerQA: {
+                attemptsRemaining: 1,
+                attemptLimit: 1,
+                replacement: true,
+                expiresAt: "2026-10-18T00:46:02.266Z",
+              },
+            };
+      }}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() =>
+    assert(ui.getByRole("button", { name: "Prepare my project · 8 credits" })),
+  );
+  fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
+    target: {
+      value:
+        "Keep these NYC venue details and the exact 6 7/16 inch measurement.",
+    },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Prepare my project · 8 credits" }),
+  );
+  await waitFor(() => assert(ui.getByText(new RegExp(reference))));
+  assert(ui.getByText(/replacement QA attempt has been used/));
+  assert.equal(
+    ui.getByLabelText(/Or, paste the PDF text/).value,
+    "Keep these NYC venue details and the exact 6 7/16 inch measurement.",
+  );
+  assert(ui.getByRole("button", { name: "Prepare my project" }).disabled);
+  assert.equal(readPendingBrief("failed-replacement"), null);
+  assert.equal(
+    localStorage.getItem("preserved-draft"),
+    "original draft contents",
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Check brief availability" }));
+  await waitFor(() =>
+    assert(
+      !ui.getByRole("button", { name: "Check brief availability" }).disabled,
+    ),
+  );
+  assert.equal(posts, 1);
+  assert.equal(imports, 0);
+});
+
 test("pending preparation refreshes the reserved balance and remaining attempts without another POST", async (t) => {
   t.after(cleanup);
   localStorage.clear();
