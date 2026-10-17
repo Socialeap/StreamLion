@@ -4103,3 +4103,62 @@ test("per-client budgets follow each form's own choice and survive explicit repr
     60000,
   );
 });
+test("a retried share link keeps its identity only with the same per-client budget choice", async (t) => {
+  const f = fixture(t);
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_provider_pricing_v1 VALUES('test','a','default','Capture pricing',?,1,?)",
+    )
+    .run(
+      JSON.stringify(
+        validatePricing({
+          ...blankPricing(),
+          method: "area",
+          allowBudget: false,
+          budgetPerClient: true,
+        }),
+      ),
+      Date.now(),
+    );
+  const job = newClientJob({
+    id: "job-budget-retry",
+    provider: "a",
+    clientEmail: "",
+    title: "Retry",
+    prospect: true,
+    now: Date.now(),
+  });
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) VALUES(?,?,?,?,?)",
+    )
+    .run(
+      job.id,
+      f.connection.id,
+      job.id,
+      await seal(f.env, "", "job-email:" + job.id),
+      job.createdAt,
+    );
+  const row = f.sql
+    .prepare("SELECT * FROM streamlion_coordination_jobs_v1 WHERE id=?")
+    .get(job.id);
+  const url = await createProspectLink(f.env, row, job, f.connection, true);
+  assert.equal(
+    await createProspectLink(f.env, row, job, f.connection, true),
+    url,
+  );
+  await assert.rejects(
+    createProspectLink(f.env, row, job, f.connection, false),
+    /Request identity changed/,
+  );
+  const link = f.sql
+    .prepare(
+      "SELECT public_intake FROM streamlion_prospect_links_v1 WHERE job_id=?",
+    )
+    .get(job.id);
+  assert.equal(
+    (await unseal(f.env, link.public_intake, "prospect-public:" + job.id))
+      .clientBudget,
+    true,
+  );
+});
