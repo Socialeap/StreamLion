@@ -44,6 +44,61 @@ const completed = {
   }),
 };
 
+test("pending preparation refreshes the reserved balance and remaining attempts without another POST", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let posts = 0;
+  const request = async (route) => {
+    if (route === "config")
+      return {
+        ...config,
+        priceMicros: 100000,
+        balanceMicros: 19000000 - posts * 100000,
+        ownerQA: {
+          attemptsRemaining: 3 - posts,
+          expiresAt: "2026-10-17T20:00:00.000Z",
+        },
+      };
+    assert.equal(route, "prepare");
+    posts++;
+    return { state: "pending" };
+  };
+  const ui = render(
+    <BriefImporter
+      draftKey="pending-draft"
+      fields={fields}
+      onUse={() => {}}
+      request={request}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() =>
+    assert.match(ui.getByText(/Owner-only QA/).textContent, /3 of 3/),
+  );
+  fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
+    target: { value: "Synthetic venue brief" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Prepare my project · 8 credits" }),
+  );
+  await waitFor(() =>
+    assert.match(ui.getByText(/Owner-only QA/).textContent, /2 of 3/),
+  );
+  assert.match(
+    ui.getByText(/per completed preparation/).textContent,
+    /1512 credits available/,
+  );
+  assert(ui.getByRole("button", { name: "Recover prepared brief" }));
+  assert.equal(
+    ui.getByLabelText(/Or, paste the PDF text/).value,
+    "Synthetic venue brief",
+  );
+  assert(readPendingBrief("pending-draft"));
+  assert.equal(posts, 1);
+});
+
 test("owner QA displays its remaining attempts and expiry without suggesting a credit purchase", async (t) => {
   t.after(cleanup);
   localStorage.clear();

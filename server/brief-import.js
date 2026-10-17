@@ -399,7 +399,13 @@ export async function handleBriefImport(
           policy.reserve_micros,
         )
         .run();
-      if (reserved.meta?.changes !== 1) throw new Error("policy_changed");
+      // D1 includes wallet-trigger updates in changes; one job can report 3.
+      // The primary key and INSERT predicate still enforce a single reservation.
+      if (
+        !Number.isSafeInteger(reserved.meta?.changes) ||
+        reserved.meta.changes < 1
+      )
+        throw new Error("policy_changed");
     } catch {
       const racing = await find(input.requestId);
       if (racing && racing.input_hash === fingerprint)
