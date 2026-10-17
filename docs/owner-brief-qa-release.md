@@ -5,6 +5,10 @@ preparation**, **three provider attempts total**, **USD 0.30 total API reserve**
 and a **24-hour access window**. This approval does not authorize merging,
 deployment, configuration, real AI calls or sales activation.
 
+The separately held [one-replacement amendment](one-replacement-brief-qa-release.md)
+retains these three attempts and the original expiry. It requires its own review,
+release and activation authorization; it does not reset this grant.
+
 ## Behavior and fixed terms
 
 The separate owner-QA branch works only with `STREAMLION_PAYMENTS_MODE=test`.

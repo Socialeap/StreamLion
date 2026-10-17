@@ -7,8 +7,12 @@ import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { hash } from "../../server/google-auth.js";
 import { intakeFor } from "../../src/project-schema.js";
 
-test("owner brief preparation completes and refunds correctly with real D1 trigger metadata", async () => {
-  const clock = Date.now();
+async function runtimeFixture({ replacement = false } = {}) {
+  const start = replacement
+    ? "2026-10-17T00:46:02.266Z"
+    : new Date().toISOString();
+  const clock = replacement ? Date.parse(start) + 3600000 : Date.parse(start);
+  const until = new Date(Date.parse(start) + 86400000).toISOString();
   const project = intakeFor({
     title: "Synthetic NYC venue",
     scope: "Photograph the stage and measure the entry door.",
@@ -27,8 +31,9 @@ test("owner brief preparation completes and refunds correctly with real D1 trigg
             ENABLE_BRIEF_IMPORT: 'false', STREAMLION_BRIEF_IMPORT_COST_APPROVED: 'false',
             STREAMLION_BRIEF_IMPORT_QA_ENABLED: 'true', STREAMLION_BRIEF_IMPORT_QA_COST_APPROVED: 'true',
             STREAMLION_BRIEF_IMPORT_QA_SUBJECT: 'a',
-            STREAMLION_BRIEF_IMPORT_QA_START: '${new Date(clock).toISOString()}',
-            STREAMLION_BRIEF_IMPORT_QA_UNTIL: '${new Date(clock + 86400000).toISOString()}'
+            STREAMLION_BRIEF_IMPORT_QA_START: '${start}',
+            STREAMLION_BRIEF_IMPORT_QA_UNTIL: '${until}',
+            STREAMLION_BRIEF_IMPORT_QA_REPLACEMENT_APPROVED: '${replacement ? "true" : "false"}'
           };
           const response = await handleBriefImport({request, env: settings, waitUntil: task => ctx.waitUntil(task)}, {
             now: () => ${clock},
@@ -85,7 +90,7 @@ test("owner brief preparation completes and refunds correctly with real D1 trigg
       .prepare(
         "INSERT INTO streamlion_google_sessions_v1(session_hash,google_subject,email,credentials,expires_at,workbook_id) VALUES(?,'a','synthetic@example.test','encrypted',?,'book-a')",
       )
-      .bind(await hash("a".repeat(43)), clock + 86400000)
+      .bind(await hash("a".repeat(43)), Date.now() + 86400000)
       .run();
     await db
       .prepare(
@@ -108,6 +113,37 @@ test("owner brief preparation completes and refunds correctly with real D1 trigg
         "INSERT INTO streamlion_brief_policy_v1 VALUES('test',1,100000,100000,300000,300000,3)",
       )
       .run();
+    if (replacement) {
+      for (let n = 1; n <= 3; n++) {
+        const oldId = `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+        const created = Date.parse(start) + n * 1000;
+        await db
+          .prepare(
+            "INSERT INTO streamlion_brief_jobs_v1(mode,google_subject,request_id,scope,input_hash,quote_key,price_micros,reserve_micros,promotional,purchased,created_at,expires_at) VALUES('test','a',?,'synthetic-scope','synthetic-hash','synthetic-quote',100000,100000,0,100000,?,?)",
+          )
+          .bind(oldId, created, created + 86400000)
+          .run();
+        await db
+          .prepare(
+            "UPDATE streamlion_brief_jobs_v1 SET state='failed' WHERE request_id=? AND state='pending'",
+          )
+          .bind(oldId)
+          .run();
+      }
+      const approval = await db
+        .prepare(
+          readFileSync(
+            new URL(
+              "../../ops/approve-brief-qa-replacement.sql",
+              import.meta.url,
+            ),
+            "utf8",
+          ),
+        )
+        .bind("a", clock)
+        .run();
+      assert.equal(approval.meta.changes, 1);
+    }
     const call = (route, body) =>
       mf.dispatchFetch("https://app.example/api/brief-import/" + route, {
         method: body ? "POST" : "GET",
@@ -118,6 +154,18 @@ test("owner brief preparation completes and refunds correctly with real D1 trigg
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
+    schema.close();
+    return { call, db, project, dispose: () => mf.dispose() };
+  } catch (error) {
+    schema.close();
+    await mf.dispose();
+    throw error;
+  }
+}
+
+test("owner brief preparation completes and refunds correctly with real D1 trigger metadata", async () => {
+  const { call, db, project, dispose } = await runtimeFixture();
+  try {
     const config = await (await call("config")).json();
     assert.equal(config.ownerQA.attemptsRemaining, 3);
     const input = {
@@ -167,7 +215,128 @@ test("owner brief preparation completes and refunds correctly with real D1 trigg
     const after = await (await call("config")).json();
     assert.equal(after.ownerQA.attemptsRemaining, 1);
   } finally {
-    schema.close();
-    await mf.dispose();
+    await dispose();
+  }
+});
+
+test("real D1 permits exactly one replacement under concurrent requests and preserves old history", async () => {
+  const { call, db, project, dispose } = await runtimeFixture({
+    replacement: true,
+  });
+  try {
+    const old = (
+      await db
+        .prepare("SELECT * FROM streamlion_brief_jobs_v1 ORDER BY request_id")
+        .all()
+    ).results;
+    const quote = await (await call("config")).json();
+    assert.equal(quote.ownerQA.attemptsRemaining, 1);
+    assert.equal(quote.ownerQA.attemptLimit, 1);
+    assert.equal(quote.ownerQA.expiresAt, "2026-10-18T00:46:02.266Z");
+    const first = {
+      requestId: "44444444-4444-4444-8444-444444444444",
+      scope: quote.scope,
+      quoteKey: quote.quoteKey,
+      priceMicros: quote.priceMicros,
+      sourceName: "Pasted text",
+      text: "Photograph the stage and measure the entry door.",
+    };
+    const second = {
+      ...first,
+      requestId: "55555555-5555-4555-8555-555555555555",
+    };
+    const responses = await Promise.all([
+      call("prepare", first),
+      call("prepare", second),
+    ]);
+    assert.deepEqual(responses.map((r) => r.status).sort(), [200, 429]);
+    const winning = responses[0].status === 200 ? first : second;
+    const recovered = await call("result?id=" + winning.requestId);
+    assert.equal(recovered.headers.get("X-Test-Provider-Calls"), "1");
+    assert.deepEqual((await recovered.json()).project, project);
+    assert.equal(
+      (await (await call("prepare", winning)).json()).state,
+      "complete",
+    );
+    assert.equal(
+      (await (await call("config")).json()).reason,
+      "qa_replacement_exhausted",
+    );
+    assert.deepEqual(
+      (
+        await db
+          .prepare(
+            "SELECT * FROM streamlion_brief_jobs_v1 ORDER BY created_at,request_id LIMIT 3",
+          )
+          .all()
+      ).results,
+      old,
+    );
+    assert.equal(
+      (
+        await db
+          .prepare(
+            "SELECT COUNT(*) n,SUM(reserve_micros) reserved FROM streamlion_brief_jobs_v1",
+          )
+          .first()
+      ).reserved,
+      400000,
+    );
+    assert.equal(
+      (
+        await db
+          .prepare(
+            "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test'",
+          )
+          .first()
+      ).b,
+      18900000,
+    );
+  } finally {
+    await dispose();
+  }
+});
+
+test("real D1 refunds the failed replacement once and retains exhausted history", async () => {
+  const { call, db, dispose } = await runtimeFixture({ replacement: true });
+  try {
+    const quote = await (await call("config")).json();
+    const input = {
+      requestId: "44444444-4444-4444-8444-444444444444",
+      scope: quote.scope,
+      quoteKey: quote.quoteKey,
+      priceMicros: quote.priceMicros,
+      sourceName: "Pasted text",
+      text: "synthetic provider failure",
+    };
+    const failed = await call("prepare", input);
+    assert.equal((await failed.json()).state, "failed");
+    const repeat = await call("prepare", input);
+    assert.equal((await repeat.json()).state, "failed");
+    assert.equal(repeat.headers.get("X-Test-Provider-Calls"), "1");
+    assert.equal(
+      (await (await call("config")).json()).reason,
+      "qa_replacement_exhausted",
+    );
+    assert.equal(
+      (
+        await db
+          .prepare(
+            "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test'",
+          )
+          .first()
+      ).b,
+      19000000,
+    );
+    assert.equal(
+      (
+        await db
+          .prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1")
+          .first()
+      ).n,
+      4,
+    );
+  } finally {
+    await dispose();
   }
 });

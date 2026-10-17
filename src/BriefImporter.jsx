@@ -23,6 +23,10 @@ const availability = {
     "The owner-only QA window has ended or has not started. Existing prepared briefs can still be recovered.",
   qa_exhausted:
     "All three owner QA attempts have been used. Existing prepared briefs can still be recovered. No additional credits are needed.",
+  qa_replacement_exhausted:
+    "The replacement QA attempt has been used. Recover any existing prepared brief. No additional credits are needed.",
+  qa_grant_unavailable:
+    "The replacement QA permission could not be verified. Your draft and credits are unchanged.",
 };
 const dollars = (micros) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
@@ -294,8 +298,12 @@ export default function BriefImporter({
           )}
           {config?.enabled && config.ownerQA && (
             <p role="status">
-              Owner-only QA · {config.ownerQA.attemptsRemaining} of 3 attempts
-              remaining. Uses existing test credits. Ends{" "}
+              {config.ownerQA.replacement
+                ? "Owner-only replacement QA"
+                : "Owner-only QA"}{" "}
+              · {config.ownerQA.attemptsRemaining} of{" "}
+              {config.ownerQA.attemptLimit || 3} attempts remaining. Uses
+              existing test credits. Ends{" "}
               {new Date(config.ownerQA.expiresAt).toLocaleString()}. Failed
               attempts return credits but still count toward the limit.
             </p>
