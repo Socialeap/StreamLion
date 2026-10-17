@@ -12,6 +12,7 @@ import {
   BRIEF_QA_REPLACEMENT_RESERVATION,
 } from "./brief-qa.js";
 import { briefQALimits } from "./brief-qa-replacement.js";
+import { BriefFailure, briefFailure } from "./brief-failure.js";
 import {
   BRIEF_LIMITS,
   BRIEF_MODEL,
@@ -79,34 +80,76 @@ export async function extractBrief(env, input, fetcher = fetch) {
     },
   });
   if (new TextEncoder().encode(body).byteLength > 65536)
-    throw new Error("request_size");
-  const response = await fetcher("https://api.openai.com/v1/responses", {
-    method: "POST",
-    redirect: "manual",
-    signal,
-    headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body,
-  });
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error("provider_unavailable");
+    throw new BriefFailure("request_size");
+  let response;
+  try {
+    response = await fetcher("https://api.openai.com/v1/responses", {
+      method: "POST",
+      redirect: "manual",
+      signal,
+      headers: {
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body,
+    });
+  } catch (error) {
+    throw new BriefFailure(
+      ["TimeoutError", "AbortError"].includes(error?.name)
+        ? "provider_timeout"
+        : "provider_unavailable",
+    );
   }
-  const data = JSON.parse(
-    await boundedText(response, BRIEF_LIMITS.responseBytes),
-  );
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    const status = response.status;
+    throw new BriefFailure(
+      [401, 403].includes(status)
+        ? "provider_auth"
+        : [400, 404, 422].includes(status)
+          ? "provider_request"
+          : status === 429
+            ? "provider_capacity"
+            : "provider_unavailable",
+      status,
+    );
+  }
+  let data;
+  try {
+    data = JSON.parse(await boundedText(response, BRIEF_LIMITS.responseBytes));
+  } catch (error) {
+    throw new BriefFailure(
+      ["TimeoutError", "AbortError"].includes(error?.name)
+        ? "provider_timeout"
+        : "invalid_response",
+    );
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    throw new BriefFailure("invalid_response");
   if (data.status !== "completed" || data.error || data.incomplete_details)
-    throw new Error("provider_incomplete");
-  const content = (data.output || []).flatMap((item) => item.content || []);
+    throw new BriefFailure("incomplete_result");
+  if (!Array.isArray(data.output)) throw new BriefFailure("invalid_response");
+  const content = data.output.flatMap((item) => item?.content || []);
+  if (
+    content.some(
+      (item) =>
+        !item ||
+        typeof item !== "object" ||
+        (item.type === "output_text" && typeof item.text !== "string"),
+    )
+  )
+    throw new BriefFailure("invalid_response");
   if (content.some((item) => item.type === "refusal"))
-    throw new Error("provider_refusal");
+    throw new BriefFailure("refused");
   const text = content
     .filter((item) => item.type === "output_text")
     .map((item) => item.text)
     .join("");
-  return validateBriefResult(text);
+  try {
+    return validateBriefResult(text);
+  } catch {
+    throw new BriefFailure("invalid_project");
+  }
 }
 
 async function expire(db, mode, subject, now) {
@@ -124,7 +167,7 @@ async function expire(db, mode, subject, now) {
     .bind(mode, subject, now)
     .run();
 }
-async function jobReply(env, row, scope, now) {
+async function jobReply(env, row, scope, now, failure = null) {
   if (row.scope !== scope)
     return reply(
       {
@@ -138,6 +181,7 @@ async function jobReply(env, row, scope, now) {
       state: "failed",
       error:
         "The brief could not be prepared. Reserved credits were returned; your draft is unchanged.",
+      ...failure,
     });
   if (row.state === "pending")
     return reply({ state: "pending", requestId: row.request_id }, 202);
@@ -451,6 +495,7 @@ export async function handleBriefImport(
       );
     }
     const run = async () => {
+      let failure = null;
       try {
         if (qa) {
           const current = briefQAWindow(env);
@@ -477,7 +522,7 @@ export async function handleBriefImport(
             currentSession?.google_subject !== subject ||
             currentSession.workbook_id !== session.workbook_id
           )
-            throw new Error("qa_permission_changed");
+            throw new BriefFailure("qa_permission_changed");
         }
         const project = await extractBrief(env, input, fetcher);
         const encrypted = await seal(
@@ -491,7 +536,8 @@ export async function handleBriefImport(
           )
           .bind(encrypted, mode, subject, input.requestId)
           .run();
-      } catch {
+      } catch (error) {
+        failure = briefFailure(error);
         // Atomic, idempotent refund; no raw source, credentials or provider errors in logs.
         await db
           .prepare(
@@ -500,7 +546,7 @@ export async function handleBriefImport(
           .bind(mode, subject, input.requestId)
           .run();
       }
-      return jobReply(env, await find(input.requestId), scope, now());
+      return jobReply(env, await find(input.requestId), scope, now(), failure);
     };
     const task = run();
     context.waitUntil?.(
