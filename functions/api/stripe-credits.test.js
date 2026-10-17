@@ -89,7 +89,7 @@ function fixture(t) {
     customers = new Map(),
     topups = [],
     detached = [],
-    searches = [];
+    lists = [];
   // Saved-card top-ups: "succeed", "authenticate", "decline", "missing" or "lost".
   const card = { next: "succeed" };
   let creates = 0,
@@ -115,16 +115,16 @@ function fixture(t) {
       return Response.json(prices[path.split("/").at(-1)]);
     if (path.startsWith("/v1/checkout/sessions/"))
       return Response.json(sessions.get(path.split("/").at(-1)));
-    if (path === "/v1/payment_intents/search") {
-      const order = /metadata\['order_id'\]:'([^']+)'/.exec(
-        url.searchParams.get("query"),
-      )?.[1];
-      searches.push(order);
+    if (path === "/v1/payment_intents/search")
+      throw new Error("Search is eventually consistent; never use it here");
+    if (path === "/v1/payment_intents" && (options.method || "GET") === "GET") {
+      const customer = url.searchParams.get("customer");
+      lists.push(customer);
       return Response.json({
-        object: "search_result",
+        object: "list",
         has_more: false,
         data: [...intents.values()].filter(
-          (intent) => intent.metadata?.order_id === order,
+          (intent) => intent.customer === customer,
         ),
       });
     }
@@ -415,7 +415,7 @@ function fixture(t) {
     customers,
     topups,
     detached,
-    searches,
+    lists,
     card,
     creates: () => creates,
     setDispute: (value) => {
@@ -1592,7 +1592,7 @@ test("a top-up that claims an order first keeps a concurrent Checkout from being
   assert.equal(order.checkout_session, null);
 });
 
-test("an unresolved top-up never expires into a second charge; Stripe decides after the hour", async (t) => {
+test("an unresolved top-up never expires into a second charge; a consistent Stripe list decides after the hour", async (t) => {
   const f = await savedCardFixture(t);
   await f.saveCard();
   f.card.next = "lost";
@@ -1607,7 +1607,7 @@ test("an unresolved top-up never expires into a second charge; Stripe decides af
   age();
   f.card.next = "succeed";
   assert.equal((await f.post("topup", { packId: "small" })).credited, true);
-  assert.equal(f.searches.length, 1);
+  assert.deepEqual(f.lists, ["cus_1"]);
   assert.equal(
     (await creditAccount(f.db, "test", "a")).balance_micros,
     35000000,
