@@ -266,6 +266,7 @@ export default function IntakeTemplateSettings({
                       required:
                         REQUIRED_FIELDS.includes(e.target.value) || q.required,
                       options: [],
+                      multiple: undefined,
                       when: undefined,
                     })
                   }
@@ -322,14 +323,30 @@ export default function IntakeTemplateSettings({
                     onChange={(e) =>
                       question(i, { options: e.target.value.split("\n") })
                     }
-                    onBlur={() =>
+                    onBlur={() => {
+                      const options = (q.options || [])
+                        .map((option) => option.trim())
+                        .filter(Boolean);
                       question(i, {
-                        options: (q.options || [])
-                          .map((option) => option.trim())
-                          .filter(Boolean),
+                        options,
+                        ...(options.length ? {} : { multiple: undefined }),
+                      });
+                    }}
+                  />
+                </label>
+              )}
+              {q.options?.some((option) => option.trim()) && (
+                <label className="coord-check">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(q.multiple)}
+                    onChange={(e) =>
+                      question(i, {
+                        multiple: e.target.checked || undefined,
                       })
                     }
                   />
+                  Clients can choose more than one
                 </label>
               )}
             </div>
@@ -377,6 +394,9 @@ export default function IntakeTemplateSettings({
                       >
                         <option value="not_empty">Has an answer</option>
                         <option value="equals">Equals</option>
+                        {q.when.field !== "propertySizeSqFt" && (
+                          <option value="contains">Includes</option>
+                        )}
                         {q.when.field === "propertySizeSqFt" && (
                           <option value="greater_than">Is greater than</option>
                         )}

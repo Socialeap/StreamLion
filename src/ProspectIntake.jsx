@@ -3,7 +3,7 @@ import { budgetAllowed, pricingKey } from "./provider-pricing.js";
 import React, { useState, useRef } from "react";
 import { captureEstimate, estimateMoney } from "./capture-estimate.js";
 import { PROJECT_FIELDS } from "./project-schema.js";
-import { activeIntakeQuestions } from "./intake-templates.js";
+import { activeIntakeQuestions, chosenAnswers } from "./intake-templates.js";
 const fieldKeys = [
   "title",
   "propertySizeSqFt",
@@ -47,6 +47,7 @@ export default function ProspectIntake({
     [propertyType, setPropertyType] = useState(""),
     [complexity, setComplexity] = useState(""),
     [busy, setBusy] = useState(false),
+    [emailLink, setEmailLink] = useState(true),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [verificationUrl, setVerificationUrl] = useState(""),
@@ -143,6 +144,11 @@ export default function ProspectIntake({
             if (descriptor.reusable && !attempt.current)
               attempt.current = {
                 ...body,
+                ...(email.trim() &&
+                !descriptor.verificationRequired &&
+                emailLink
+                  ? { emailLink: true }
+                  : {}),
                 visit: descriptor.visit,
                 operation: crypto.randomUUID(),
                 accessToken: btoa(
@@ -391,6 +397,39 @@ export default function ProspectIntake({
                 maxLength: 6000,
                 onChange: (e) => setFields({ ...fields, [k]: e.target.value }),
               };
+              if (q?.multiple) {
+                const chosen = chosenAnswers(fields[k] || "");
+                return (
+                  <fieldset key={k} className="coord-choices">
+                    <legend>{label}</legend>
+                    {q.help && (
+                      <span className="coord-field-help">{q.help}</span>
+                    )}
+                    {q.options.map((option) => (
+                      <label key={option} className="coord-check">
+                        <input
+                          type="checkbox"
+                          checked={chosen.includes(option)}
+                          disabled={props.disabled}
+                          onChange={(e) =>
+                            setFields({
+                              ...fields,
+                              [k]: q.options
+                                .filter((o) =>
+                                  o === option
+                                    ? e.target.checked
+                                    : chosen.includes(o),
+                                )
+                                .join("\n"),
+                            })
+                          }
+                        />
+                        {option}
+                      </label>
+                    ))}
+                  </fieldset>
+                );
+              }
               return (
                 <label key={k}>
                   {label}
@@ -432,6 +471,19 @@ export default function ProspectIntake({
             />
           </label>
         </div>
+        {descriptor.reusable &&
+          !descriptor.verificationRequired &&
+          email.trim() && (
+            <label className="coord-check">
+              <input
+                type="checkbox"
+                checked={emailLink}
+                disabled={busy || Boolean(attempt.current)}
+                onChange={(e) => setEmailLink(e.target.checked)}
+              />
+              Also email my private status link to this address
+            </label>
+          )}
         <p>
           Your project name can wait until agreement. No work is authorized and
           no payment is due with this request.{" "}
@@ -476,6 +528,8 @@ export default function ProspectIntake({
               Open request status
             </a>
             <p>
+              {receipt.linkEmailed === true &&
+                "We’ve also emailed this link to you. "}
               Save this link to revisit your request. Anyone with this private
               link can access this request. Access expires{" "}
               {new Date(receipt.expiresAt).toLocaleDateString()} unless the

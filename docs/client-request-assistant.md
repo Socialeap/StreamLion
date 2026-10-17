@@ -36,6 +36,33 @@ example the organisation) is moved to just after that answer, so it is never
 skipped. Required template questions offer no skip, except the size,
 which always allows Not sure.
 
+## Template options added later
+
+- **Several answers.** A template question with listed answers can allow
+  more than one (**Clients can choose more than one** in the service template
+  editor). The assistant asks it as a multi-select and the one-page form shows
+  checkboxes; answers are sent one per line in the provider's order, and the
+  server checks every line against the listed answers.
+- **Includes condition.** A question can be shown when another answer
+  **Includes** a value (case-insensitive), for example a dimensions question
+  when the chosen results include "Floor plan". Size keeps its numeric
+  "is greater than" condition.
+- **Email my status link.** On a public form without email confirmation, a
+  client who gives an email can also have the private status link emailed
+  (on by default once an email is entered). It goes only to that request's
+  email, once per request, through the existing notification outbox; if email
+  is unavailable the request still succeeds and the page says to copy the
+  link.
+- **Progress on the status page.** The client and provider project status
+  shows Request sent → Brief agreed → Visit scheduled → Capture complete →
+  Results delivered, from the job's recorded state. The visit counts as
+  scheduled only when the provider has confirmed an appointment time;
+  cancelled, declined and expired requests say so instead.
+
+Templates that use several answers or the Includes condition are rejected by
+servers running earlier code, so roll back only before providers save such a
+template.
+
 ## Field mapping
 
 Every answer becomes a client-editable project field (`CLIENT_FIELDS`), a
@@ -95,8 +122,9 @@ light and dark themes with synthetic API responses.
    authorize merge.
 2. **Migration:** none for the assistant or the welcome line.
 3. **Configuration:** none.
-4. **Server deployment:** only the welcome line needs the Functions from the
-   same commit (the shared branding validator). Until then a saved welcome line
+4. **Server deployment:** the welcome line, several-answer and Includes
+   template options and the emailed status link need the Functions from the
+   same commit (shared validators and the public submit action). Until then a saved welcome line
    is ignored and clients see the standard greeting.
 5. **Frontend deployment:** the assistant ships with the client portal assets
    through the normal Pages pipeline; use the normal PWA update.

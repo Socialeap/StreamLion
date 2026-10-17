@@ -277,3 +277,82 @@ test("proposals cannot remove required answers or bypass choices after agreement
   );
   assert.equal(job.accepted.notes, "Documentation");
 });
+
+test("templates can offer several answers and show questions when an answer includes a choice", async () => {
+  const { questionApplies, validateIntakeAnswers, pinIntakeTemplate } =
+    await import("./intake-templates.js");
+  const config = {
+    name: "Package",
+    questions: [
+      {
+        field: "deliverables",
+        label: "Which results?",
+        required: true,
+        options: ["3D tour", "Floor plan", "Photos"],
+        multiple: true,
+      },
+      {
+        field: "exclusions",
+        label: "Rooms needing exact dimensions?",
+        required: false,
+        when: { field: "deliverables", op: "contains", value: "floor plan" },
+      },
+    ],
+  };
+  const checked = validateIntakeConfig(config);
+  assert.equal(checked.questions[0].multiple, true);
+  assert.deepEqual(checked.questions[1].when, {
+    field: "deliverables",
+    op: "contains",
+    value: "floor plan",
+  });
+  // A template without the option keeps its saved shape.
+  assert.equal(
+    Object.hasOwn(
+      validateIntakeConfig(INTAKE_PRESETS[0]).questions[0],
+      "multiple",
+    ),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(
+      validateIntakeConfig({
+        ...config,
+        questions: [{ ...config.questions[0], multiple: false }],
+      }).questions[0],
+      "multiple",
+    ),
+    false,
+  );
+  assert.equal(pinIntakeTemplate(template(config)).questions[0].multiple, true);
+  const when = checked.questions[1];
+  assert.equal(
+    questionApplies(when, { deliverables: "3D tour\nFloor plan" }),
+    true,
+  );
+  assert.equal(questionApplies(when, { deliverables: "3D tour" }), false);
+  const job = { intake: checked };
+  validateIntakeAnswers(job, { deliverables: "3D tour\nPhotos" });
+  assert.throws(
+    () => validateIntakeAnswers(job, { deliverables: "3D tour\nDrone" }),
+    /listed answers/,
+  );
+  assert.throws(
+    () =>
+      validateIntakeConfig({
+        name: "Bad",
+        questions: [
+          { field: "scope", label: "Scope", required: true, multiple: true },
+        ],
+      }),
+    /List the answer choices/,
+  );
+  assert.throws(
+    () =>
+      validateIntakeConfig({
+        ...config,
+        questions: [{ ...config.questions[0], multiple: "yes" }],
+      }),
+    /several answers/,
+  );
+});

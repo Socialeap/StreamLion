@@ -244,6 +244,30 @@ export function requestSteps(descriptor) {
   function templateChoice(id, field, base) {
     const q = asked(field);
     const options = q.options.map((label) => ({ id: label, label }));
+    // Several answers: chosen in the provider's order, one per line on send.
+    if (q.multiple)
+      return {
+        ...base,
+        id,
+        kind: "multi",
+        field,
+        optional: q.required ? undefined : "Not sure yet",
+        prompt: () => ({
+          text: q.label,
+          hint: q.help || "Pick everything that applies.",
+        }),
+        options: () => options,
+        validate: (value) => {
+          if (
+            !Array.isArray(value) ||
+            value.some((choice) => !q.options.includes(choice)) ||
+            (q.required && !value.length)
+          )
+            fail(`Choose from the listed answers for ${q.label}.`);
+          return q.options.filter((choice) => value.includes(choice));
+        },
+        summary: (value) => (value.length ? value : "Not sure yet"),
+      };
     if (!q.required) options.push({ id: "", label: "Not sure yet" });
     return {
       ...base,
@@ -1058,7 +1082,24 @@ export function availabilityLines(value) {
 }
 
 // The project fields this request sends, from the answers that still apply.
-export function requestFields(descriptor, answers) {
+// Steps that ask a template field with listed answers, by that field.
+const CHOICE_STEPS = {
+  title: "title",
+  scope: "scope",
+  deliverables: "deliverables",
+  accessInstructions: "access",
+  proposedTimes: "times",
+  deliveryDeadline: "deadline",
+  notes: "notes",
+};
+export function requestFields(descriptor, given) {
+  // Several chosen answers to a template question are sent one per line.
+  const answers = { ...given };
+  for (const q of descriptor.intake?.questions || []) {
+    const id = CHOICE_STEPS[q.field] || `q:${q.field}`;
+    if (q.multiple && q.options?.length && Array.isArray(answers[id]))
+      answers[id] = answers[id].join("\n");
+  }
   const fields = {};
   const set = (key, value) => {
     if (typeof value === "string" && value.trim()) fields[key] = value.trim();

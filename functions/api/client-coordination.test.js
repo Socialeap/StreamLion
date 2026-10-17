@@ -4621,3 +4621,31 @@ test("a retried share link keeps its identity only with the same per-client budg
     true,
   );
 });
+test("a public request can email its status link once, only to the address given", async (t) => {
+  const f = await publicFixture(t);
+  const plain = await f.submit(publicBody(f, "no-link", "client@example.com"));
+  assert.equal(Object.hasOwn(plain, "linkEmailed"), false);
+  const body = {
+    ...publicBody(f, "with-link", "client@example.com"),
+    emailLink: true,
+  };
+  const receipt = await f.submit(body);
+  assert.equal(receipt.linkEmailed, true);
+  await f.submit(body);
+  const notices = f.sql
+    .prepare(
+      "SELECT * FROM streamlion_coordination_outbox_v1 WHERE id LIKE 'public-link-%'",
+    )
+    .all();
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].id, "public-link-" + receipt.jobId);
+  const mail = await unseal(f.env, notices[0].payload, "mail:" + notices[0].id);
+  assert.equal(mail.to, "client@example.com");
+  assert.equal(mail.url, receipt.url);
+  // Without an email there is nothing to send.
+  const none = await f.submit({
+    ...publicBody(f, "no-email"),
+    emailLink: true,
+  });
+  assert.equal(Object.hasOwn(none, "linkEmailed"), false);
+});

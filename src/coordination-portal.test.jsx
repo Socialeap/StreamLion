@@ -1797,3 +1797,58 @@ test("pricing set per client asks on each share link whether that client may pro
     null,
   );
 });
+test("providers can allow several answers and show a question when an answer includes a choice", async (t) => {
+  t.after(cleanup);
+  const saved = [];
+  const ui = render(
+    <TemplateSettings
+      templates={[]}
+      busy={false}
+      save={async (body) => {
+        saved.push(body);
+        return { complete: true };
+      }}
+    />,
+  );
+  fireEvent.click(ui.getByText("Services & intake templates"));
+  fireEvent.change(ui.getByLabelText("Service name"), {
+    target: { value: "Packages" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Add service question" }));
+  const first = ui.getByRole("group", { name: "Question 1" });
+  fireEvent.change(within(first).getByLabelText("Work-order field"), {
+    target: { value: "deliverables" },
+  });
+  const choices = within(first).getByLabelText(/Answer choices/);
+  fireEvent.change(choices, { target: { value: "3D tour\nFloor plan" } });
+  fireEvent.blur(choices);
+  fireEvent.click(
+    within(first).getByRole("checkbox", {
+      name: "Clients can choose more than one",
+    }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Add service question" }));
+  const second = ui.getByRole("group", { name: "Question 2" });
+  fireEvent.change(within(second).getByLabelText("Work-order field"), {
+    target: { value: "exclusions" },
+  });
+  fireEvent.change(within(second).getByLabelText("Show this question"), {
+    target: { value: "deliverables" },
+  });
+  fireEvent.change(within(second).getByLabelText("Condition"), {
+    target: { value: "contains" },
+  });
+  fireEvent.change(within(second).getByLabelText("Comparison value"), {
+    target: { value: "Floor plan" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Save service template" }));
+  await waitFor(() => assert.equal(saved.length, 1));
+  const [one, two] = saved[0].config.questions;
+  assert.equal(one.multiple, true);
+  assert.deepEqual(one.options, ["3D tour", "Floor plan"]);
+  assert.deepEqual(two.when, {
+    field: "deliverables",
+    op: "contains",
+    value: "Floor plan",
+  });
+});

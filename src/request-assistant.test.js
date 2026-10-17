@@ -515,3 +515,55 @@ test("a template question waits for the later answer its condition reads", () =>
   assert.equal(fields.deliveryDestination, "Our DAM");
   assert.equal(fields.exclusions, "Staff area");
 });
+
+test("a multi-choice template question sends one answer per line and drives an includes condition", () => {
+  const d = descriptor({
+    intake: {
+      id: "intake-multi",
+      version: 1,
+      name: "Multi",
+      description: "",
+      questions: [
+        {
+          field: "deliverables",
+          label: "Which results?",
+          help: "",
+          required: true,
+          options: ["3D tour", "Floor plan", "Photos"],
+          multiple: true,
+        },
+        {
+          field: "exclusions",
+          label: "Rooms needing exact dimensions?",
+          help: "",
+          required: false,
+          when: { field: "deliverables", op: "contains", value: "floor plan" },
+        },
+      ],
+    },
+  });
+  const start = run(d, everything.slice(0, 8));
+  const step = start.walked.current;
+  assert.equal(step.id, "deliverables");
+  assert.equal(step.kind, "multi");
+  assert.equal(step.optional, undefined);
+  assert.throws(
+    () => start.flow.answerStep(start.state, "deliverables", [], {}),
+    /Choose from the listed answers/,
+  );
+  let state = start.flow.answerStep(
+    start.state,
+    "deliverables",
+    ["Photos", "Floor plan"],
+    {},
+  );
+  assert.equal(start.flow.walk(state, {}).current.id, "q:exclusions");
+  state = start.flow.answerStep(state, "q:exclusions", "Kitchen", {});
+  const fields = requestFields(d, start.flow.walk(state, {}).answers);
+  assert.equal(fields.deliverables, "Floor plan\nPhotos");
+  validateIntakeAnswers({ intake: d.intake }, fields);
+  // Without the floor plan the follow-up question no longer applies.
+  state = start.flow.editStep(state, "deliverables");
+  state = start.flow.answerStep(state, "deliverables", ["3D tour"], {});
+  assert.notEqual(start.flow.walk(state, {}).current?.id, "q:exclusions");
+});

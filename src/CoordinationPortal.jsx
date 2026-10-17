@@ -12,6 +12,7 @@ import IntakeTemplateSettings from "./IntakeTemplateSettings.jsx";
 import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
 import ProspectIntake from "./ProspectIntake.jsx";
 import RequestAssistant from "./RequestAssistant.jsx";
+import { jobMilestones } from "./job-progress.js";
 import { assistantSupported } from "./request-assistant.js";
 import RequestProgress from "./RequestProgress.jsx";
 import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
@@ -20,6 +21,7 @@ import {
   ArchiveRestore,
   Bell,
   BookOpen,
+  Check,
   ClipboardList,
   FileCheck2,
   FileText,
@@ -1738,6 +1740,33 @@ export default function CoordinationPortal({
     </div>
   );
 }
+function JobProgress({ job }) {
+  const { stopped, steps } = jobMilestones(job);
+  if (stopped) return <p className="coord-progress-stopped">{stopped}</p>;
+  if (!steps.length) return null;
+  return (
+    <ol className="coord-progress" aria-label="Project progress">
+      {steps.map((step) => (
+        <li key={step.label} className={`is-${step.state}`}>
+          <span className="coord-progress-mark" aria-hidden="true">
+            {step.state === "done" ? <Check size={14} /> : null}
+          </span>
+          <span>
+            <strong>{step.label}</strong>
+            <span className="sr-only">
+              {step.state === "done"
+                ? " · done"
+                : step.state === "current"
+                  ? " · next up"
+                  : ""}
+            </span>
+            {step.detail && <small>{step.detail}</small>}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 function RequestGuide() {
   return (
     <ol className="coord-request-guide">
@@ -2677,6 +2706,7 @@ function JobPanel({
         aria-label="Progress"
       >
         <h2>Project status</h2>
+        <JobProgress job={job} />
         <p>{states[job.state]}</p>
         {client && (
           <div className="coord-notice">
