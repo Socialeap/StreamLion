@@ -40,6 +40,7 @@ async function runtimeFixture({ replacement = false } = {}) {
             fetcher: async (url, init) => {
               calls++;
               if (JSON.parse(init.body).input[0].content.includes('synthetic provider failure')) return new Response('', {status: 503});
+              if (JSON.parse(init.body).input[0].content.includes('synthetic invalid project')) return Response.json({status:'completed', output:[{content:[{type:'output_text',text:${JSON.stringify(JSON.stringify({ ...project, fields: { ...project.fields, propertySizeSqFt: "9,200 sq ft" } }))}}]}]});
               return Response.json({status: 'completed', output: [{type:'message', content:[{type:'output_text', text:${JSON.stringify(JSON.stringify(project))}}]}]});
             }
           });
@@ -214,6 +215,48 @@ test("owner brief preparation completes and refunds correctly with real D1 trigg
     );
     const after = await (await call("config")).json();
     assert.equal(after.ownerQA.attemptsRemaining, 1);
+  } finally {
+    await dispose();
+  }
+});
+
+test("real D1 retains a refunded invalid-result attempt and does not replay inference", async () => {
+  const { call, db, dispose } = await runtimeFixture({ replacement: true });
+  try {
+    const quote = await (await call("config")).json();
+    const input = {
+      requestId: "44444444-4444-4444-8444-444444444444",
+      scope: quote.scope,
+      quoteKey: quote.quoteKey,
+      priceMicros: quote.priceMicros,
+      text: "synthetic invalid project",
+      sourceName: "Pasted text",
+    };
+    const response = await call("prepare", input);
+    const value = await response.json();
+    assert.equal(value.state, "failed");
+    assert.equal(value.errorCode, "invalid_project");
+    assert.match(value.reference, /^[0-9a-f-]{36}$/);
+    assert.equal(response.headers.get("X-Test-Provider-Calls"), "1");
+    const repeat = await call("prepare", input);
+    assert.equal((await repeat.json()).state, "failed");
+    assert.equal(repeat.headers.get("X-Test-Provider-Calls"), "1");
+    assert.equal(
+      (await (await call("config")).json()).reason,
+      "qa_replacement_exhausted",
+    );
+    const wallet = await db
+      .prepare(
+        "SELECT balance_micros FROM streamlion_credit_wallets_v1 WHERE mode='test' AND google_subject='a'",
+      )
+      .first();
+    assert.equal(wallet.balance_micros, 19000000);
+    const jobs = await db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_brief_jobs_v1 WHERE state='failed' AND result IS NULL",
+      )
+      .first();
+    assert.equal(jobs.n, 4);
   } finally {
     await dispose();
   }
