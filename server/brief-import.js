@@ -4,6 +4,13 @@ import { sharedWallet } from "./shared-credits.js";
 import { base64urlBytes } from "./base64.js";
 import { boundedText } from "./request-body.js";
 import {
+  BRIEF_QA,
+  briefQAWindow,
+  briefQAPolicy,
+  briefQACapacity,
+  BRIEF_QA_RESERVATION,
+} from "./brief-qa.js";
+import {
   BRIEF_LIMITS,
   BRIEF_MODEL,
   BRIEF_SCHEMA,
@@ -44,6 +51,33 @@ const jobContext = (mode, subject, id) =>
 export async function extractBrief(env, input, fetcher = fetch) {
   // One request, no automatic inference retries and no paid tools/file storage.
   const signal = AbortSignal.timeout(BRIEF_LIMITS.timeoutMs);
+  const body = JSON.stringify({
+    model: BRIEF_MODEL,
+    service_tier: "default",
+    store: false,
+    reasoning: { effort: "none" },
+    max_output_tokens: BRIEF_LIMITS.outputTokens,
+    instructions: BRIEF_INSTRUCTIONS,
+    input: [
+      {
+        role: "user",
+        content: JSON.stringify({
+          source: input.sourceName,
+          brief: input.text,
+        }),
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "streamlion_project",
+        strict: true,
+        schema: BRIEF_SCHEMA,
+      },
+    },
+  });
+  if (new TextEncoder().encode(body).byteLength > 65536)
+    throw new Error("request_size");
   const response = await fetcher("https://api.openai.com/v1/responses", {
     method: "POST",
     redirect: "manual",
@@ -52,30 +86,7 @@ export async function extractBrief(env, input, fetcher = fetch) {
       Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: BRIEF_MODEL,
-      store: false,
-      reasoning: { effort: "none" },
-      max_output_tokens: BRIEF_LIMITS.outputTokens,
-      instructions: BRIEF_INSTRUCTIONS,
-      input: [
-        {
-          role: "user",
-          content: JSON.stringify({
-            source: input.sourceName,
-            brief: input.text,
-          }),
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "streamlion_project",
-          strict: true,
-          schema: BRIEF_SCHEMA,
-        },
-      },
-    }),
+    body,
   });
   if (!response.ok) {
     await response.body?.cancel();
@@ -167,7 +178,8 @@ export async function handleBriefImport(
   )
     return reply({ error: "Open StreamLion to continue." }, 403);
   // Recovery remains available after pausing the feature; new calls stay closed.
-  if (!result && !approved(env))
+  const window = briefQAWindow(env);
+  if (!result && !approved(env) && !window)
     return config
       ? reply({ enabled: false, reason: "not_open" })
       : reply(
@@ -192,6 +204,24 @@ export async function handleBriefImport(
     const subject = session.google_subject,
       db = env.GOOGLE_SESSIONS,
       timestamp = now();
+    const qa = !result && !approved(env);
+    if (qa && window.subject !== subject)
+      return config
+        ? reply({ enabled: false, reason: "not_open" })
+        : reply(
+            { error: "Brief QA is restricted to its approved owner." },
+            403,
+          );
+    if (qa && (timestamp < window.start || timestamp >= window.until))
+      return config
+        ? reply({ enabled: false, reason: "qa_expired" })
+        : reply(
+            {
+              error:
+                "The owner QA window is not active. Recover any existing brief.",
+            },
+            403,
+          );
     const scope = await hash(
       JSON.stringify([
         "brief-scope-v1",
@@ -233,15 +263,29 @@ export async function handleBriefImport(
     if (
       !policy?.active ||
       policy.reserve_micros < 100000 ||
-      policy.price_micros < policy.reserve_micros
+      policy.price_micros < policy.reserve_micros ||
+      (qa && !briefQAPolicy(policy))
     )
       return config
         ? reply({ enabled: false, reason: "not_open" })
         : reply({ error: "Brief preparation is paused." }, 503);
     const quoteKey = await hash(
-      JSON.stringify([BRIEF_MODEL, BRIEF_LIMITS, policy]),
+      JSON.stringify([
+        BRIEF_MODEL,
+        BRIEF_LIMITS,
+        policy,
+        ...(qa ? [window.start, window.until] : []),
+      ]),
     );
     const funding = await sharedWallet(db, mode, subject);
+    const capacity = qa ? await briefQACapacity(db) : null;
+    if (config && qa && !capacity.available)
+      return reply({ enabled: false, reason: "qa_exhausted" });
+    const canPrepare =
+      !funding.hold &&
+      funding.available >= policy.price_micros &&
+      (!qa ||
+        (funding.promotional === 0 && funding.purchased >= BRIEF_QA.price));
     if (config)
       return reply({
         enabled: true,
@@ -249,8 +293,16 @@ export async function handleBriefImport(
         quoteKey,
         priceMicros: policy.price_micros,
         balanceMicros: funding.available,
-        canPrepare: !funding.hold && funding.available >= policy.price_micros,
+        canPrepare,
         maxCharacters: BRIEF_LIMITS.characters,
+        ...(qa
+          ? {
+              ownerQA: {
+                attemptsRemaining: capacity.remaining,
+                expiresAt: window.expiresAt,
+              },
+            }
+          : {}),
       });
     if (!request.headers.get("Content-Type")?.startsWith("application/json"))
       return reply({ error: "Use JSON." }, 415);
@@ -295,6 +347,24 @@ export async function handleBriefImport(
         );
       return jobReply(env, prior, scope, timestamp);
     }
+    // Recovery of the same request does not require unused budget or funds.
+    // Only a genuinely new reservation is blocked by exhaustion.
+    if (qa && !capacity.available)
+      return reply(
+        {
+          error:
+            "The three-attempt owner QA budget is exhausted. Recover any existing brief.",
+        },
+        429,
+      );
+    if (qa && !canPrepare)
+      return reply(
+        {
+          error:
+            "Owner QA requires the approved existing test-wallet funding. No credits were charged.",
+        },
+        429,
+      );
     if (
       input.quoteKey !== quoteKey ||
       input.priceMicros !== policy.price_micros
@@ -311,7 +381,8 @@ export async function handleBriefImport(
         .prepare(
           `INSERT INTO streamlion_brief_jobs_v1(mode,google_subject,request_id,scope,input_hash,quote_key,price_micros,reserve_micros,promotional,purchased,created_at,expires_at)
         SELECT ?,?,?,?,?,?,p.price_micros,p.reserve_micros,MIN(p.price_micros,COALESCE(w.balance_micros,0)),p.price_micros-MIN(p.price_micros,COALESCE(w.balance_micros,0)),?,?
-        FROM streamlion_brief_policy_v1 p LEFT JOIN streamlion_promotional_wallets_v1 w ON w.mode=p.mode AND w.google_subject=? WHERE p.mode=? AND p.price_micros=? AND p.reserve_micros=?`,
+        FROM streamlion_brief_policy_v1 p LEFT JOIN streamlion_promotional_wallets_v1 w ON w.mode=p.mode AND w.google_subject=? WHERE p.mode=? AND p.price_micros=? AND p.reserve_micros=?` +
+            (qa ? BRIEF_QA_RESERVATION : ""),
         )
         .bind(
           mode,
@@ -343,6 +414,29 @@ export async function handleBriefImport(
     }
     const run = async () => {
       try {
+        if (qa) {
+          const current = briefQAWindow(env);
+          const currentPolicy = await db
+            .prepare(
+              "SELECT * FROM streamlion_brief_policy_v1 WHERE mode='test'",
+            )
+            .first();
+          const currentSession = await getSession(request, env);
+          const licensed = await hasPurchase(env, subject);
+          if (
+            !current ||
+            current.subject !== subject ||
+            current.start !== window.start ||
+            current.until !== window.until ||
+            now() < current.start ||
+            now() >= current.until ||
+            !briefQAPolicy(currentPolicy) ||
+            !licensed ||
+            currentSession?.google_subject !== subject ||
+            currentSession.workbook_id !== session.workbook_id
+          )
+            throw new Error("qa_permission_changed");
+        }
         const project = await extractBrief(env, input, fetcher);
         const encrypted = await seal(
           env,

@@ -19,6 +19,10 @@ const availability = {
     "A StreamLion license is required to prepare briefs with credits.",
   unavailable:
     "Availability could not be checked. Your draft and credits are unchanged.",
+  qa_expired:
+    "The owner-only QA window has ended or has not started. Existing prepared briefs can still be recovered.",
+  qa_exhausted:
+    "All three owner QA attempts have been used. Existing prepared briefs can still be recovered. No additional credits are needed.",
 };
 const dollars = (micros) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
@@ -279,7 +283,21 @@ export default function BriefImporter({
               credits. {creditLabel(config.balanceMicros)} available.
             </p>
           )}
-          {config?.enabled && !config.canPrepare && (
+          {config?.enabled && config.ownerQA && (
+            <p role="status">
+              Owner-only QA · {config.ownerQA.attemptsRemaining} of 3 attempts
+              remaining. Uses existing test credits. Ends{" "}
+              {new Date(config.ownerQA.expiresAt).toLocaleString()}. Failed
+              attempts return credits but still count toward the limit.
+            </p>
+          )}
+          {config?.enabled && !config.canPrepare && config.ownerQA && (
+            <p role="status">
+              Owner QA funding is unavailable. Check the approved test wallet;
+              do not buy or transfer credits.
+            </p>
+          )}
+          {config?.enabled && !config.canPrepare && !config.ownerQA && (
             <p>
               Add credits before preparing a brief.{" "}
               <a href="/api/credits">View credits</a>.

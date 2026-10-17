@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { hash } from "../../server/google-auth.js";
-import { handleBriefImport } from "../../server/brief-import.js";
+import { handleBriefImport, extractBrief } from "../../server/brief-import.js";
 import { intakeFor } from "../../src/project-schema.js";
 import { BRIEF_LIMITS, BRIEF_MODEL } from "../../src/brief-import-contract.js";
 import { purgeBriefState } from "../../ops/session-cleanup.js";
@@ -124,6 +124,7 @@ async function fixture(t, { migration = true } = {}) {
     const data = JSON.parse(options.body);
     assert.equal(data.model, BRIEF_MODEL);
     assert.equal(data.store, false);
+    assert.equal(data.service_tier, "default");
     assert.equal(data.text.format.strict, true);
     assert.equal(data.max_output_tokens, BRIEF_LIMITS.outputTokens);
     assert.equal(data.tools, undefined);
@@ -230,6 +231,353 @@ test("migration is additive and inactive; missing migration or any disabled appr
   }
   assert.equal(f.calls(), 0);
   assert.equal(f.balance(), 1050000);
+});
+
+function ownerQA(f) {
+  Object.assign(f.env, {
+    ENABLE_BRIEF_IMPORT: "false",
+    STREAMLION_BRIEF_IMPORT_COST_APPROVED: "false",
+    STREAMLION_PAYMENTS_MODE: "test",
+    STREAMLION_LIVE_PAYMENTS_APPROVED: "false",
+    STREAMLION_CHECKOUT_MODE: "owner_qa",
+    STREAMLION_BRIEF_IMPORT_QA_ENABLED: "true",
+    STREAMLION_BRIEF_IMPORT_QA_COST_APPROVED: "true",
+    STREAMLION_BRIEF_IMPORT_QA_SUBJECT: "a",
+    STREAMLION_BRIEF_IMPORT_QA_START: new Date(f.now()).toISOString(),
+    STREAMLION_BRIEF_IMPORT_QA_UNTIL: new Date(
+      f.now() + 86400000,
+    ).toISOString(),
+  });
+  f.sql
+    .exec(`INSERT INTO streamlion_credit_wallets_v1 VALUES('test','a',19000000);
+    INSERT INTO streamlion_promotional_wallets_v1 VALUES('test','a',0);
+    UPDATE streamlion_purchases_v1 SET mode='test' WHERE google_subject='a';
+    UPDATE streamlion_brief_policy_v1 SET active=1,price_micros=100000,reserve_micros=100000,
+      daily_budget_micros=300000,total_budget_micros=300000,daily_requests=3 WHERE mode='test'`);
+}
+const qaId = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+test("owner QA uses only existing test credits and preserves live wallets and pilot settings", async (t) => {
+  const f = await fixture(t);
+  ownerQA(f);
+  const modes = { ...f.env };
+  const liveBalance = f.balance();
+  const quote = await (await f.call()).json();
+  assert.equal(quote.enabled, true);
+  assert.equal(quote.priceMicros, 100000);
+  assert.equal(quote.ownerQA.attemptsRemaining, 3);
+  assert.equal(quote.ownerQA.expiresAt, f.env.STREAMLION_BRIEF_IMPORT_QA_UNTIL);
+  const input = await f.input();
+  assert.equal(
+    (await (await f.call("prepare", input)).json()).state,
+    "complete",
+  );
+  const row = f.sql.prepare("SELECT * FROM streamlion_brief_jobs_v1").get();
+  assert.equal(row.mode, "test");
+  assert.equal(row.promotional, 0);
+  assert.equal(row.purchased, 100000);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test'",
+      )
+      .get().b,
+    18900000,
+  );
+  assert.equal(f.balance(), liveBalance);
+  assert.deepEqual(f.env, modes);
+  assert.equal(
+    (await (await f.call("prepare", input)).json()).state,
+    "complete",
+  );
+  assert.equal(f.calls(), 1);
+});
+
+test("owner QA rejects anonymous, other subjects and spoofed owner identity without reservations", async (t) => {
+  const f = await fixture(t);
+  ownerQA(f);
+  const input = await f.input();
+  for (const options of [
+    { subject: "b" },
+    { headers: { Cookie: "" } },
+    {
+      subject: "b",
+      headers: { "X-StreamLion-Account": "a", "X-Google-Subject": "a" },
+    },
+  ]) {
+    assert.equal(
+      (await (await f.call("config", null, options)).json()).enabled,
+      false,
+    );
+    assert(
+      [401, 403].includes(
+        (
+          await f.call(
+            "prepare",
+            { ...input, google_subject: "a", owner_qa: true },
+            options,
+          )
+        ).status,
+      ),
+    );
+  }
+  assert.equal(f.calls(), 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
+    0,
+  );
+});
+
+test("missing or malformed owner QA configuration and mismatched test policy fail closed", async (t) => {
+  const f = await fixture(t);
+  ownerQA(f);
+  const input = await f.input();
+  for (const [key, value] of [
+    ["STREAMLION_BRIEF_IMPORT_QA_ENABLED", "false"],
+    ["STREAMLION_BRIEF_IMPORT_QA_COST_APPROVED", undefined],
+    ["STREAMLION_BRIEF_IMPORT_QA_SUBJECT", "*"],
+    ["STREAMLION_BRIEF_IMPORT_QA_SUBJECT", "a@example.test"],
+    ["STREAMLION_BRIEF_IMPORT_QA_SUBJECT", '["a","b"]'],
+    ["STREAMLION_BRIEF_IMPORT_QA_START", "invalid"],
+    [
+      "STREAMLION_BRIEF_IMPORT_QA_UNTIL",
+      new Date(f.now() + 86400001).toISOString(),
+    ],
+    ["STREAMLION_PAYMENTS_MODE", "live"],
+    ["OPENAI_API_KEY", ""],
+  ]) {
+    const old = f.env[key];
+    f.env[key] = value;
+    assert.equal((await (await f.call()).json()).enabled, false, key);
+    assert.equal((await f.call("prepare", input)).status, 503, key);
+    f.env[key] = old;
+  }
+  for (const field of [
+    "price_micros",
+    "reserve_micros",
+    "daily_budget_micros",
+    "total_budget_micros",
+    "daily_requests",
+  ]) {
+    const old = f.sql
+      .prepare(
+        `SELECT ${field} v FROM streamlion_brief_policy_v1 WHERE mode='test'`,
+      )
+      .get().v;
+    f.sql.exec(
+      `UPDATE streamlion_brief_policy_v1 SET ${field}=${old * 2} WHERE mode='test'`,
+    );
+    assert.equal((await (await f.call()).json()).enabled, false, field);
+    assert.equal((await f.call("prepare", input)).status, 503, field);
+    f.sql.exec(
+      `UPDATE streamlion_brief_policy_v1 SET ${field}=${old} WHERE mode='test'`,
+    );
+  }
+  assert.equal(f.calls(), 0);
+});
+
+test("owner QA expiry blocks new work but retains authenticated recovery", async (t) => {
+  const f = await fixture(t);
+  ownerQA(f);
+  const input = await f.input();
+  f.advance(3600000);
+  await f.call("prepare", input);
+  f.advance(23 * 3600000);
+  assert.equal((await (await f.call()).json()).reason, "qa_expired");
+  assert.equal(
+    (await f.call("prepare", { ...input, requestId: otherId })).status,
+    403,
+  );
+  assert.equal(
+    (await (await f.call("result?id=" + id)).json()).state,
+    "complete",
+  );
+  assert.equal(f.calls(), 1);
+});
+
+test("three attempts including failures exhaust lifetime QA budget across midnight and expiry changes", async (t) => {
+  const f = await fixture(t);
+  f.advance(86400000 - (f.now() % 86400000) - 60000);
+  ownerQA(f);
+  const originalQuote = await f.input();
+  let calls = 0;
+  const fetcher = async () => {
+    calls++;
+    throw new DOMException("Timeout", "TimeoutError");
+  };
+  for (let n = 1; n <= 3; n++) {
+    const input = await f.input(qaId(n));
+    assert.equal(
+      (await (await f.call("prepare", input, { fetcher })).json()).state,
+      "failed",
+    );
+    f.advance(3600000);
+  }
+  assert.equal((await (await f.call()).json()).reason, "qa_exhausted");
+  assert.equal(
+    (await f.call("prepare", { ...originalQuote, requestId: otherId })).status,
+    429,
+  );
+  f.env.STREAMLION_BRIEF_IMPORT_QA_START = new Date(f.now()).toISOString();
+  f.env.STREAMLION_BRIEF_IMPORT_QA_UNTIL = new Date(
+    f.now() + 86400000,
+  ).toISOString();
+  assert.equal((await (await f.call()).json()).reason, "qa_exhausted");
+  assert.equal(calls, 3);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test'",
+      )
+      .get().b,
+    19000000,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT SUM(reserve_micros) n FROM streamlion_brief_jobs_v1")
+      .get().n,
+    300000,
+  );
+});
+
+test("owner QA cannot consume unexpected promotional funds or bypass a revoked test license", async (t) => {
+  const f = await fixture(t);
+  ownerQA(f);
+  const input = await f.input();
+  f.sql.exec(
+    "UPDATE streamlion_promotional_wallets_v1 SET balance_micros=100000 WHERE mode='test'",
+  );
+  assert.equal((await (await f.call()).json()).canPrepare, false);
+  assert.equal((await f.call("prepare", input)).status, 429);
+  f.sql.exec(
+    "UPDATE streamlion_promotional_wallets_v1 SET balance_micros=0 WHERE mode='test'; UPDATE streamlion_purchases_v1 SET status='refunded' WHERE mode='test'",
+  );
+  assert.equal((await f.call("prepare", input)).status, 402);
+  assert.equal(f.calls(), 0);
+});
+
+test("model request is bounded and cannot inherit a premium processing tier", async (t) => {
+  let calls = 0;
+  await assert.rejects(
+    extractBrief(
+      { OPENAI_API_KEY: "mock-only" },
+      { text: "x".repeat(70000), sourceName: "brief" },
+      async () => {
+        calls++;
+        return output();
+      },
+    ),
+    /request_size/,
+  );
+  assert.equal(calls, 0);
+});
+
+test("QA checks exact policy atomically and cannot grow its approved budget during reservation", async (t) => {
+  const f = await fixture(t);
+  ownerQA(f);
+  const input = await f.input();
+  const original = f.db.prepare;
+  f.db.prepare = (query) => {
+    if (query.startsWith("INSERT INTO streamlion_brief_jobs"))
+      f.sql.exec(
+        "UPDATE streamlion_brief_policy_v1 SET daily_budget_micros=600000,total_budget_micros=600000,daily_requests=6 WHERE mode='test'",
+      );
+    return original(query);
+  };
+  assert.equal((await f.call("prepare", input)).status, 429);
+  assert.equal(f.calls(), 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
+    0,
+  );
+});
+
+test("QA expiry or revocation after reservation refunds without invoking the provider", async (t) => {
+  for (const change of ["expire", "revoke", "workbook"])
+    await t.test(change, async (t) => {
+      const f = await fixture(t);
+      ownerQA(f);
+      const input = await f.input();
+      const original = f.db.prepare;
+      f.db.prepare = (query) => {
+        if (query.startsWith("INSERT INTO streamlion_brief_jobs")) {
+          if (change === "expire") f.advance(86400000);
+          if (change === "revoke")
+            f.env.STREAMLION_BRIEF_IMPORT_QA_ENABLED = "false";
+          if (change === "workbook")
+            f.sql.exec(
+              "UPDATE streamlion_google_sessions_v1 SET workbook_id='changed' WHERE google_subject='a'",
+            );
+        }
+        return original(query);
+      };
+      assert.equal(
+        (await (await f.call("prepare", input)).json()).state,
+        "failed",
+      );
+      assert.equal(f.calls(), 0);
+      assert.equal(
+        f.sql
+          .prepare(
+            "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test'",
+          )
+          .get().b,
+        19000000,
+      );
+      assert.equal(
+        f.sql
+          .prepare("SELECT SUM(reserve_micros) n FROM streamlion_brief_jobs_v1")
+          .get().n,
+        100000,
+      );
+    });
+});
+
+test("concurrent final QA attempts cannot exceed three; pending and completed results recover at exhaustion", async (t) => {
+  const f = await fixture(t);
+  ownerQA(f);
+  for (let n = 1; n <= 2; n++) await f.call("prepare", await f.input(qaId(n)));
+  const input = await f.input(qaId(3));
+  let release,
+    started,
+    calls = 0;
+  const ready = new Promise((r) => (started = r)),
+    hold = new Promise((r) => (release = r));
+  const fetcher = async () => {
+    calls++;
+    started();
+    await hold;
+    return output();
+  };
+  const first = f.call("prepare", input, { fetcher });
+  await ready;
+  assert.equal((await f.call("prepare", input, { fetcher })).status, 202);
+  assert.equal(
+    (await f.call("prepare", { ...input, requestId: qaId(4) }, { fetcher }))
+      .status,
+    429,
+  );
+  assert.equal((await f.call("result?id=" + qaId(3))).status, 202);
+  release();
+  assert.equal((await first).status, 200);
+  assert.equal(
+    (await (await f.call("prepare", input, { fetcher })).json()).state,
+    "complete",
+  );
+  assert.equal(calls, 1);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
+    3,
+  );
+  f.env.STREAMLION_BRIEF_IMPORT_QA_ENABLED = "false";
+  assert.equal(
+    (await (await f.call("result?id=" + qaId(3))).json()).state,
+    "complete",
+  );
+  assert.equal(
+    (await f.call("result?id=" + qaId(3), null, { subject: "b" })).status,
+    404,
+  );
 });
 
 test("auth, same-origin, license, quote and scope failures preserve credits and never infer", async (t) => {
