@@ -448,8 +448,14 @@ export async function handleCoordination({ request, env, params = {} }) {
           typeof body.email === "string" &&
           email.toLowerCase() === body.email.trim().toLowerCase()
         ) {
-          if (!(await renewPublicVerification(env, row)))
-            await invite(env, row);
+          try {
+            if (!(await renewPublicVerification(env, row)))
+              await invite(env, row);
+          } catch (error) {
+            // Expected eligibility denials must not reveal a matching recipient.
+            // These guards run before any challenge or notice is queued.
+            if (!(error instanceof CoordinationError)) throw error;
+          }
         }
       }
       return json({

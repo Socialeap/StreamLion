@@ -62,7 +62,7 @@ export async function renewPublicVerification(env, row) {
     if (!s || s.state === "complete") return false;
     const now = Date.now();
     if (
-      s.state !== "verification" ||
+      !["verification", "pending"].includes(s.state) ||
       !s.payload ||
       s.expires_at <= now ||
       row.archived ||
@@ -70,16 +70,19 @@ export async function renewPublicVerification(env, row) {
     )
       throw unavailable();
     await connectionFor(env, row.connection_id);
+    await requirePublicEmail(
+      env,
+      await unseal(env, row.client_email, "job-email:" + row.id),
+    );
+    // Verification already succeeded; a lost cookie must not wait for Google sync.
+    // Form availability governs new submissions, not access to verified requests.
+    if (s.state === "pending") return false;
     const form = await env.GOOGLE_SESSIONS.prepare(
       "SELECT active FROM streamlion_public_forms_v1 WHERE id=? AND connection_id=?",
     )
       .bind(s.form_id, row.connection_id)
       .first();
     if (!form?.active) throw unavailable();
-    await requirePublicEmail(
-      env,
-      await unseal(env, row.client_email, "job-email:" + row.id),
-    );
     const notice =
       s.challenge_hash &&
       (await env.GOOGLE_SESSIONS.prepare(

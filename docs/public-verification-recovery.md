@@ -11,7 +11,13 @@ pending public submission.
 
 - The existing same-origin `client/request` action checks the supplied email
   against the encrypted recipient for the existing job. Existing IP and job
-  rate limits still apply. A mismatching email queues nothing.
+  rate limits still apply. A mismatching email queues nothing. Expected recovery
+  eligibility denials return the same generic HTTP 200 response and queue nothing;
+  unexpected infrastructure/programming errors still surface as failures.
+- An already verified request awaiting Google synchronization uses normal one-use
+  sign-in when its cookie was lost. Validate the provider, request lifetime and
+  recipient before queuing; a subsequently paused form does not revoke access to
+  this verified request. Preserve its original answers and operation.
 - For an unverified public request, renew only its email challenge. Retain the
   original job, operation, fingerprint, access hash, encrypted answers, created
   time and 30-day request deadline. Do not create a generic sign-in challenge,
@@ -38,7 +44,9 @@ pending public submission.
 Offline tests cover full field preservation through renewal, email verification
 and Google synchronization; mismatched email; concurrent renewals; expired-token
 invalidation; skipped-notice history; revoked/refunded providers; inactive forms;
-closed/expired requests; blocked recipients; one resulting request/event and no
+closed/expired requests; blocked recipients; indistinguishable eligibility-denial
+responses; lost-cookie sign-in before synchronization (including a paused form);
+one resulting request/event and no
 credit spend. UI coverage checks the recovery receipt, retained answers and no
 second form submission. Providers and email delivery are synthetic in tests.
 

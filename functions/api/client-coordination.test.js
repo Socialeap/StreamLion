@@ -3234,6 +3234,100 @@ test("a skipped public confirmation can recover before token expiry without repl
   assert.notEqual(after.challenge_hash, before.challenge_hash);
   assert.equal(after.payload, before.payload);
 });
+for (const paused of [false, true]) {
+  test(
+    "verified pending public request recovers lost-cookie sign-in; paused=" +
+      paused,
+    async (t) => {
+      const f = await publicFixture(t, true);
+      const body = publicBody(f, "pending-signin", "client@example.com");
+      await f.submit(body);
+      const id = "job-public-pending-signin";
+      const original = f.sql
+        .prepare("SELECT * FROM streamlion_public_submissions_v1")
+        .get();
+      assert.equal(
+        await verifyPublicSubmission(
+          f.env,
+          original.challenge_hash,
+          await hash(randomProspectToken()),
+          Date.now(),
+        ),
+        true,
+      );
+      if (paused)
+        f.sql.prepare("UPDATE streamlion_public_forms_v1 SET active=0").run();
+      const pending = f.sql
+        .prepare("SELECT * FROM streamlion_public_submissions_v1")
+        .get();
+      assert.equal(pending.state, "pending");
+      assert.equal(f.google.heads.size, 0);
+      const post = (route, data) =>
+        handleCoordination({
+          env: f.env,
+          params: { path: route },
+          request: new Request(
+            "https://app.example/api/coordination/" + route,
+            {
+              method: "POST",
+              headers: {
+                Origin: "https://app.example",
+                "Content-Type": "application/json",
+                "CF-Connecting-IP": "192.0.2.29",
+              },
+              body: JSON.stringify(data),
+            },
+          ),
+        });
+      const response = await post("client/request", {
+        jobId: id,
+        email: body.email,
+      });
+      assert.equal(response.status, 200);
+      const notice = f.sql
+        .prepare(
+          "SELECT * FROM streamlion_coordination_outbox_v1 WHERE id LIKE 'invite-%'",
+        )
+        .get();
+      assert.ok(
+        notice,
+        "normal sign-in is queued while synchronization remains pending",
+      );
+      const mail = await unseal(f.env, notice.payload, "mail:" + notice.id);
+      assert.equal(mail.to, body.email);
+      assert.equal(mail.subject, "Open your StreamLion project");
+      const token = new URLSearchParams(new URL(mail.url).hash.slice(1)).get(
+        "verify",
+      );
+      const verified = await post("client/verify", { token });
+      assert.equal(verified.status, 200);
+      assert.match(verified.headers.get("Set-Cookie"), /HttpOnly/i);
+      assert.equal((await post("client/verify", { token })).status, 401);
+      assert.deepEqual(
+        f.sql.prepare("SELECT * FROM streamlion_public_submissions_v1").get(),
+        pending,
+      );
+      await syncPublicSubmission(f.env, f.engine, id);
+      await syncPublicSubmission(f.env, f.engine, id);
+      for (const [key, value] of Object.entries(body.fields))
+        assert.equal(f.google.heads.get(id).fields[key], value, key);
+      assert.equal(f.google.heads.size, 1);
+      assert.equal(f.google.events.size, 1);
+      assert.equal(
+        f.sql
+          .prepare("SELECT COUNT(*) AS n FROM streamlion_public_submissions_v1")
+          .get().n,
+        1,
+      );
+      assert.equal(
+        f.sql
+          .prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1")
+          .get().n,
+        0,
+      );
+    },
+  );
+}
 for (const scenario of [
   "expired request",
   "paused form",
@@ -3285,26 +3379,36 @@ for (const scenario of [
       const before = f.sql
         .prepare("SELECT * FROM streamlion_public_submissions_v1")
         .get();
-      const response = await handleCoordination({
-        env: f.env,
-        params: { path: "client/request" },
-        request: new Request(
-          "https://app.example/api/coordination/client/request",
-          {
-            method: "POST",
-            headers: {
-              Origin: "https://app.example",
-              "Content-Type": "application/json",
-              "CF-Connecting-IP": "192.0.2.18",
+      const recover = (email) =>
+        handleCoordination({
+          env: f.env,
+          params: { path: "client/request" },
+          request: new Request(
+            "https://app.example/api/coordination/client/request",
+            {
+              method: "POST",
+              headers: {
+                Origin: "https://app.example",
+                "Content-Type": "application/json",
+                "CF-Connecting-IP": "192.0.2.18",
+              },
+              body: JSON.stringify({
+                jobId: "job-public-guarded-recovery",
+                email,
+              }),
             },
-            body: JSON.stringify({
-              jobId: "job-public-guarded-recovery",
-              email: body.email,
-            }),
-          },
-        ),
+          ),
+        });
+      const unmatched = await recover("other@example.com");
+      const response = await recover(body.email);
+      assert.equal(unmatched.status, 200);
+      assert.deepEqual([...response.headers], [...unmatched.headers]);
+      assert.deepEqual(await response.clone().json(), await unmatched.json());
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        message:
+          "If the details match an open project, a private sign-in link will be sent.",
       });
-      assert.ok([200, 403, 404].includes(response.status));
       assert.deepEqual(
         f.sql.prepare("SELECT * FROM streamlion_public_submissions_v1").get(),
         before,
