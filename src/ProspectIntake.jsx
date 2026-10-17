@@ -47,6 +47,7 @@ export default function ProspectIntake({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
+    [verificationUrl, setVerificationUrl] = useState(""),
     [receipt, setReceipt] = useState(null);
   const estimate = captureEstimate(
     legacyEstimate ? descriptor.intake?.estimateProfile : undefined,
@@ -143,6 +144,8 @@ export default function ProspectIntake({
               descriptor.reusable ? attempt.current : body,
             );
             setNotice(result.message);
+            if (result.verificationRequired && result.verificationUrl)
+              setVerificationUrl(result.verificationUrl);
             if (result.url) setReceipt(result);
           } catch (e) {
             if (e.status === 400) attempt.current = null;
@@ -432,6 +435,18 @@ export default function ProspectIntake({
         </button>
         {error && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
+        {verificationUrl && (
+          <div>
+            <a href={verificationUrl}>
+              Recover this request / resend confirmation
+            </a>
+            <p>
+              Save this recovery link. If the email is missing or expired, open
+              it and enter the same email address. Your saved answers stay with
+              this request. Email verification is still required for access.
+            </p>
+          </div>
+        )}
         {receipt && (
           <div>
             <label>

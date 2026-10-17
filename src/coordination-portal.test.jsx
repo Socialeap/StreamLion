@@ -1607,6 +1607,59 @@ test("public intake opt-in verification requires an email at submission while le
     ui.getByRole("button", { name: "Send request for email verification" }),
   );
 });
+test("public verification receipt offers recovery for the same request and preserves the entered answers", async (t) => {
+  t.after(cleanup);
+  const { default: Prospect } = await import("./ProspectIntake.jsx");
+  let submitted = 0;
+  const ui = render(
+    <Prospect
+      token={"P".repeat(43)}
+      descriptor={{
+        brand: "Provider",
+        reusable: true,
+        verificationRequired: true,
+      }}
+      api={async () => {
+        submitted++;
+        return {
+          verificationRequired: true,
+          jobId: "job-public-saved",
+          verificationUrl:
+            "https://app.example/api/client-portal?job=job-public-saved",
+          message: "Check your email.",
+        };
+      }}
+    />,
+  );
+  for (const [label, value] of [
+    [/Requested by/, "Client"],
+    [/Street address/, "QA site"],
+    [/Scope of work/, "Preserve exact 12 7/16 in."],
+    [/Email for confirmation/, "client@example.com"],
+  ])
+    fireEvent.change(ui.getByLabelText(label), { target: { value } });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Send request for email verification" }),
+  );
+  const link = await ui.findByRole("link", {
+    name: "Recover this request / resend confirmation",
+  });
+  assert.equal(
+    link.href,
+    "https://app.example/api/client-portal?job=job-public-saved",
+  );
+  assert.equal(
+    ui.getByLabelText(/Scope of work/).value,
+    "Preserve exact 12 7/16 in.",
+  );
+  assert.equal(
+    ui.getByRole("button", { name: "Send request for email verification" })
+      .disabled,
+    true,
+  );
+  assert.equal(submitted, 1);
+  assert.equal(ui.queryByRole("link", { name: "Open request status" }), null);
+});
 test("declined request status shows the provider response and expiration to the client", async (t) => {
   t.after(cleanup);
   const job = newClientJob({
