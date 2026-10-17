@@ -874,6 +874,7 @@ export function requestSteps(descriptor) {
           label: q.label,
           stage: stage("What you need"),
           field: q.field,
+          dependsOn: q.when?.field,
           when: (answers) =>
             questionApplies(q, requestFields(descriptor, answers)),
         };
@@ -941,9 +942,60 @@ export function requestSteps(descriptor) {
       dependents: ["estimate"],
     }));
   }
-  return { stages, steps };
+  return { stages, steps: afterDependencies(steps) };
 }
 
+// The project fields each step's answer writes (see requestFields).
+const CONTACT_FIELDS = [
+  "contact1Name",
+  "contact1Phone",
+  "contact2Name",
+  "contact2Phone",
+];
+const WRITES = {
+  title: ["title"],
+  address: ADDRESS_KEYS,
+  size: ["propertySizeSqFt"],
+  scope: ["scope"],
+  deliverables: ["deliverables"],
+  access: ["accessInstructions"],
+  accessDetail: ["accessInstructions"],
+  siteContact: CONTACT_FIELDS,
+  sitePerson: CONTACT_FIELDS,
+  times: ["proposedTimes"],
+  deadline: ["deliveryDeadline"],
+  deadlineDate: ["deliveryDeadline"],
+  contact: ["requesterName", "companyName", ...CONTACT_FIELDS],
+  spaceType: ["notes"],
+  spaceOther: ["notes"],
+  floors: ["notes"],
+  ceilings: ["notes"],
+  dimensions: ["notes"],
+  role: ["notes"],
+  notes: ["notes"],
+};
+const writes = (step, field) =>
+  step.id === `q:${field}` || Boolean(WRITES[step.id]?.includes(field));
+// A template question is asked only after every step that answers the field
+// its condition reads, so a later answer can still make it apply. Template
+// conditions are acyclic, so this settles.
+function afterDependencies(steps) {
+  const list = [...steps];
+  for (let moved = true; moved;) {
+    moved = false;
+    for (const id of steps.filter((s) => s.dependsOn).map((s) => s.id)) {
+      const at = list.findIndex((s) => s.id === id),
+        step = list[at];
+      const last = list.findLastIndex((s) => writes(s, step.dependsOn));
+      if (last > at) {
+        list.splice(at, 1);
+        list.splice(last, 0, { ...step, stage: list[last - 1].stage });
+        moved = true;
+      }
+    }
+  }
+  return list;
+}
 function person(value, { name }) {
   const input = value && typeof value === "object" ? value : {};
   const errors = {},

@@ -88,7 +88,8 @@ function fixture(t) {
     created = [],
     customers = new Map(),
     topups = [],
-    detached = [];
+    detached = [],
+    lists = [];
   // Saved-card top-ups: "succeed", "authenticate", "decline", "missing" or "lost".
   const card = { next: "succeed" };
   let creates = 0,
@@ -114,6 +115,19 @@ function fixture(t) {
       return Response.json(prices[path.split("/").at(-1)]);
     if (path.startsWith("/v1/checkout/sessions/"))
       return Response.json(sessions.get(path.split("/").at(-1)));
+    if (path === "/v1/payment_intents/search")
+      throw new Error("Search is eventually consistent; never use it here");
+    if (path === "/v1/payment_intents" && (options.method || "GET") === "GET") {
+      const customer = url.searchParams.get("customer");
+      lists.push(customer);
+      return Response.json({
+        object: "list",
+        has_more: false,
+        data: [...intents.values()].filter(
+          (intent) => intent.customer === customer,
+        ),
+      });
+    }
     if (path.startsWith("/v1/payment_intents/"))
       return Response.json(intents.get(path.split("/").at(-1)));
     if (path === "/v1/disputes")
@@ -401,6 +415,7 @@ function fixture(t) {
     customers,
     topups,
     detached,
+    lists,
     card,
     creates: () => creates,
     setDispute: (value) => {
@@ -1575,4 +1590,54 @@ test("a top-up that claims an order first keeps a concurrent Checkout from being
     )
     .get();
   assert.equal(order.checkout_session, null);
+});
+
+test("an unresolved top-up never expires into a second charge; a consistent Stripe list decides after the hour", async (t) => {
+  const f = await savedCardFixture(t);
+  await f.saveCard();
+  f.card.next = "lost";
+  assert.equal((await f.post("topup", { packId: "medium" })).status, 503);
+  const age = () =>
+    f.sql
+      .prepare(
+        "UPDATE streamlion_credit_orders_v1 SET expires_at=1 WHERE order_id IN (SELECT order_id FROM streamlion_credit_topups_v1)",
+      )
+      .run();
+  // An hour later, with no webhook, the charge is found and credited once.
+  age();
+  f.card.next = "succeed";
+  assert.equal((await f.post("topup", { packId: "small" })).credited, true);
+  assert.deepEqual(f.lists, ["cus_1"]);
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    35000000,
+  );
+  // The next tap is a fresh, separate top-up.
+  assert.equal((await f.post("topup", { packId: "small" })).credited, true);
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    45000000,
+  );
+  assert.equal(f.topups.length, 2);
+
+  // A request that never reached Stripe is closed after the hour, then a new one may start.
+  f.card.next = "lost";
+  assert.equal((await f.post("topup", { packId: "small" })).status, 503);
+  f.intents.delete(f.topups.at(-1).intent.id);
+  assert.equal(
+    (await f.post("checkout", { packId: "small" })).pendingAmount,
+    1000,
+  );
+  age();
+  f.card.next = "succeed";
+  const checkout = await f.post("checkout", { packId: "small" });
+  assert.match(checkout.url, /^https:\/\/checkout\.stripe\.com\//);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_credit_orders_v1 WHERE status='expired'",
+      )
+      .get().n,
+    0,
+  );
 });

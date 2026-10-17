@@ -321,8 +321,45 @@ const topupOf = async (env, orderId) => {
 };
 // A saved-card top-up has no Checkout Session; its PaymentIntent is the record.
 async function reconcileTopup(env, stripe, order, topup, intentId) {
-  const id = order.payment_intent || intentId;
-  if (!id) return { order, saved: true };
+  let id = order.payment_intent || intentId;
+  if (!id) {
+    // Within the hour the same idempotency key can still be retried. After
+    // it, list this customer's PaymentIntents since the order (a strongly
+    // consistent read, unlike search); only when none carries this order is
+    // the order closed, so a new top-up cannot charge twice.
+    if (order.expires_at > Date.now()) return { order, saved: true };
+    const matches = [];
+    let page = { has_more: true, data: [] };
+    for (let n = 0; page.has_more; n++) {
+      if (n === 10) throw new Error("credit_busy");
+      page = await stripe.paymentIntents.list({
+        customer: topup.customer_id,
+        created: { gte: Math.floor(order.created_at / 1000) - 300 },
+        limit: 100,
+        ...(page.data.length ? { starting_after: page.data.at(-1).id } : {}),
+      });
+      matches.push(
+        ...page.data.filter(
+          (intent) => intent.metadata?.order_id === order.order_id,
+        ),
+      );
+    }
+    if (matches.length > 1) throw new Error("credit_mismatch");
+    if (matches.length) id = matches[0].id;
+    else {
+      const closed = await run(
+        env,
+        "UPDATE streamlion_credit_orders_v1 SET status='failed',updated_at=?,revision=revision+1 WHERE order_id=? AND revision=? AND payment_intent IS NULL AND status='pending'",
+        Date.now(),
+        order.order_id,
+        order.revision,
+      );
+      return {
+        order: { ...order, status: "failed" },
+        saved: closed.meta.changes > 0,
+      };
+    }
+  }
   const intent = await stripe.paymentIntents.retrieve(id, {
     expand: ["latest_charge"],
   });
@@ -442,10 +479,15 @@ const pendingOrder = (env, mode, subject) =>
     mode,
     subject,
   );
+// Saved-card top-ups never expire on a timer: a charge whose response was
+// lost is settled from Stripe instead (see reconcileTopup).
 async function expireOrders(env, mode) {
   await run(
     env,
-    "UPDATE streamlion_credit_orders_v1 SET status='expired',revision=revision+1 WHERE mode=? AND checkout_session IS NULL AND status='pending' AND expires_at<=?",
+    "UPDATE streamlion_credit_orders_v1 SET status='expired',revision=revision+1 WHERE mode=? AND checkout_session IS NULL AND status='pending' AND expires_at<=?" +
+      ((await cardsTable(env))
+        ? " AND NOT EXISTS(SELECT 1 FROM streamlion_credit_topups_v1 t WHERE t.order_id=streamlion_credit_orders_v1.order_id)"
+        : ""),
     mode,
     Date.now(),
   );
