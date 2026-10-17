@@ -471,3 +471,47 @@ test("drafts are kept for seven days per form, keyed without the token", () => {
   };
   assert.equal(writeRequest(token, state, blocked, now), false);
 });
+
+test("a template question waits for the later answer its condition reads", () => {
+  const d = descriptor({
+    intake: {
+      id: "intake-later",
+      version: 1,
+      name: "Later",
+      description: "",
+      questions: [
+        {
+          field: "deliveryDestination",
+          label: "Where should the files go for your organisation?",
+          help: "",
+          required: false,
+          when: { field: "companyName", op: "not_empty" },
+        },
+        {
+          field: "exclusions",
+          label: "Anything to avoid on that date?",
+          help: "",
+          required: false,
+          when: { field: "deliveryDestination", op: "not_empty" },
+        },
+      ],
+    },
+  });
+  const ids = requestFlow(d).steps.map((step) => step.id);
+  // Each question follows the step it depends on, and review stays last.
+  assert(ids.indexOf("q:deliveryDestination") > ids.indexOf("contact"));
+  assert(ids.indexOf("q:exclusions") > ids.indexOf("q:deliveryDestination"));
+  assert.equal(ids.at(-1), "review");
+  const answers = everything.filter(([id]) => !id.startsWith("q:"));
+  const { flow, walked, state } = run(d, answers.slice(0, -2));
+  assert.equal(walked.current.id, "q:deliveryDestination");
+  assert.equal(walked.current.stage, flow.stages.indexOf("Contact"));
+  let next = flow.answerStep(state, "q:deliveryDestination", "Our DAM", {});
+  assert.equal(flow.walk(next, {}).current.id, "q:exclusions");
+  next = flow.answerStep(next, "q:exclusions", "Staff area", {});
+  for (const [id, value] of answers.slice(-2))
+    next = flow.answerStep(next, id, value, {});
+  const fields = requestFields(d, flow.walk(next, {}).answers);
+  assert.equal(fields.deliveryDestination, "Our DAM");
+  assert.equal(fields.exclusions, "Staff area");
+});

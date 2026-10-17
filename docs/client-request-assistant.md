@@ -31,7 +31,9 @@ title, address, name or organisation) rewords that step; a template question
 with listed answers becomes a choice of exactly those answers, so the server's
 answer check passes. Other template questions get their own step in the
 provider's order, with their `when` conditions evaluated against the fields
-answered so far. Required template questions offer no skip, except the size,
+answered so far. A question whose condition reads a field answered later (for
+example the organisation) is moved to just after that answer, so it is never
+skipped. Required template questions offer no skip, except the size,
 which always allows Not sure.
 
 ## Field mapping

@@ -32,7 +32,10 @@ Packs, prices, the shared ledger, refunds and disputes are unchanged.
   pending: another top-up or Checkout is refused until it settles, and retrying
   the same pack reuses the idempotency key. A `payment_intent.succeeded` or
   `payment_intent.payment_failed` webhook settles it from the PaymentIntent.
-  Refund and dispute events for top-ups follow the existing proportional
+  A saved-card order never expires on the one-hour timer: after the hour,
+  StreamLion searches Stripe for a PaymentIntent with that order ID, credits it
+  if found, and closes the order only when none exists (PaymentIntents read,
+  which the key already has). Refund and dispute events for top-ups follow the existing proportional
   revoke and debt rules.
 - **Removing.** **Remove card** detaches the payment method at Stripe and
   clears it, and works even while sales or saved cards are closed.
