@@ -1,6 +1,18 @@
 /* Client request assistant. It reuses the setup assistant's chat styles
    (setup-assistant.css); the client portal's base styles differ, so controls
    are reset to the chat's look here. */
+/* The client portal has no global screen-reader-only helper. */
+.request-screen .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 .request-screen button {
   display: inline-flex;
   align-items: center;
@@ -118,6 +130,10 @@
 .setup-slot-row input {
   max-width: 240px;
 }
+.request-screen .setup-slot .setup-segment {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .setup-check {
   display: inline-flex;
   align-items: center;
@@ -158,9 +174,13 @@
 .request-link input {
   font-size: 14px;
 }
-.request-next {
+.request-screen .setup-plan-title {
+  margin-top: 14px;
+}
+.setup-feed .request-next {
   margin: 6px 0 0;
   padding-left: 20px;
+  list-style: decimal;
   display: grid;
   gap: 4px;
   font-size: 14px;
@@ -175,7 +195,13 @@
   .setup-slot-row input {
     max-width: none;
   }
+  .request-screen .setup-slot .setup-segment {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .setup-check {
     flex-basis: 100%;
   }
+}
+.request-link .setup-link-button {
+  gap: 8px;
 }

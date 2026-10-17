@@ -38,6 +38,17 @@ Like the logo and website, they are public to holders of the provider's client
 links. A server still running the previous validator ignores the two fields,
 so they save only once the Functions from the same commit are deployed.
 
+Providers can also write the **request assistant welcome line**: the first
+thing a client reads when a public request form or invitation opens the guided
+request assistant ([client request assistant](client-request-assistant.md)).
+It is one line of up to 280 characters without control characters, stored in
+the same JSON profile only when filled in; blank keeps the standard greeting.
+It is edited in Account → Business branding or answered in the setup
+assistant's Finish stage (client-request providers only). Like the other
+branding fields it is public to holders of the provider's client links, and a
+server still running the previous validator ignores it until the Functions
+from the same commit are deployed.
+
 Handovers are prepared on the provider's device, often offline, so the report
 letterhead uses a contact card kept on that device
 (`streamlion-provider-contact-v1`). Loading or saving branding in Account

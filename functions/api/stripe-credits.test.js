@@ -28,6 +28,7 @@ function fixture(t) {
     "0005_streamlion_launch_200",
     "0007_streamlion_ai_pilot",
     "0008_streamlion_ai_credits",
+    "0017_streamlion_saved_cards",
   ])
     sql.exec(
       readFileSync(
@@ -83,9 +84,16 @@ function fixture(t) {
     ]),
   );
   const sessions = new Map(),
-    intents = new Map();
+    intents = new Map(),
+    created = [],
+    customers = new Map(),
+    topups = [],
+    detached = [];
+  // Saved-card top-ups: "succeed", "authenticate", "decline", "missing" or "lost".
+  const card = { next: "succeed" };
   let creates = 0,
     dispute = "needs_response";
+  const key = (options) => new Headers(options.headers).get("Idempotency-Key");
   const stripe = {
     checkout: { sessions: { retrieve: async (id) => sessions.get(id) } },
     disputes: {
@@ -110,9 +118,110 @@ function fixture(t) {
       return Response.json(intents.get(path.split("/").at(-1)));
     if (path === "/v1/disputes")
       return Response.json({ has_more: false, data: [{ status: dispute }] });
+    if (path === "/v1/customers" && options.method === "POST") {
+      const p = new URLSearchParams(options.body);
+      if (!customers.has(key(options)))
+        customers.set(key(options), {
+          id: "cus_" + (customers.size + 1),
+          livemode: false,
+          email: p.get("email"),
+          metadata: { app: p.get("metadata[app]") },
+        });
+      return Response.json(customers.get(key(options)));
+    }
+    if (path.endsWith("/detach") && options.method === "POST") {
+      const id = path.split("/").at(-2);
+      detached.push(id);
+      for (const intent of intents.values())
+        if (intent.payment_method?.id === id)
+          intent.payment_method.customer = null;
+      return Response.json({ id, customer: null });
+    }
+    if (path === "/v1/payment_intents" && options.method === "POST") {
+      const p = new URLSearchParams(options.body);
+      const existing = topups.find((t) => t.key === key(options));
+      if (existing) {
+        // A lost response stays lost until the network recovers.
+        if (card.next === "lost") throw new TypeError("network lost");
+        return existing.response.clone();
+      }
+      const id = "pi_topup_" + (topups.length + 1),
+        amount = Number(p.get("amount"));
+      const failed = ["authenticate", "decline"].includes(card.next);
+      const intent = {
+        id,
+        object: "payment_intent",
+        livemode: false,
+        amount,
+        currency: p.get("currency"),
+        customer: p.get("customer"),
+        payment_method: p.get("payment_method"),
+        status: failed ? "requires_payment_method" : "succeeded",
+        metadata: Object.fromEntries(
+          [...p]
+            .filter(([k]) => k.startsWith("metadata["))
+            .map(([k, v]) => [k.slice(9, -1), v]),
+        ),
+        ...(failed
+          ? {
+              last_payment_error: {
+                code:
+                  card.next === "authenticate"
+                    ? "authentication_required"
+                    : "card_declined",
+              },
+            }
+          : {}),
+        latest_charge: failed
+          ? null
+          : {
+              id: "ch_" + id,
+              paid: true,
+              captured: true,
+              currency: "usd",
+              amount,
+              amount_refunded: 0,
+              disputed: false,
+            },
+      };
+      const record = { key: key(options), params: p, intent };
+      topups.push(record);
+      if (card.next === "missing")
+        record.response = Response.json(
+          {
+            error: {
+              type: "invalid_request_error",
+              code: "resource_missing",
+              param: "payment_method",
+              message: "No such PaymentMethod",
+            },
+          },
+          { status: 400 },
+        );
+      else {
+        intents.set(id, intent);
+        record.response = failed
+          ? Response.json(
+              {
+                error: {
+                  type: "card_error",
+                  code: intent.last_payment_error.code,
+                  message: "Card not charged",
+                  payment_intent: { ...intent, latest_charge: null },
+                },
+              },
+              { status: 402 },
+            )
+          : Response.json({ ...intent, latest_charge: "ch_" + id });
+        if (card.next === "lost") throw new TypeError("network lost");
+      }
+      return record.response.clone();
+    }
     if (path === "/v1/checkout/sessions" && options.method === "POST") {
       const p = new URLSearchParams(options.body),
         orderId = p.get("metadata[order_id]");
+      created.push(p);
+      card.onSession?.(orderId);
       assert.equal(p.get("mode"), "payment");
       assert.equal(p.get("payment_intent_data[metadata][kind]"), "ai_credits");
       const existing = [...sessions.values()].find(
@@ -127,7 +236,13 @@ function fixture(t) {
         livemode: price.livemode,
         status: "open",
         payment_status: "unpaid",
-        metadata: { app: "streamlion", kind: "ai_credits", order_id: orderId },
+        metadata: {
+          app: "streamlion",
+          kind: "ai_credits",
+          order_id: orderId,
+          ...(p.get("metadata[save_card]") ? { save_card: "1" } : {}),
+        },
+        customer: p.get("customer"),
         client_reference_id: orderId,
         currency: "usd",
         amount_subtotal: price.unit_amount,
@@ -225,6 +340,13 @@ function fixture(t) {
           disputed: false,
         },
       };
+    if (s.metadata.save_card)
+      intent.payment_method = {
+        id: "pm_card_" + id.slice(-6),
+        type: "card",
+        customer: s.customer,
+        card: { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2030 },
+      };
     s.status = "complete";
     s.payment_status = "paid";
     s.payment_intent = intent;
@@ -274,6 +396,12 @@ function fixture(t) {
     request,
     pay,
     manualOrder,
+    intents,
+    created,
+    customers,
+    topups,
+    detached,
+    card,
     creates: () => creates,
     setDispute: (value) => {
       dispute = value;
@@ -1133,4 +1261,318 @@ test("public credit config uses only the active coordination policy in the curre
     "UPDATE streamlion_coordination_policy_v1 SET active=0 WHERE mode='test'",
   );
   assert.equal((await (await f.request("config")).json()).projectMicros, null);
+});
+
+// Saved cards for one-tap top-ups.
+async function savedCardFixture(t) {
+  const f = fixture(t),
+    cookie = await f.login();
+  f.license();
+  f.env.STREAMLION_SAVED_CARDS_ENABLED = "true";
+  const post = async (path, body, options = {}) => {
+    const response = await f.request(path, {
+      method: "POST",
+      cookie,
+      body,
+      ...options,
+    });
+    // The HTTP status replaces any "status" field in the reply.
+    return { ...(await response.json()), status: response.status };
+  };
+  async function saveCard() {
+    const started = await post("checkout", { packId: "small", saveCard: true });
+    assert.match(started.url, /^https:\/\/checkout\.stripe\.com\//);
+    const session = [...f.sessions.values()].at(-1);
+    f.pay(session.id);
+    assert.equal(
+      (await post("confirm", { sessionId: session.id })).status,
+      200,
+    );
+    return session;
+  }
+  const status = async () => (await f.request("status", { cookie })).json();
+  return { ...f, cookie, post, saveCard, status };
+}
+test("saved cards stay closed until enabled, and a plain checkout never saves a card", async (t) => {
+  const f = await savedCardFixture(t);
+  f.env.STREAMLION_SAVED_CARDS_ENABLED = "false";
+  assert.equal((await (await f.request("config")).json()).savedCards, false);
+  // Asking to save while closed starts an ordinary checkout.
+  await f.post("checkout", { packId: "small", saveCard: true });
+  const params = f.created.at(-1);
+  assert.equal(params.get("customer"), null);
+  assert.equal(params.get("customer_email"), "a@example.com");
+  assert.equal(params.get("payment_intent_data[setup_future_usage]"), null);
+  assert.equal(f.customers.size, 0);
+  assert.equal((await f.post("topup", { packId: "small" })).status, 400);
+  assert.equal((await f.status()).card, null);
+  f.env.STREAMLION_SAVED_CARDS_ENABLED = "true";
+  assert.equal((await (await f.request("config")).json()).savedCards, true);
+});
+
+test("a saving checkout keeps the card, and one tap charges it once for the chosen pack", async (t) => {
+  const f = await savedCardFixture(t);
+  const session = await f.saveCard();
+  const params = f.created.at(-1);
+  assert.equal(params.get("customer"), "cus_1");
+  assert.equal(params.get("customer_email"), null);
+  assert.equal(
+    params.get("payment_intent_data[setup_future_usage]"),
+    "on_session",
+  );
+  assert.equal(params.get("metadata[save_card]"), "1");
+  assert.match(
+    params.get("custom_text[submit][message]"),
+    /saved for top-ups you start yourself/,
+  );
+  assert.deepEqual((await f.status()).card, {
+    brand: "visa",
+    last4: "4242",
+    expMonth: 12,
+    expYear: 2030,
+  });
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    10000000,
+  );
+
+  const charged = await f.post("topup", { packId: "medium" });
+  assert.deepEqual(charged, { status: 200, credited: true });
+  const [topup] = f.topups;
+  assert.equal(topup.params.get("amount"), "2500");
+  assert.equal(topup.params.get("customer"), "cus_1");
+  assert.equal(
+    topup.params.get("payment_method"),
+    session.payment_intent.payment_method.id,
+  );
+  assert.equal(topup.params.get("confirm"), "true");
+  assert.equal(topup.params.get("error_on_requires_action"), "true");
+  assert.equal(topup.params.get("off_session"), null);
+  assert.equal(topup.params.get("metadata[source]"), "saved_card");
+  assert.match(topup.key, /^streamlion-topup:test:/);
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    35000000,
+  );
+
+  // Signed replays and a partial refund of the top-up settle against the same order.
+  const intent = f.intents.get(topup.intent.id);
+  const succeeded = {
+    id: "evt_topup_paid",
+    type: "payment_intent.succeeded",
+    livemode: false,
+    data: { object: { id: intent.id } },
+  };
+  assert.equal((await signedCreditEvent(f, succeeded)).status, 200);
+  assert.equal(
+    (await signedCreditEvent(f, { ...succeeded, id: "evt_topup_paid_2" }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    35000000,
+  );
+  intent.latest_charge.amount_refunded = 1250;
+  const refund = {
+    id: "evt_topup_refund",
+    type: "charge.refunded",
+    livemode: false,
+    data: { object: { payment_intent: intent.id } },
+  };
+  assert.equal((await signedCreditEvent(f, refund)).status, 200);
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    22500000,
+  );
+  // A second tap is a new, separate top-up.
+  assert.equal((await f.post("topup", { packId: "small" })).credited, true);
+  assert.equal(f.topups.length, 2);
+  assert.notEqual(f.topups[1].key, f.topups[0].key);
+});
+
+test("a bank check or a decline charges nothing and leaves Checkout open", async (t) => {
+  const f = await savedCardFixture(t);
+  await f.saveCard();
+  f.card.next = "authenticate";
+  assert.deepEqual(await f.post("topup", { packId: "small" }), {
+    status: 200,
+    authenticationRequired: true,
+  });
+  f.card.next = "decline";
+  assert.deepEqual(await f.post("topup", { packId: "small" }), {
+    status: 200,
+    declined: true,
+  });
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    10000000,
+  );
+  const failed = f.sql
+    .prepare(
+      "SELECT o.status FROM streamlion_credit_orders_v1 o JOIN streamlion_credit_topups_v1 t USING(order_id)",
+    )
+    .all();
+  assert.deepEqual(
+    failed.map((row) => row.status),
+    ["failed", "failed"],
+  );
+  // The same pack can still be bought through Checkout.
+  const checkout = await f.post("checkout", { packId: "small" });
+  assert.match(checkout.url, /^https:\/\/checkout\.stripe\.com\//);
+  // A card Stripe can no longer use is forgotten without a charge.
+  const fresh = await savedCardFixture(t);
+  await fresh.saveCard();
+  fresh.card.next = "missing";
+  assert.deepEqual(await fresh.post("topup", { packId: "small" }), {
+    status: 200,
+    cardRequired: true,
+  });
+  assert.equal((await fresh.status()).card, null);
+});
+
+test("a lost top-up response blocks a second charge until Stripe settles the first", async (t) => {
+  const f = await savedCardFixture(t);
+  await f.saveCard();
+  f.card.next = "lost";
+  assert.equal((await f.post("topup", { packId: "medium" })).status, 503);
+  assert.equal(f.topups.length, 1);
+  // Neither another top-up nor Checkout can start while the outcome is unknown.
+  assert.equal(
+    (await f.post("topup", { packId: "small" })).pendingAmount,
+    2500,
+  );
+  assert.equal(
+    (await f.post("checkout", { packId: "small" })).pendingAmount,
+    2500,
+  );
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    10000000,
+  );
+  // Retrying the same pack reuses the same idempotency key and gets the result.
+  f.card.next = "succeed";
+  assert.equal((await f.post("topup", { packId: "medium" })).credited, true);
+  assert.equal(f.topups.length, 1);
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    35000000,
+  );
+});
+
+test("a webhook settles a top-up whose response never arrived", async (t) => {
+  const f = await savedCardFixture(t);
+  await f.saveCard();
+  f.card.next = "lost";
+  assert.equal((await f.post("topup", { packId: "medium" })).status, 503);
+  const [topup] = f.topups;
+  assert.equal(
+    (
+      await signedCreditEvent(f, {
+        id: "evt_lost_paid",
+        type: "payment_intent.succeeded",
+        livemode: false,
+        data: { object: { id: topup.intent.id } },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await creditAccount(f.db, "test", "a")).balance_micros,
+    35000000,
+  );
+  f.card.next = "succeed";
+  assert.equal((await f.post("topup", { packId: "small" })).credited, true);
+});
+
+test("removing a card detaches it, works while sales are closed, and stays removed after replays", async (t) => {
+  const f = await savedCardFixture(t);
+  const session = await f.saveCard();
+  const method = session.payment_intent.payment_method.id;
+  f.env.STREAMLION_AI_CREDIT_SALES_ENABLED = "false";
+  f.env.STREAMLION_SAVED_CARDS_ENABLED = "false";
+  assert.deepEqual(await f.post("card", { action: "remove" }), {
+    status: 200,
+    removed: true,
+  });
+  assert.deepEqual(f.detached, [method]);
+  assert.equal((await f.status()).card, null);
+  assert.equal((await f.post("card", { action: "keep" })).status, 400);
+  // The saving checkout's completion arriving late does not bring it back.
+  assert.equal(
+    (
+      await signedCreditEvent(f, {
+        id: "evt_late_completion",
+        type: "checkout.session.completed",
+        livemode: false,
+        data: { object: session },
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await f.status()).card, null);
+  f.env.STREAMLION_AI_CREDIT_SALES_ENABLED = "true";
+  f.env.STREAMLION_SAVED_CARDS_ENABLED = "true";
+  assert.deepEqual(await f.post("topup", { packId: "small" }), {
+    status: 200,
+    cardRequired: true,
+  });
+  assert.equal(f.topups.length, 0);
+});
+
+test("a saved card belongs to one account and mode, and checkout pauses stop top-ups", async (t) => {
+  const f = await savedCardFixture(t);
+  await f.saveCard();
+  const other = await f.login("b");
+  f.license("b");
+  const asB = await f.request("topup", {
+    method: "POST",
+    cookie: other,
+    subject: "b",
+    body: { packId: "small" },
+  });
+  assert.equal((await asB.json()).cardRequired, true);
+  await f.request("card", {
+    method: "POST",
+    cookie: other,
+    subject: "b",
+    body: { action: "remove" },
+  });
+  assert.equal(f.detached.length, 0);
+  assert.equal((await f.status()).card.last4, "4242");
+  assert.equal(
+    (
+      await f.request("topup", {
+        method: "POST",
+        cookie: f.cookie,
+        account: "b",
+        body: { packId: "small" },
+      })
+    ).status,
+    403,
+  );
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  assert.equal((await f.post("topup", { packId: "small" })).status, 403);
+  assert.equal(f.topups.length, 0);
+});
+
+test("a top-up that claims an order first keeps a concurrent Checkout from being shown", async (t) => {
+  const f = await savedCardFixture(t);
+  await f.saveCard();
+  // While Checkout is being created, a one-tap top-up claims the same order.
+  f.card.onSession = (orderId) =>
+    f.sql
+      .prepare(
+        "INSERT INTO streamlion_credit_topups_v1 VALUES(?, 'cus_1', 'pm_card_other', 1)",
+      )
+      .run(orderId);
+  const raced = await f.post("checkout", { packId: "medium" });
+  assert.equal(raced.pendingAmount, 2500);
+  assert.equal(raced.url, undefined);
+  const order = f.sql
+    .prepare(
+      "SELECT o.checkout_session FROM streamlion_credit_orders_v1 o JOIN streamlion_credit_topups_v1 t USING(order_id)",
+    )
+    .get();
+  assert.equal(order.checkout_session, null);
 });
