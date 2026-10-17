@@ -37,18 +37,19 @@ export function briefQAWindow(env) {
   }
 }
 
-export function briefQAPolicy(policy) {
+export function briefQAPolicy(policy, limits = BRIEF_QA) {
   return (
+    !!limits &&
     policy?.active === 1 &&
-    policy.price_micros === BRIEF_QA.price &&
-    policy.reserve_micros === BRIEF_QA.reserve &&
-    policy.daily_budget_micros === BRIEF_QA.budget &&
-    policy.total_budget_micros === BRIEF_QA.budget &&
-    policy.daily_requests === BRIEF_QA.attempts
+    policy.price_micros === limits.price &&
+    policy.reserve_micros === limits.reserve &&
+    policy.daily_budget_micros === limits.budget &&
+    policy.total_budget_micros === limits.budget &&
+    policy.daily_requests === limits.attempts
   );
 }
 
-export async function briefQACapacity(db) {
+export async function briefQACapacity(db, limits = BRIEF_QA) {
   // All test-mode history counts, including failed/refunded jobs and old windows.
   const row = await db
     .prepare(
@@ -56,10 +57,10 @@ export async function briefQACapacity(db) {
     )
     .first();
   return {
-    remaining: Math.max(0, BRIEF_QA.attempts - row.attempts),
+    remaining: Math.max(0, limits.attempts - row.attempts),
     available:
-      row.attempts < BRIEF_QA.attempts &&
-      row.reserved + BRIEF_QA.reserve <= BRIEF_QA.budget,
+      row.attempts < limits.attempts &&
+      row.reserved + limits.reserve <= limits.budget,
   };
 }
 
@@ -71,3 +72,19 @@ export const BRIEF_QA_RESERVATION = ` AND p.active=1
   AND COALESCE(w.balance_micros,0)=0
   AND (SELECT COUNT(*) FROM streamlion_brief_jobs_v1 WHERE mode='test')<3
   AND (SELECT COALESCE(SUM(reserve_micros),0) FROM streamlion_brief_jobs_v1 WHERE mode='test')+100000<=300000`;
+
+// The old three reservations remain counted. Only one fourth reservation fits.
+// Recheck the failed, refunded baseline inside the same atomic INSERT.
+export const BRIEF_QA_REPLACEMENT_RESERVATION = ` AND p.active=1
+  AND p.price_micros=100000 AND p.reserve_micros=100000
+  AND p.daily_budget_micros=400000 AND p.total_budget_micros=400000 AND p.daily_requests=4
+  AND COALESCE(w.balance_micros,0)=0
+  AND (SELECT COUNT(*) FROM streamlion_brief_jobs_v1 WHERE mode='test')<4
+  AND (SELECT COALESCE(SUM(reserve_micros),0) FROM streamlion_brief_jobs_v1 WHERE mode='test')+100000<=400000
+  AND (SELECT COUNT(*) FROM
+    (SELECT * FROM streamlion_brief_jobs_v1 WHERE mode='test' ORDER BY created_at,request_id LIMIT 3) original
+    WHERE original.google_subject=? AND original.state='failed' AND original.result IS NULL
+    AND original.price_micros=100000 AND original.reserve_micros=100000
+    AND original.promotional=0 AND original.purchased=100000
+    AND original.created_at>=? AND original.created_at<?
+    AND original.expires_at=original.created_at+86400000)=3`;

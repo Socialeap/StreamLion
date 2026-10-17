@@ -264,6 +264,274 @@ function ownerQA(f) {
 }
 const qaId = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
+async function replacementFixture(t) {
+  const f = await fixture(t);
+  ownerQA(f);
+  const start = "2026-10-17T00:46:02.266Z";
+  f.env.STREAMLION_BRIEF_IMPORT_QA_START = start;
+  f.env.STREAMLION_BRIEF_IMPORT_QA_UNTIL = "2026-10-18T00:46:02.266Z";
+  f.advance(Date.parse(start) + 60000 - f.now());
+  for (let n = 1; n <= 3; n++) {
+    const input = await f.input(qaId(n));
+    assert.equal(
+      (
+        await (
+          await f.call("prepare", input, {
+            fetcher: async () => new Response("", { status: 503 }),
+          })
+        ).json()
+      ).state,
+      "failed",
+    );
+    f.advance(1);
+  }
+  const history = f.sql
+    .prepare("SELECT * FROM streamlion_brief_jobs_v1 ORDER BY request_id")
+    .all();
+  const activateReplacement = () => {
+    f.env.STREAMLION_BRIEF_IMPORT_QA_REPLACEMENT_APPROVED = "true";
+    assert.equal(
+      f.sql
+        .prepare(
+          readFileSync(
+            new URL(
+              "../../ops/approve-brief-qa-replacement.sql",
+              import.meta.url,
+            ),
+            "utf8",
+          ),
+        )
+        .run("a", f.now()).changes,
+      1,
+    );
+  };
+  return { ...f, history, activateReplacement };
+}
+
+test("replacement QA is disabled by default and grants exactly one attempt in the original window", async (t) => {
+  const f = await replacementFixture(t);
+  assert.equal((await (await f.call()).json()).reason, "qa_exhausted");
+  f.activateReplacement();
+  f.env.STREAMLION_BRIEF_IMPORT_QA_REPLACEMENT_APPROVED = "false";
+  assert.equal((await (await f.call()).json()).enabled, false);
+  f.env.STREAMLION_BRIEF_IMPORT_QA_REPLACEMENT_APPROVED = "true";
+  const quote = await (await f.call()).json();
+  assert.equal(quote.enabled, true);
+  assert.equal(quote.priceMicros, 100000);
+  assert.deepEqual(quote.ownerQA, {
+    attemptsRemaining: 1,
+    attemptLimit: 1,
+    replacement: true,
+    expiresAt: "2026-10-18T00:46:02.266Z",
+  });
+  const input = await f.input(qaId(4));
+  assert.equal(
+    (await (await f.call("prepare", input)).json()).state,
+    "complete",
+  );
+  assert.equal(f.calls(), 1);
+  assert.equal(
+    (await (await f.call()).json()).reason,
+    "qa_replacement_exhausted",
+  );
+  assert.equal(
+    (await f.call("prepare", { ...input, requestId: qaId(5) })).status,
+    429,
+  );
+  assert.equal(
+    (await (await f.call("prepare", input)).json()).state,
+    "complete",
+  );
+  assert.equal(
+    (await (await f.call("result?id=" + qaId(4))).json()).state,
+    "complete",
+  );
+  assert.equal(f.calls(), 1);
+  assert.deepEqual(
+    f.sql
+      .prepare(
+        "SELECT * FROM streamlion_brief_jobs_v1 WHERE request_id!=? ORDER BY request_id",
+      )
+      .all(qaId(4)),
+    f.history,
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test' AND google_subject='a'",
+      )
+      .get().b,
+    18900000,
+  );
+});
+
+test("replacement failure refunds once but never rearms its single attempt", async (t) => {
+  const f = await replacementFixture(t);
+  f.activateReplacement();
+  const input = await f.input(qaId(4));
+  const failed = await f.call("prepare", input, {
+    fetcher: async () => new Response("", { status: 503 }),
+  });
+  assert.equal((await failed.json()).state, "failed");
+  assert.equal((await (await f.call("prepare", input)).json()).state, "failed");
+  assert.equal(
+    (await f.call("prepare", { ...input, requestId: qaId(5) })).status,
+    429,
+  );
+  assert.equal(f.calls(), 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
+    4,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT SUM(reserve_micros) n FROM streamlion_brief_jobs_v1")
+      .get().n,
+    400000,
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test' AND google_subject='a'",
+      )
+      .get().b,
+    19000000,
+  );
+  f.env.STREAMLION_BRIEF_IMPORT_QA_REPLACEMENT_APPROVED = "false";
+  assert.equal(
+    (await (await f.call("result?id=" + qaId(4))).json()).state,
+    "failed",
+  );
+});
+
+test("replacement policy approval is owner-bound, expires and cannot be reapplied", async (t) => {
+  const f = await replacementFixture(t);
+  const approval = f.sql.prepare(
+    readFileSync(
+      new URL("../../ops/approve-brief-qa-replacement.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const subject of [null, "", "b"])
+    assert.equal(approval.run(subject, f.now()).changes, 0);
+  for (const now of [
+    1792197962265,
+    1792284362266,
+    "1792200000000",
+    f.now() + 0.5,
+  ])
+    assert.equal(approval.run("a", now).changes, 0);
+  assert.equal(approval.run("a", f.now()).changes, 1);
+  assert.equal(approval.run("a", f.now()).changes, 0);
+  assert.deepEqual(
+    f.sql
+      .prepare("SELECT * FROM streamlion_brief_jobs_v1 ORDER BY request_id")
+      .all(),
+    f.history,
+  );
+  assert.equal((await (await f.call()).json()).enabled, false);
+  assert.equal(f.calls(), 0);
+});
+
+test("replacement rejects a different window, oversized policy, missing history and non-owner", async (t) => {
+  for (const change of ["window", "approval", "policy", "history", "owner"])
+    await t.test(change, async (t) => {
+      const f = await replacementFixture(t);
+      f.activateReplacement();
+      if (change === "window") {
+        f.env.STREAMLION_BRIEF_IMPORT_QA_START = new Date(
+          Date.parse(f.env.STREAMLION_BRIEF_IMPORT_QA_START) + 1,
+        ).toISOString();
+        f.env.STREAMLION_BRIEF_IMPORT_QA_UNTIL = new Date(
+          Date.parse(f.env.STREAMLION_BRIEF_IMPORT_QA_UNTIL) + 1,
+        ).toISOString();
+      }
+      if (change === "approval")
+        f.env.STREAMLION_BRIEF_IMPORT_QA_REPLACEMENT_APPROVED = "TRUE";
+      if (change === "policy")
+        f.sql.exec(
+          "UPDATE streamlion_brief_policy_v1 SET total_budget_micros=500000 WHERE mode='test'",
+        );
+      if (change === "history")
+        f.sql.exec(
+          "DELETE FROM streamlion_brief_jobs_v1 WHERE request_id='" +
+            qaId(3) +
+            "'",
+        );
+      const response = await f.call(
+        "config",
+        undefined,
+        change === "owner" ? { subject: "b" } : {},
+      );
+      assert.equal((await response.json()).enabled, false, change);
+      assert.equal(f.calls(), 0);
+    });
+});
+
+test("replacement reservation atomically rejects a changed baseline and concurrent fifth job", async (t) => {
+  await t.test("baseline changes before INSERT", async (t) => {
+    const f = await replacementFixture(t);
+    f.activateReplacement();
+    const input = await f.input(qaId(4));
+    const prepare = f.db.prepare;
+    f.db.prepare = (query) => {
+      if (query.startsWith("INSERT INTO streamlion_brief_jobs"))
+        f.sql.exec(
+          "DELETE FROM streamlion_brief_jobs_v1 WHERE request_id='" +
+            qaId(3) +
+            "'",
+        );
+      return prepare(query);
+    };
+    assert.equal((await f.call("prepare", input)).status, 429);
+    assert.equal(f.calls(), 0);
+  });
+  await t.test("two new request IDs compete for one slot", async (t) => {
+    const f = await replacementFixture(t);
+    f.activateReplacement();
+    const input = await f.input(qaId(4));
+    const responses = await Promise.all([
+      f.call("prepare", input),
+      f.call("prepare", { ...input, requestId: qaId(5) }),
+    ]);
+    assert.deepEqual(responses.map((r) => r.status).sort(), [200, 429]);
+    assert.equal(f.calls(), 1);
+    assert.equal(
+      f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
+      4,
+    );
+  });
+});
+
+test("replacement revocation after reservation refunds without inference and original expiry stays final", async (t) => {
+  const f = await replacementFixture(t);
+  f.activateReplacement();
+  const input = await f.input(qaId(4));
+  const prepare = f.db.prepare;
+  f.db.prepare = (query) => {
+    if (query.startsWith("INSERT INTO streamlion_brief_jobs"))
+      f.env.STREAMLION_BRIEF_IMPORT_QA_REPLACEMENT_APPROVED = "false";
+    return prepare(query);
+  };
+  assert.equal((await (await f.call("prepare", input)).json()).state, "failed");
+  assert.equal(f.calls(), 0);
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT balance_micros b FROM streamlion_credit_wallets_v1 WHERE mode='test' AND google_subject='a'",
+      )
+      .get().b,
+    19000000,
+  );
+  f.env.STREAMLION_BRIEF_IMPORT_QA_REPLACEMENT_APPROVED = "true";
+  f.advance(Date.parse(f.env.STREAMLION_BRIEF_IMPORT_QA_UNTIL) - f.now());
+  assert.equal((await (await f.call()).json()).reason, "qa_expired");
+  assert.equal(
+    (await (await f.call("result?id=" + qaId(4))).json()).state,
+    "failed",
+  );
+});
+
 test("owner QA uses only existing test credits and preserves live wallets and pilot settings", async (t) => {
   const f = await fixture(t);
   ownerQA(f);

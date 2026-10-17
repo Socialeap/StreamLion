@@ -9,7 +9,9 @@ import {
   briefQAPolicy,
   briefQACapacity,
   BRIEF_QA_RESERVATION,
+  BRIEF_QA_REPLACEMENT_RESERVATION,
 } from "./brief-qa.js";
+import { briefQALimits } from "./brief-qa-replacement.js";
 import {
   BRIEF_LIMITS,
   BRIEF_MODEL,
@@ -256,6 +258,14 @@ export async function handleBriefImport(
       return config
         ? reply({ enabled: false, reason: "license_required" })
         : reply({ error: "A StreamLion license is required." }, 402);
+    const limits = qa ? await briefQALimits(env, window, db) : null;
+    if (qa && !limits)
+      return config
+        ? reply({ enabled: false, reason: "qa_grant_unavailable" })
+        : reply(
+            { error: "The replacement QA permission could not be verified." },
+            503,
+          );
     const policy = await db
       .prepare("SELECT * FROM streamlion_brief_policy_v1 WHERE mode=?")
       .bind(mode)
@@ -264,7 +274,7 @@ export async function handleBriefImport(
       !policy?.active ||
       policy.reserve_micros < 100000 ||
       policy.price_micros < policy.reserve_micros ||
-      (qa && !briefQAPolicy(policy))
+      (qa && !briefQAPolicy(policy, limits))
     )
       return config
         ? reply({ enabled: false, reason: "not_open" })
@@ -274,13 +284,24 @@ export async function handleBriefImport(
         BRIEF_MODEL,
         BRIEF_LIMITS,
         policy,
-        ...(qa ? [window.start, window.until] : []),
+        ...(qa
+          ? [
+              window.start,
+              window.until,
+              ...(limits.replacement ? ["one-replacement-20261017"] : []),
+            ]
+          : []),
       ]),
     );
     const funding = await sharedWallet(db, mode, subject);
-    const capacity = qa ? await briefQACapacity(db) : null;
+    const capacity = qa ? await briefQACapacity(db, limits) : null;
     if (config && qa && !capacity.available)
-      return reply({ enabled: false, reason: "qa_exhausted" });
+      return reply({
+        enabled: false,
+        reason: limits.replacement
+          ? "qa_replacement_exhausted"
+          : "qa_exhausted",
+      });
     const canPrepare =
       !funding.hold &&
       funding.available >= policy.price_micros &&
@@ -299,6 +320,9 @@ export async function handleBriefImport(
           ? {
               ownerQA: {
                 attemptsRemaining: capacity.remaining,
+                ...(limits.replacement
+                  ? { attemptLimit: 1, replacement: true }
+                  : {}),
                 expiresAt: window.expiresAt,
               },
             }
@@ -352,8 +376,9 @@ export async function handleBriefImport(
     if (qa && !capacity.available)
       return reply(
         {
-          error:
-            "The three-attempt owner QA budget is exhausted. Recover any existing brief.",
+          error: limits.replacement
+            ? "The replacement QA attempt has been used. Recover any existing brief."
+            : "The three-attempt owner QA budget is exhausted. Recover any existing brief.",
         },
         429,
       );
@@ -382,7 +407,11 @@ export async function handleBriefImport(
           `INSERT INTO streamlion_brief_jobs_v1(mode,google_subject,request_id,scope,input_hash,quote_key,price_micros,reserve_micros,promotional,purchased,created_at,expires_at)
         SELECT ?,?,?,?,?,?,p.price_micros,p.reserve_micros,MIN(p.price_micros,COALESCE(w.balance_micros,0)),p.price_micros-MIN(p.price_micros,COALESCE(w.balance_micros,0)),?,?
         FROM streamlion_brief_policy_v1 p LEFT JOIN streamlion_promotional_wallets_v1 w ON w.mode=p.mode AND w.google_subject=? WHERE p.mode=? AND p.price_micros=? AND p.reserve_micros=?` +
-            (qa ? BRIEF_QA_RESERVATION : ""),
+            (qa
+              ? limits.replacement
+                ? BRIEF_QA_REPLACEMENT_RESERVATION
+                : BRIEF_QA_RESERVATION
+              : ""),
         )
         .bind(
           mode,
@@ -397,6 +426,9 @@ export async function handleBriefImport(
           mode,
           policy.price_micros,
           policy.reserve_micros,
+          ...(qa && limits.replacement
+            ? [subject, window.start, window.until]
+            : []),
         )
         .run();
       // D1 includes wallet-trigger updates in changes; one job can report 3.
@@ -422,6 +454,9 @@ export async function handleBriefImport(
       try {
         if (qa) {
           const current = briefQAWindow(env);
+          const currentLimits = current
+            ? await briefQALimits(env, current, db)
+            : null;
           const currentPolicy = await db
             .prepare(
               "SELECT * FROM streamlion_brief_policy_v1 WHERE mode='test'",
@@ -436,7 +471,8 @@ export async function handleBriefImport(
             current.until !== window.until ||
             now() < current.start ||
             now() >= current.until ||
-            !briefQAPolicy(currentPolicy) ||
+            currentLimits !== limits ||
+            !briefQAPolicy(currentPolicy, currentLimits) ||
             !licensed ||
             currentSession?.google_subject !== subject ||
             currentSession.workbook_id !== session.workbook_id

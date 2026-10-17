@@ -44,6 +44,37 @@ const completed = {
   }),
 };
 
+test("replacement QA shows one attempt and preserves the original expiry", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const ui = render(
+    <BriefImporter
+      draftKey="replacement-draft"
+      fields={fields}
+      onUse={() => {}}
+      request={async () => ({
+        ...config,
+        priceMicros: 100000,
+        ownerQA: {
+          attemptsRemaining: 1,
+          attemptLimit: 1,
+          replacement: true,
+          expiresAt: "2026-10-18T00:46:02.266Z",
+        },
+      })}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() => assert(ui.getByText(/Owner-only replacement QA/)));
+  assert.match(
+    ui.getByText(/Owner-only replacement QA/).textContent,
+    /1 of 1 attempts remaining/,
+  );
+  assert(ui.getByRole("button", { name: "Prepare my project · 8 credits" }));
+});
+
 test("pending preparation refreshes the reserved balance and remaining attempts without another POST", async (t) => {
   t.after(cleanup);
   localStorage.clear();
