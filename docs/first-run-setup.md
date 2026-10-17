@@ -22,7 +22,7 @@ is not yet confirmed, so answers drive branching:
 | Storage         | Google or this device (Google disabled offline or when sign-in is unavailable); Google sign-in; create or choose a workbook; offline workbook copy (on-site work only)                                                                                          |
 | Pricing & units | Measurement system (on-site work); pricing method, tier style, currency, per-sq-ft rate or size bands, client budgets (client requests only)                                                                                                                    |
 | ChatGPT & AI    | How ChatGPT will be used: smart project briefs and project questions (built-in, AI credits) or the free Briefing Helper in the user's own ChatGPT, with a link to the Credits page; read answers aloud (project questions only); add credits (built-in AI only) |
-| Finish          | Logo (client requests only); theme; review card with Edit on every answer                                                                                                                                                                                       |
+| Finish          | Logo and client welcome line (client requests only); theme; review card with Edit on every answer                                                                                                                                                               |
 
 Every confirmed answer is written to this device immediately under
 `streamlion-setup-v1` (browser storage only; no identity or authorization).
@@ -48,12 +48,18 @@ step checks `/api/credits/config`: without Google it says credits need a Google
 account; while purchases are closed it keeps the choice and points to the free
 Briefing Helper; when open it lists the packs and opens the Credits page in a
 new tab, where the existing Stripe Checkout and disclosures handle payment.
-Purchases are one pack at a time; there is no stored card, subscription or
-automatic recharge. Whether briefs and project questions are switched on stays
-a separate server setting.
+Purchases are one pack at a time, with no subscription or automatic recharge.
+Where saved cards are enabled, the Credits page can save a card at checkout for
+one-tap top-ups the provider confirms ([saved-card top-ups](saved-card-topups-release.md)).
+Whether briefs and project questions are switched on stays a separate server
+setting.
+
+The client welcome line is the first message of the client request assistant
+([client request assistant](client-request-assistant.md)). Skipping it keeps
+the standard greeting; it is saved with the business branding.
 
 **Save & finish** is the only write. When Google is connected it saves the
-business name, website, phone, service area and optional logo through
+business name, website, phone, service area, welcome line and optional logo through
 `/api/provider-branding`
 and publishes the chosen pricing as the account default through
 `/api/provider-pricing`, keeping any saved logo, website and named extras.
@@ -102,7 +108,9 @@ Incognito. A service worker or manifest alone is not proof of installation.
 
 ## Validation
 
-Setup assistant tests (`setup-assistant.test.js`, `SetupAssistant.test.jsx`,
+The setup assistant and the client request assistant share one chat flow
+engine (`src/chat-flow.js`) and chat components (`src/ChatParts.jsx`). Setup
+assistant tests (`setup-assistant.test.js`, `SetupAssistant.test.jsx`,
 `AppSetup.test.jsx`) cover branching, validation, every pricing path against
 the existing pricing contract, edit and dependent re-asking, persistence and
 exact resume, offline fallback, Google redirect return, popup sign-in,

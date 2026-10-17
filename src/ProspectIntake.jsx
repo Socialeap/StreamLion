@@ -28,19 +28,21 @@ export default function ProspectIntake({
   descriptor: initialDescriptor,
   token,
   api,
+  initial,
+  onShowAssistant,
 }) {
   const [pricingNotice, setPricingNotice] = useState("");
   const [descriptor, setDescriptor] = useState(initialDescriptor),
-    [quantities, setQuantities] = useState({}),
-    [budget, setBudget] = useState(""),
+    [quantities, setQuantities] = useState(initial?.quantities || {}),
+    [budget, setBudget] = useState(initial?.budget || ""),
     [pricingChanged, setPricingChanged] = useState(false);
   const modernPricing = Object.hasOwn(descriptor, "pricing"),
     config = descriptor.pricing?.config;
   const legacyEstimate =
     !modernPricing && Boolean(descriptor.intake?.estimateProfile);
   const attempt = useRef(null);
-  const [fields, setFields] = useState({}),
-    [email, setEmail] = useState(""),
+  const [fields, setFields] = useState(initial?.fields || {}),
+    [email, setEmail] = useState(initial?.email || ""),
     [creative, setCreative] = useState(false),
     [propertyType, setPropertyType] = useState(""),
     [complexity, setComplexity] = useState(""),
@@ -75,6 +77,19 @@ export default function ProspectIntake({
         {descriptor.reusable ? "public work-order form" : "private invitation"}
       </p>
       <h2>Estimate & work-order request</h2>
+      {onShowAssistant && (
+        <p>
+          <button
+            type="button"
+            className="coord-secondary"
+            onClick={onShowAssistant}
+          >
+            Answer one question at a time instead
+          </button>{" "}
+          {initial &&
+            "Your assistant answers are copied here. Changes on this page stay on this page."}
+        </p>
+      )}
       <p>
         Your request goes to{" "}
         <strong>{descriptor.branding?.name || descriptor.brand}</strong>.

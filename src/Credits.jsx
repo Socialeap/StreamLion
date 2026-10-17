@@ -22,12 +22,27 @@ export async function creditRequest(path, { account, ...options } = {}) {
     throw new Error("Credit settings could not be verified.");
   return data;
 }
+const money = (cents) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+    cents / 100,
+  );
+const BRANDS = {
+  amex: "American Express",
+  discover: "Discover",
+  mastercard: "Mastercard",
+  visa: "Visa",
+};
+export const cardLabel = (card) =>
+  `${BRANDS[card.brand] || card.brand.charAt(0).toUpperCase() + card.brand.slice(1)} •••• ${card.last4}`;
 export default function Credits() {
   const [config, setConfig] = useState(null),
     [account, setAccount] = useState(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [saveCard, setSaveCard] = useState(false),
+    [chosen, setChosen] = useState(null),
+    [bankCheck, setBankCheck] = useState(null);
   const epoch = useRef(0),
     submitting = useRef(false);
   async function load() {
@@ -87,7 +102,7 @@ export default function Credits() {
       epoch.current++;
     };
   }, []);
-  async function buy(packId) {
+  async function buy(packId, save = false) {
     if (submitting.current || busy || !account?.connected) return;
     submitting.current = true;
     setBusy(true);
@@ -96,7 +111,7 @@ export default function Credits() {
       const result = await creditRequest("checkout", {
         method: "POST",
         account: account.subject,
-        body: JSON.stringify({ packId }),
+        body: JSON.stringify({ packId, ...(save ? { saveCard: true } : {}) }),
       });
       if (result.licenseRequired)
         setError(
@@ -117,6 +132,88 @@ export default function Credits() {
       )
         window.location.assign(result.url);
       else throw new Error("Checkout is unavailable. Try again.");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+  // Charges the saved card for the chosen pack, after the holder confirms.
+  async function topUp(pack) {
+    if (submitting.current || busy || !account?.connected) return;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    setBankCheck(null);
+    try {
+      const result = await creditRequest("topup", {
+        method: "POST",
+        account: account.subject,
+        body: JSON.stringify({ packId: pack.id }),
+      });
+      setChosen(null);
+      if (result.credited) {
+        setMessage("Credits added to your wallet.");
+        submitting.current = false;
+        await load();
+      } else if (result.processing)
+        setMessage(
+          "Payment is being confirmed. Check again shortly; no new payment is needed.",
+        );
+      else if (result.authenticationRequired) {
+        setBankCheck(pack);
+        setMessage(
+          "Your bank wants to confirm this payment. Continue in Stripe Checkout to finish it; your saved card was not charged.",
+        );
+      } else if (result.declined)
+        setError(
+          "Your saved card was declined and not charged. Pay with another card in Checkout, or remove the saved card.",
+        );
+      else if (result.cardRequired) {
+        setMessage(
+          "Your saved card is no longer available. Pay in Checkout to add credits.",
+        );
+        submitting.current = false;
+        await load();
+      } else if (result.pendingAmount)
+        setMessage(
+          `You already have a pending ${money(result.pendingAmount)} top-up. Finish it or wait about an hour before starting another.`,
+        );
+      else if (result.licenseRequired)
+        setError(
+          "Purchase StreamLion with this Google account before adding credits.",
+        );
+      else throw new Error("Top-up is unavailable. Try again.");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+  async function removeCard() {
+    if (submitting.current || busy || !account?.card) return;
+    if (
+      !window.confirm(
+        `Remove ${cardLabel(account.card)}? You can save a card again at your next checkout.`,
+      )
+    )
+      return;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await creditRequest("card", {
+        method: "POST",
+        account: account.subject,
+        body: JSON.stringify({ action: "remove" }),
+      });
+      setChosen(null);
+      setMessage("Saved card removed.");
+      submitting.current = false;
+      await load();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -238,6 +335,8 @@ export default function Credits() {
             <p>
               Add credits when you need them. No subscription or automatic
               recharge.
+              {config?.savedCards &&
+                " You can save a card for one-tap top-ups; it is charged only when you confirm a top-up yourself."}
             </p>
             <p>
               AI answers are optional and separately enabled. Buying credits
@@ -266,6 +365,18 @@ export default function Credits() {
                 <a href="/api/google/start?returnTo=credits">
                   Use a different Google account
                 </a>
+                {account.card && (
+                  <div className="credit-card-saved">
+                    <p>
+                      Saved card: <strong>{cardLabel(account.card)}</strong> ·
+                      expires {String(account.card.expMonth).padStart(2, "0")}/
+                      {String(account.card.expYear).slice(-2)}
+                    </p>
+                    <button type="button" disabled={busy} onClick={removeCard}>
+                      Remove card
+                    </button>
+                  </div>
+                )}
               </>
             )}
             {!config && !error && <p role="status">Checking credit options…</p>}
@@ -305,24 +416,102 @@ export default function Credits() {
                   </a>
                 </p>
               ) : (
-                <div className="credit-packs" aria-label="Prepaid credit packs">
-                  {config.packs.map((pack) => (
-                    <button
-                      key={pack.id}
-                      aria-label={`${creditLabel(pack.creditsMicros)} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(pack.amount / 100)}`}
-                      onClick={() => buy(pack.id)}
-                      disabled={busy}
-                    >
-                      <strong>{creditLabel(pack.creditsMicros)}</strong>
+                <>
+                  {config.savedCards && !account.card && (
+                    <label className="credit-save">
+                      <input
+                        type="checkbox"
+                        checked={saveCard}
+                        disabled={busy}
+                        onChange={(e) => setSaveCard(e.target.checked)}
+                      />
                       <span>
-                        {new Intl.NumberFormat("en-US", {
-                          style: "currency",
-                          currency: "USD",
-                        }).format(pack.amount / 100)}
+                        Save my card for one-tap top-ups
+                        <small>
+                          Stripe keeps the card. StreamLion charges it only when
+                          you choose a pack and confirm — never automatically.
+                          Remove it here any time.
+                        </small>
                       </span>
+                    </label>
+                  )}
+                  <div
+                    className="credit-packs"
+                    aria-label="Prepaid credit packs"
+                  >
+                    {config.packs.map((pack) => (
+                      <button
+                        key={pack.id}
+                        aria-label={`${creditLabel(pack.creditsMicros)} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(pack.amount / 100)}`}
+                        aria-pressed={
+                          config.savedCards && account.card
+                            ? chosen?.id === pack.id
+                            : undefined
+                        }
+                        onClick={() =>
+                          config.savedCards && account.card
+                            ? setChosen(pack)
+                            : buy(pack.id, saveCard)
+                        }
+                        disabled={busy}
+                      >
+                        <strong>{creditLabel(pack.creditsMicros)}</strong>
+                        <span>
+                          {new Intl.NumberFormat("en-US", {
+                            style: "currency",
+                            currency: "USD",
+                          }).format(pack.amount / 100)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  {chosen && account.card && config.savedCards && (
+                    <div
+                      className="credit-confirm"
+                      role="group"
+                      aria-label="Confirm top-up"
+                    >
+                      <p>
+                        Add {creditLabel(chosen.creditsMicros)} for{" "}
+                        {money(chosen.amount)} with {cardLabel(account.card)}?
+                      </p>
+                      <button
+                        type="button"
+                        className="purchase-primary"
+                        disabled={busy}
+                        onClick={() => topUp(chosen)}
+                      >
+                        Pay {money(chosen.amount)}
+                      </button>
+                      <div className="credit-confirm-actions">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setChosen(null)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => buy(chosen.id)}
+                        >
+                          Pay with another card
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {bankCheck && (
+                    <button
+                      type="button"
+                      className="purchase-primary"
+                      disabled={busy}
+                      onClick={() => buy(bankCheck.id)}
+                    >
+                      Continue in Checkout
                     </button>
-                  ))}
-                </div>
+                  )}
+                </>
               ))}
             {config?.enabled && (
               <p>

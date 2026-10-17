@@ -36,7 +36,8 @@ const ICONS = {
   "aiUses:helper": Sparkles,
   "aiVoice:aloud": Volume2,
 };
-const iconFor = (step, option) => ICONS[`${step.id}:${option.id}`];
+const iconFor = (step, option) =>
+  option.icon || ICONS[`${step.id}:${option.id}`];
 
 function FieldError({ id, children }) {
   return children ? (
@@ -59,6 +60,11 @@ export function TextWidget({
   const suggestions = (step.suggestions?.(answers) || []).filter(
     (item) => item && item !== text.trim(),
   );
+  const Input = step.multiline ? "textarea" : "input";
+  const skip =
+    typeof step.optional === "function"
+      ? step.optional(answers)
+      : step.optional;
   return (
     <form
       className="setup-composer"
@@ -86,14 +92,19 @@ export function TextWidget({
         <label className="sr-only" htmlFor={id}>
           {step.label}
         </label>
-        <input
+        <Input
           id={id}
           data-setup-focus
           value={text}
-          maxLength={step.id === "business" ? 100 : 80}
+          maxLength={step.maxLength || (step.id === "business" ? 100 : 80)}
           placeholder={step.placeholder}
           autoComplete={step.autoComplete || "off"}
-          enterKeyHint="send"
+          type={step.multiline ? undefined : step.inputType || "text"}
+          inputMode={
+            step.inputMode || (step.inputType === "url" ? "url" : undefined)
+          }
+          rows={step.multiline ? 3 : undefined}
+          enterKeyHint={step.multiline ? undefined : "send"}
           disabled={disabled}
           aria-invalid={error ? true : undefined}
           onChange={(event) => setText(event.target.value)}
@@ -106,6 +117,17 @@ export function TextWidget({
           <ArrowUp size={20} aria-hidden="true" />
         </button>
       </div>
+      {skip && (
+        <div className="setup-dock-actions">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onSubmit("")}
+          >
+            {skip}
+          </button>
+        </div>
+      )}
     </form>
   );
 }
@@ -138,22 +160,42 @@ export function FormWidget({
                 {field.label}
                 {!field.required && <em> · optional</em>}
               </label>
-              <input
-                id={fieldId}
-                data-setup-focus={index === 0 ? true : undefined}
-                type={field.type || "text"}
-                inputMode={field.type === "url" ? "url" : undefined}
-                autoComplete={field.autoComplete}
-                placeholder={field.placeholder}
-                value={draft[field.key] || ""}
-                disabled={disabled}
-                required={field.required}
-                aria-invalid={problem ? true : undefined}
-                aria-describedby={problem ? `${fieldId}-error` : undefined}
-                onChange={(event) =>
-                  setDraft({ ...draft, [field.key]: event.target.value })
-                }
-              />
+              {field.options ? (
+                <select
+                  id={fieldId}
+                  data-setup-focus={index === 0 ? true : undefined}
+                  value={draft[field.key] || ""}
+                  disabled={disabled}
+                  aria-invalid={problem ? true : undefined}
+                  aria-describedby={problem ? `${fieldId}-error` : undefined}
+                  onChange={(event) =>
+                    setDraft({ ...draft, [field.key]: event.target.value })
+                  }
+                >
+                  <option value="">{field.blank || "Not known yet"}</option>
+                  {field.options.map((option) => (
+                    <option key={option}>{option}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id={fieldId}
+                  data-setup-focus={index === 0 ? true : undefined}
+                  type={field.type || "text"}
+                  inputMode={field.type === "url" ? "url" : undefined}
+                  autoComplete={field.autoComplete}
+                  placeholder={field.placeholder}
+                  maxLength={field.maxLength}
+                  value={draft[field.key] || ""}
+                  disabled={disabled}
+                  required={field.required}
+                  aria-invalid={problem ? true : undefined}
+                  aria-describedby={problem ? `${fieldId}-error` : undefined}
+                  onChange={(event) =>
+                    setDraft({ ...draft, [field.key]: event.target.value })
+                  }
+                />
+              )}
               <FieldError id={`${fieldId}-error`}>{problem}</FieldError>
             </div>
           );
@@ -161,7 +203,7 @@ export function FormWidget({
       </div>
       <div className="setup-dock-actions">
         <button className="primary" disabled={disabled}>
-          Continue
+          {step.submitLabel || "Continue"}
         </button>
       </div>
     </form>
@@ -321,6 +363,15 @@ export function NumberWidget({
         </button>
       </div>
       <div className="setup-dock-actions">
+        {step.optional && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onSubmit("")}
+          >
+            {step.optional}
+          </button>
+        )}
         <button className="primary" disabled={disabled || !amount}>
           Continue
         </button>

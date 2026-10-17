@@ -6,7 +6,7 @@ import {
   limited,
   validateCheckout,
 } from "./stripe-purchase.js";
-import { getSession } from "./google-auth.js";
+import { getSession, hash } from "./google-auth.js";
 import {
   checkoutAccess,
   checkoutQuoteAccess,
@@ -70,6 +70,8 @@ const EVENTS = new Set([
   "charge.dispute.closed",
   "charge.dispute.funds_withdrawn",
   "charge.dispute.funds_reinstated",
+  "payment_intent.succeeded",
+  "payment_intent.payment_failed",
 ]);
 function creditConfiguration(env) {
   const mode = paidCreditMode(env);
@@ -95,6 +97,99 @@ async function creditPreflight(env, stripe) {
   );
   if (!stamp) throw new Error("credit_configuration");
   await preflight(env, stripe);
+}
+// Saved cards are optional and closed by default. A saved card is charged only
+// when its account holder taps a top-up; nothing here recharges a wallet.
+const cardsTable = async (env) => {
+  try {
+    return Boolean(
+      await first(
+        env,
+        "SELECT version FROM streamlion_credit_cards_schema_v1 WHERE version=1",
+      ),
+    );
+  } catch {
+    return false;
+  }
+};
+const cardsReady = async (env) =>
+  env.STREAMLION_SAVED_CARDS_ENABLED === "true" && (await cardsTable(env));
+const savedCard = (env, mode, subject) =>
+  first(
+    env,
+    "SELECT * FROM streamlion_credit_cards_v1 WHERE mode=? AND google_subject=?",
+    mode,
+    subject,
+  );
+const cardView = (card) =>
+  card?.payment_method
+    ? {
+        brand: card.brand,
+        last4: card.last4,
+        expMonth: card.exp_month,
+        expYear: card.exp_year,
+      }
+    : null;
+// One Stripe customer per Google account and mode holds the saved card.
+async function walletCustomer(env, stripe, mode, identity) {
+  const known = await savedCard(env, mode, identity.google_subject);
+  if (known) return known.customer_id;
+  const customer = await stripe.customers.create(
+    {
+      email: identity.email,
+      metadata: { app: "streamlion", kind: "credit_wallet" },
+    },
+    {
+      idempotencyKey: `streamlion-customer:${mode}:${await hash(identity.google_subject)}`,
+    },
+  );
+  if (
+    !/^cus_\w+$/.test(customer.id || "") ||
+    customer.livemode !== (mode === "live")
+  )
+    throw new Error("credit_mismatch");
+  await run(
+    env,
+    "INSERT OR IGNORE INTO streamlion_credit_cards_v1(mode,google_subject,customer_id,updated_at) VALUES(?,?,?,?)",
+    mode,
+    identity.google_subject,
+    customer.id,
+    Date.now(),
+  );
+  return (await savedCard(env, mode, identity.google_subject)).customer_id;
+}
+// Remember the card a paid "save my card" checkout used, while it is still
+// attached to this account's customer. An older order never replaces a newer
+// card, and a card removed since then stays removed.
+async function rememberCard(env, order, intent) {
+  const method = intent?.payment_method;
+  if (
+    intent?.metadata?.save_card !== "1" ||
+    !method ||
+    typeof method !== "object" ||
+    method.type !== "card" ||
+    !method.card
+  )
+    return;
+  try {
+    await run(
+      env,
+      "UPDATE streamlion_credit_cards_v1 SET payment_method=?,brand=?,last4=?,exp_month=?,exp_year=?,saved_order_at=?,updated_at=? WHERE mode=? AND google_subject=? AND customer_id=? AND (saved_order_at IS NULL OR saved_order_at<=?)",
+      method.id,
+      String(method.card.brand || "card").slice(0, 20),
+      method.card.last4,
+      method.card.exp_month,
+      method.card.exp_year,
+      order.created_at,
+      Date.now(),
+      order.mode,
+      order.google_subject,
+      idOf(method.customer),
+      order.created_at,
+    );
+  } catch {
+    /* Credits never depend on remembering the card. */
+  }
 }
 async function catalog(env, stripe, mode) {
   return Promise.all(
@@ -167,7 +262,112 @@ async function salesReady(env, mode) {
     capacity.dailyAttempts < policy.daily_requests
   );
 }
-export async function reconcileCredits(env, stripe, orderId, sessionId) {
+// The credited amount for a succeeded payment, after refunds and any
+// dispute that is not won.
+async function paidState(stripe, order, intent, total) {
+  const charge = intent?.latest_charge;
+  if (
+    intent?.status !== "succeeded" ||
+    intent.livemode !== (order.mode === "live") ||
+    intent.metadata?.app !== "streamlion" ||
+    intent.metadata?.kind !== "ai_credits" ||
+    intent.metadata?.order_id !== order.order_id ||
+    !charge?.paid ||
+    !charge.captured ||
+    charge.currency !== order.currency ||
+    !Number.isSafeInteger(charge.amount) ||
+    charge.amount !== total ||
+    charge.amount < order.amount
+  )
+    throw new Error("credit_mismatch");
+  const refunded = charge.amount_refunded || 0;
+  if (
+    !Number.isSafeInteger(refunded) ||
+    refunded < 0 ||
+    refunded > charge.amount
+  )
+    throw new Error("credit_mismatch");
+  let status = refunded >= charge.amount ? "refunded" : "paid";
+  // Revoke proportionally, rounding toward safety. Tax-inclusive full refunds revoke all.
+  let target =
+    order.credits_micros -
+    Math.ceil((order.credits_micros * refunded) / charge.amount);
+  if (charge.disputed) {
+    const disputes = await stripe.disputes.list({
+      payment_intent: intent.id,
+      limit: 100,
+    });
+    if (
+      disputes.has_more ||
+      !disputes.data.length ||
+      disputes.data.some((d) => d.status !== "won")
+    ) {
+      status = "disputed";
+      target = 0;
+    }
+  }
+  return { status, refunded, target };
+}
+const topupOf = async (env, orderId) => {
+  try {
+    return await first(
+      env,
+      "SELECT * FROM streamlion_credit_topups_v1 WHERE order_id=?",
+      orderId,
+    );
+  } catch {
+    return null;
+  }
+};
+// A saved-card top-up has no Checkout Session; its PaymentIntent is the record.
+async function reconcileTopup(env, stripe, order, topup, intentId) {
+  const id = order.payment_intent || intentId;
+  if (!id) return { order, saved: true };
+  const intent = await stripe.paymentIntents.retrieve(id, {
+    expand: ["latest_charge"],
+  });
+  if (
+    intent.id !== id ||
+    intent.livemode !== (order.mode === "live") ||
+    intent.metadata?.app !== "streamlion" ||
+    intent.metadata?.kind !== "ai_credits" ||
+    intent.metadata?.source !== "saved_card" ||
+    intent.metadata?.order_id !== order.order_id ||
+    intent.amount !== order.amount ||
+    intent.currency !== order.currency ||
+    idOf(intent.customer) !== topup.customer_id ||
+    idOf(intent.payment_method) !== topup.payment_method
+  )
+    throw new Error("credit_mismatch");
+  let state = { status: "failed", refunded: 0, target: 0 };
+  if (intent.status === "succeeded")
+    state = await paidState(stripe, order, intent, intent.amount);
+  else if (intent.status === "processing")
+    state = { status: "processing", refunded: 0, target: 0 };
+  const saved = await run(
+    env,
+    `UPDATE streamlion_credit_orders_v1 SET payment_intent=?,status=?,amount_refunded=?,credited_micros=?,updated_at=?,revision=revision+1 WHERE order_id=? AND revision=? AND checkout_session IS NULL`,
+    intent.id,
+    state.status,
+    state.refunded,
+    state.target,
+    Date.now(),
+    order.order_id,
+    order.revision,
+  );
+  return {
+    order: { ...order, status: state.status, credited_micros: state.target },
+    saved: saved.meta.changes > 0,
+    intent,
+  };
+}
+export async function reconcileCredits(
+  env,
+  stripe,
+  orderId,
+  sessionId,
+  intentId,
+) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const order = await first(
       env,
@@ -175,9 +375,24 @@ export async function reconcileCredits(env, stripe, orderId, sessionId) {
       orderId,
     );
     if (!order) throw new Error("credit_mismatch");
+    if (!sessionId && !order.checkout_session) {
+      const topup = await topupOf(env, orderId);
+      // An order still waiting for its Checkout Session has nothing to settle.
+      if (!topup) return order;
+      const result = await reconcileTopup(env, stripe, order, topup, intentId);
+      // The grant trigger runs in the same transaction as this revision check.
+      if (result.saved) return result.order;
+      continue;
+    }
     const session = await stripe.checkout.sessions.retrieve(
       sessionId || order.checkout_session,
-      { expand: ["line_items", "payment_intent.latest_charge"] },
+      {
+        expand: [
+          "line_items",
+          "payment_intent.latest_charge",
+          "payment_intent.payment_method",
+        ],
+      },
     );
     validateCheckout(session, order);
     if (session.metadata?.kind !== "ai_credits")
@@ -193,49 +408,13 @@ export async function reconcileCredits(env, stripe, orderId, sessionId) {
             : "pending",
       refunded = 0,
       target = 0;
-    if (session.payment_status === "paid") {
-      const charge = intent?.latest_charge;
-      if (
-        intent?.status !== "succeeded" ||
-        intent.livemode !== session.livemode ||
-        intent.metadata?.app !== "streamlion" ||
-        intent.metadata?.kind !== "ai_credits" ||
-        intent.metadata?.order_id !== orderId ||
-        !charge?.paid ||
-        !charge.captured ||
-        charge.currency !== order.currency ||
-        !Number.isSafeInteger(charge.amount) ||
-        charge.amount !== session.amount_total ||
-        charge.amount < order.amount
-      )
-        throw new Error("credit_mismatch");
-      refunded = charge.amount_refunded || 0;
-      if (
-        !Number.isSafeInteger(refunded) ||
-        refunded < 0 ||
-        refunded > charge.amount
-      )
-        throw new Error("credit_mismatch");
-      status = refunded >= charge.amount ? "refunded" : "paid";
-      // Revoke proportionally, rounding toward safety. Tax-inclusive full refunds revoke all.
-      target =
-        order.credits_micros -
-        Math.ceil((order.credits_micros * refunded) / charge.amount);
-      if (charge.disputed) {
-        const disputes = await stripe.disputes.list({
-          payment_intent: intent.id,
-          limit: 100,
-        });
-        if (
-          disputes.has_more ||
-          !disputes.data.length ||
-          disputes.data.some((d) => d.status !== "won")
-        ) {
-          status = "disputed";
-          target = 0;
-        }
-      }
-    }
+    if (session.payment_status === "paid")
+      ({ status, refunded, target } = await paidState(
+        stripe,
+        order,
+        intent,
+        session.amount_total,
+      ));
     const saved = await run(
       env,
       `UPDATE streamlion_credit_orders_v1 SET checkout_session=?,payment_intent=?,status=?,amount_refunded=?,credited_micros=?,updated_at=?,revision=revision+1 WHERE order_id=? AND revision=?`,
@@ -249,12 +428,48 @@ export async function reconcileCredits(env, stripe, orderId, sessionId) {
       order.revision,
     );
     // The grant trigger runs in the same transaction as this revision check.
-    if (saved.meta.changes)
+    if (saved.meta.changes) {
+      if (status === "paid") await rememberCard(env, order, intent);
       return { ...order, status, credited_micros: target };
+    }
   }
   throw new Error("credit_busy");
 }
-async function checkout(env, stripe, identity, config, packId) {
+const pendingOrder = (env, mode, subject) =>
+  first(
+    env,
+    "SELECT * FROM streamlion_credit_orders_v1 WHERE mode=? AND google_subject=? AND status IN ('pending','processing')",
+    mode,
+    subject,
+  );
+async function expireOrders(env, mode) {
+  await run(
+    env,
+    "UPDATE streamlion_credit_orders_v1 SET status='expired',revision=revision+1 WHERE mode=? AND checkout_session IS NULL AND status='pending' AND expires_at<=?",
+    mode,
+    Date.now(),
+  );
+}
+async function createOrder(env, config, identity, pack) {
+  const now = Date.now();
+  await run(
+    env,
+    `INSERT OR IGNORE INTO streamlion_credit_orders_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,credits_micros,created_at,expires_at,updated_at) VALUES(?,?,?,?,?,?,?,'usd',?,?,?,?)`,
+    crypto.randomUUID(),
+    config.mode,
+    identity.google_subject,
+    identity.email,
+    pack.priceId,
+    env.STRIPE_AI_PRODUCT_ID,
+    pack.amount,
+    pack.creditsMicros,
+    now,
+    now + 3600000,
+    now,
+  );
+  return pendingOrder(env, config.mode, identity.google_subject);
+}
+async function checkout(env, stripe, identity, config, packId, saveCard) {
   if (!(await salesReady(env, config.mode))) throw new Error("credit_closed");
   if (!(await hasPurchase(env, identity.google_subject)))
     return { licenseRequired: true };
@@ -262,18 +477,21 @@ async function checkout(env, stripe, identity, config, packId) {
   const packs = await catalog(env, stripe, config.mode),
     pack = packs.find((p) => p.id === packId);
   if (!pack) throw new Error("bad_request");
-  await run(
-    env,
-    "UPDATE streamlion_credit_orders_v1 SET status='expired',revision=revision+1 WHERE mode=? AND checkout_session IS NULL AND status='pending' AND expires_at<=?",
-    config.mode,
-    Date.now(),
-  );
-  let order = await first(
-    env,
-    "SELECT * FROM streamlion_credit_orders_v1 WHERE mode=? AND google_subject=? AND status IN ('pending','processing')",
-    config.mode,
-    identity.google_subject,
-  );
+  await expireOrders(env, config.mode);
+  let order = await pendingOrder(env, config.mode, identity.google_subject);
+  if (
+    order &&
+    !order.checkout_session &&
+    (await topupOf(env, order.order_id))
+  ) {
+    // A saved-card top-up in progress is settled first; it never gets a
+    // Checkout Session of its own.
+    order = await reconcileCredits(env, stripe, order.order_id);
+    if (order.status === "pending") return { pendingAmount: order.amount };
+    if (order.status === "processing") return { processing: true };
+    if (order.status === "paid") return { credited: true };
+    order = null;
+  }
   if (order?.checkout_session) {
     order = await reconcileCredits(
       env,
@@ -289,47 +507,33 @@ async function checkout(env, stripe, identity, config, packId) {
     if (order.status === "paid") return { credited: true };
     order = null;
   }
-  if (!order) {
-    const now = Date.now();
-    await run(
-      env,
-      `INSERT OR IGNORE INTO streamlion_credit_orders_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,credits_micros,created_at,expires_at,updated_at) VALUES(?,?,?,?,?,?,?,'usd',?,?,?,?)`,
-      crypto.randomUUID(),
-      config.mode,
-      identity.google_subject,
-      identity.email,
-      pack.priceId,
-      env.STRIPE_AI_PRODUCT_ID,
-      pack.amount,
-      pack.creditsMicros,
-      now,
-      now + 3600000,
-      now,
-    );
-    order = await first(
-      env,
-      "SELECT * FROM streamlion_credit_orders_v1 WHERE mode=? AND google_subject=? AND status IN ('pending','processing')",
-      config.mode,
-      identity.google_subject,
-    );
-  }
+  if (!order) order = await createOrder(env, config, identity, pack);
   if (!order || order.price_id !== pack.priceId)
     throw new Error("credit_pending");
+  if (!order.checkout_session && (await topupOf(env, order.order_id)))
+    return { pendingAmount: order.amount };
+  const save = saveCard === true && (await cardsReady(env));
+  const customer = save
+    ? await walletCustomer(env, stripe, config.mode, identity)
+    : null;
   const metadata = {
     app: "streamlion",
     kind: "ai_credits",
     order_id: order.order_id,
+    ...(save ? { save_card: "1" } : {}),
   };
   const session = await stripe.checkout.sessions.create(
     {
       mode: "payment",
       client_reference_id: order.order_id,
-      customer_email: order.checkout_email,
+      ...(save ? { customer } : { customer_email: order.checkout_email }),
       line_items: [{ price: order.price_id, quantity: 1 }],
       metadata,
       payment_intent_data: {
         statement_descriptor_suffix: "STREAMLION",
         metadata,
+        // Saved for top-ups the account holder starts in StreamLion.
+        ...(save ? { setup_future_usage: "on_session" } : {}),
       },
       expires_at: Math.floor(order.expires_at / 1000),
       success_url:
@@ -342,7 +546,10 @@ async function checkout(env, stripe, identity, config, packId) {
         },
         submit: {
           message:
-            "Prepaid credits for confirmed client jobs and optional AI Project Assistant answers. One payment, no subscription or automatic recharge. Credits stay with the Google account selected before checkout.",
+            "Prepaid credits for confirmed client jobs and optional AI Project Assistant answers. One payment, no subscription or automatic recharge. Credits stay with the Google account selected before checkout." +
+            (save
+              ? " Your card is saved for top-ups you start yourself in StreamLion. Remove it any time on the Credits page."
+              : ""),
         },
       },
     },
@@ -354,19 +561,170 @@ async function checkout(env, stripe, identity, config, packId) {
     new URL(session.url).origin !== "https://checkout.stripe.com"
   )
     throw new Error("credit_mismatch");
-  await run(
+  // A saved-card top-up may claim the same order concurrently; only one of
+  // them is recorded, and a Checkout that lost is never shown.
+  const cards = await cardsTable(env);
+  const recorded = await run(
     env,
-    "UPDATE streamlion_credit_orders_v1 SET checkout_session=?,checkout_url=?,revision=revision+1 WHERE order_id=? AND (checkout_session IS NULL OR checkout_session=?)",
+    "UPDATE streamlion_credit_orders_v1 SET checkout_session=?,checkout_url=?,revision=revision+1 WHERE order_id=? AND (checkout_session IS NULL OR checkout_session=?)" +
+      (cards
+        ? " AND NOT EXISTS(SELECT 1 FROM streamlion_credit_topups_v1 t WHERE t.order_id=streamlion_credit_orders_v1.order_id)"
+        : ""),
     session.id,
     session.url,
     order.order_id,
     session.id,
   );
+  if (!recorded.meta.changes && cards && (await topupOf(env, order.order_id)))
+    return { pendingAmount: order.amount };
   if (session.status === "expired") {
     await reconcileCredits(env, stripe, order.order_id, session.id);
     throw new Error("credit_busy");
   }
   return { url: session.url };
+}
+// One tap: charge the saved card for one pack while its holder is in the app.
+// A bank that asks for confirmation fails the attempt at once; the Credits
+// page then offers Stripe Checkout for the same pack.
+async function topup(env, stripe, identity, config, packId) {
+  if (!(await cardsReady(env))) throw new Error("bad_request");
+  if (!(await salesReady(env, config.mode))) throw new Error("credit_closed");
+  if (!(await hasPurchase(env, identity.google_subject)))
+    return { licenseRequired: true };
+  await limited(env, "credits:" + identity.google_subject);
+  const packs = await catalog(env, stripe, config.mode),
+    pack = packs.find((p) => p.id === packId);
+  if (!pack) throw new Error("bad_request");
+  const card = await savedCard(env, config.mode, identity.google_subject);
+  if (!card?.payment_method) return { cardRequired: true };
+  await expireOrders(env, config.mode);
+  let order = await pendingOrder(env, config.mode, identity.google_subject),
+    marked = order && (await topupOf(env, order.order_id));
+  if (order) {
+    // An open Checkout, or an order still waiting for one, finishes first.
+    if (order.checkout_session || !marked)
+      return { pendingAmount: order.amount };
+    order = await reconcileCredits(env, stripe, order.order_id);
+    if (order.status === "processing") return { processing: true };
+    if (order.status === "paid") return { credited: true };
+    if (order.status !== "pending") order = null;
+    // A charge request that may not have finished is retried with its key.
+    else if (order.price_id !== pack.priceId)
+      return { pendingAmount: order.amount };
+  }
+  if (!order) {
+    order = await createOrder(env, config, identity, pack);
+    if (!order || order.price_id !== pack.priceId || order.checkout_session)
+      throw new Error("credit_pending");
+    // Claim the order only while no Checkout Session is recorded for it.
+    const claimed = await run(
+      env,
+      "INSERT OR IGNORE INTO streamlion_credit_topups_v1(order_id,customer_id,payment_method,created_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM streamlion_credit_orders_v1 WHERE order_id=? AND checkout_session IS NULL AND status='pending')",
+      order.order_id,
+      card.customer_id,
+      card.payment_method,
+      Date.now(),
+      order.order_id,
+    );
+    marked = await topupOf(env, order.order_id);
+    if (
+      !claimed.meta.changes &&
+      (marked?.customer_id !== card.customer_id ||
+        marked?.payment_method !== card.payment_method)
+    )
+      return { pendingAmount: order.amount };
+  }
+  let intent, failure;
+  try {
+    intent = await stripe.paymentIntents.create(
+      {
+        amount: order.amount,
+        currency: order.currency,
+        customer: marked.customer_id,
+        payment_method: marked.payment_method,
+        payment_method_types: ["card"],
+        confirm: true,
+        error_on_requires_action: true,
+        description: "StreamLion prepaid credits",
+        statement_descriptor_suffix: "STREAMLION",
+        metadata: {
+          app: "streamlion",
+          kind: "ai_credits",
+          order_id: order.order_id,
+          source: "saved_card",
+        },
+      },
+      { idempotencyKey: `streamlion-topup:${config.mode}:${order.order_id}` },
+    );
+  } catch (error) {
+    failure = error;
+    intent = error?.payment_intent || error?.raw?.payment_intent;
+    if (!intent?.id) {
+      // A card Stripe can no longer use is forgotten, and nothing was charged.
+      if (
+        error?.type === "StripeInvalidRequestError" &&
+        /payment_method/.test(error.param || "")
+      ) {
+        await run(
+          env,
+          "UPDATE streamlion_credit_orders_v1 SET status='failed',revision=revision+1 WHERE order_id=? AND status='pending' AND payment_intent IS NULL",
+          order.order_id,
+        );
+        await forgetCard(
+          env,
+          config.mode,
+          identity.google_subject,
+          marked.payment_method,
+        );
+        return { cardRequired: true };
+      }
+      throw error;
+    }
+  }
+  await run(
+    env,
+    "UPDATE streamlion_credit_orders_v1 SET payment_intent=?,revision=revision+1 WHERE order_id=? AND (payment_intent IS NULL OR payment_intent=?)",
+    intent.id,
+    order.order_id,
+    intent.id,
+  );
+  const settled = await reconcileCredits(env, stripe, order.order_id);
+  if (settled.status === "paid") return { credited: true };
+  if (settled.status === "processing") return { processing: true };
+  const code = intent.last_payment_error?.code || failure?.code;
+  return code === "authentication_required"
+    ? { authenticationRequired: true }
+    : { declined: true };
+}
+async function forgetCard(env, mode, subject, paymentMethod) {
+  await run(
+    env,
+    "UPDATE streamlion_credit_cards_v1 SET payment_method=NULL,brand=NULL,last4=NULL,exp_month=NULL,exp_year=NULL,updated_at=? WHERE mode=? AND google_subject=? AND payment_method=?",
+    Date.now(),
+    mode,
+    subject,
+    paymentMethod,
+  );
+}
+// Removing a card always works, even while sales or saved cards are closed.
+async function removeCard(env, stripe, identity, mode) {
+  if (!(await cardsTable(env))) throw new Error("bad_request");
+  await limited(env, "credits:" + identity.google_subject);
+  const card = await savedCard(env, mode, identity.google_subject);
+  if (card?.payment_method) {
+    try {
+      await stripe.paymentMethods.detach(card.payment_method);
+    } catch (error) {
+      if (
+        !["resource_missing", "payment_method_unexpected_state"].includes(
+          error?.code,
+        )
+      )
+        throw error;
+    }
+    await forgetCard(env, mode, identity.google_subject, card.payment_method);
+  }
+  return { removed: true };
 }
 async function webhook(request, env, stripe, config) {
   if (!request.headers.get("Stripe-Signature"))
@@ -388,7 +746,7 @@ async function webhook(request, env, stripe, config) {
     return json({ error: "Wrong payment environment." }, 400);
   if (!EVENTS.has(event.type)) return json({ received: true });
   const object = event.data.object;
-  let orderId, order;
+  let orderId, order, intentId;
   if (event.type.startsWith("checkout.session.")) {
     if (
       object.metadata?.app !== "streamlion" ||
@@ -397,7 +755,9 @@ async function webhook(request, env, stripe, config) {
       return json({ received: true });
     orderId = object.metadata.order_id;
   } else {
-    const intent = idOf(object.payment_intent);
+    const intent = event.type.startsWith("payment_intent.")
+      ? object.id
+      : idOf(object.payment_intent);
     if (!intent) return json({ received: true });
     // Retrieve current metadata even when chargeback/refund precedes completion.
     const payment = await stripe.paymentIntents.retrieve(intent);
@@ -407,6 +767,7 @@ async function webhook(request, env, stripe, config) {
     )
       return json({ received: true });
     orderId = payment.metadata.order_id;
+    intentId = payment.id;
   }
   await creditPreflight(env, stripe);
   if (
@@ -430,6 +791,7 @@ async function webhook(request, env, stripe, config) {
     event.type.startsWith("checkout.session.")
       ? object.id
       : order.checkout_session,
+    intentId,
   );
   await run(
     env,
@@ -448,6 +810,8 @@ export async function handleCredits({ request, env, params }) {
     config: "GET",
     status: "GET",
     checkout: "POST",
+    topup: "POST",
+    card: "POST",
     confirm: "POST",
     webhook: "POST",
   }[path];
@@ -479,8 +843,10 @@ export async function handleCredits({ request, env, params }) {
       await creditPreflight(env, stripe);
       const packs = await catalog(env, stripe, mode);
       const access = await checkoutQuoteAccess(request, env);
+      const enabled = access.allowed && (await salesReady(env, mode));
       return json({
-        enabled: access.allowed && (await salesReady(env, mode)),
+        enabled,
+        savedCards: enabled && (await cardsReady(env)),
         checkoutMode: access.mode,
         mode,
         markupPercent: 30,
@@ -504,7 +870,10 @@ export async function handleCredits({ request, env, params }) {
         request.headers.get("X-StreamLion-Account") !== identity.google_subject)
     )
       return json({ error: "Your account changed. Reopen this page." }, 403);
-    if (path === "checkout" && !checkoutAccess(env, identity).allowed)
+    if (
+      ["checkout", "topup"].includes(path) &&
+      !checkoutAccess(env, identity).allowed
+    )
       return json(CHECKOUT_PAUSED, 403);
     await creditPreflight(env, stripe);
     if (path === "status") {
@@ -523,6 +892,9 @@ export async function handleCredits({ request, env, params }) {
         balanceMicros: Math.max(0, wallet.balance_micros),
         creditHold: wallet.balance_micros < 0,
         priceMicros: wallet.price_micros,
+        card: (await cardsTable(env))
+          ? cardView(await savedCard(env, mode, identity.google_subject))
+          : null,
       });
     }
     if (
@@ -533,7 +905,22 @@ export async function handleCredits({ request, env, params }) {
       return json({ error: "Use JSON." }, 415);
     const body = JSON.parse(await boundedText(request, 2048));
     if (path === "checkout")
-      return json(await checkout(env, stripe, identity, config, body.packId));
+      return json(
+        await checkout(
+          env,
+          stripe,
+          identity,
+          config,
+          body.packId,
+          body.saveCard,
+        ),
+      );
+    if (path === "topup")
+      return json(await topup(env, stripe, identity, config, body.packId));
+    if (path === "card") {
+      if (body.action !== "remove") throw new Error("bad_request");
+      return json(await removeCard(env, stripe, identity, mode));
+    }
     if (path === "confirm") {
       if (!/^cs_(test_|live_)?[A-Za-z0-9]+$/.test(body.sessionId || ""))
         throw new Error("bad_request");

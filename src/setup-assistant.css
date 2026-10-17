@@ -93,6 +93,16 @@
   width: 24px;
   height: 25px;
 }
+.setup-avatar-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+  background: var(--surface);
+}
+.setup-assistant .setup-bubble .setup-lead {
+  margin-bottom: 6px;
+}
 .setup-feed {
   overflow-y: auto;
   overscroll-behavior: contain;

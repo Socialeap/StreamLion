@@ -217,6 +217,7 @@ test("a device-first setup branches by answers, applies the theme and finishes w
   await choose(ui, "Not now");
   await ui.findByText(/add your logo/);
   await choose(ui, "Skip for now");
+  await choose(ui, "Use the standard greeting");
   await choose(ui, "Dark");
   assert.equal(document.documentElement.dataset.theme, "dark");
   await ui.findByText(/Here’s your setup, Alex/);
@@ -329,6 +330,11 @@ test("Google sign-in, workbook creation, offline copy and publishing happen only
   await choose(ui, "Not now");
   await ui.findByText(/add your logo/);
   await choose(ui, "Skip for now");
+  const welcome = await ui.findByLabelText("Welcome line for clients");
+  fireEvent.change(welcome, {
+    target: { value: "Welcome to Harbor Spatial! Let’s plan your capture." },
+  });
+  fireEvent.submit(welcome.closest("form"));
   await choose(ui, "Light");
   await ui.findByText(/Save “Harbor Spatial”/);
   assert(ui.getByText(/Publish this pricing as the default/));
@@ -345,6 +351,7 @@ test("Google sign-in, workbook creation, offline copy and publishing happen only
         website: "https://old.example/",
         logo: PNG,
         shape: "square",
+        welcome: "Welcome to Harbor Spatial! Let’s plan your capture.",
       },
     },
     "subject-a",
@@ -389,6 +396,7 @@ test("publishing problems are reported without losing the finished setup", async
   await choose(ui, /^No$/);
   await choose(ui, "Not now");
   await choose(ui, "Skip for now");
+  await choose(ui, "Use the standard greeting");
   await choose(ui, "Light");
   await choose(ui, "Save & finish");
   await ui.findByText(/Business branding awaits activation/);
@@ -490,6 +498,7 @@ test("saving publishes phone and service area with branding and keeps them for h
     ["pricingMethod", "skip"],
     ["aiUses", []],
     ["logo", null],
+    ["welcome", ""],
     ["theme", "light"],
   ])
     state = answerStep(state, id, value, { online: true });

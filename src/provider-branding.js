@@ -21,12 +21,34 @@ export function brandingPhone(value = "") {
     throw new Error("Use digits, spaces, +, ( ) or - with 7 to 15 digits.");
   return phone;
 }
+export function formatPhone(value) {
+  const digits = value.replace(/\D/g, "");
+  // Only plain ten-digit or +1 numbers are reformatted; others keep their form.
+  if (/^[\d\s().-]+$/.test(value) && digits.length === 10)
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  if (/^\+1[\d\s().-]+$/.test(value) && digits.length === 11)
+    return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  return value;
+}
 export function brandingArea(value = "") {
   const area =
     typeof value === "string" ? value.replace(/\s+/g, " ").trim() : null;
   if (area === null || area.length > 200 || /[\x00-\x1f\x7f]/.test(area))
     throw new Error("Keep the service area under 200 characters.");
   return area;
+}
+// Optional first line of the client request assistant, in the provider's words.
+export const WELCOME_LIMIT = 280;
+export function brandingWelcome(value = "") {
+  const text =
+    typeof value === "string" ? value.replace(/\s+/g, " ").trim() : null;
+  if (
+    text === null ||
+    text.length > WELCOME_LIMIT ||
+    /[\x00-\x1f\x7f]/.test(text)
+  )
+    throw new Error(`Keep the welcome line under ${WELCOME_LIMIT} characters.`);
+  return text;
 }
 export function validateBranding(input) {
   if (!input || typeof input !== "object" || Array.isArray(input))
@@ -38,6 +60,7 @@ export function validateBranding(input) {
     shape = "rounded",
     phone = "",
     area = "",
+    welcome = "",
   } = input;
   if (
     typeof name !== "string" ||
@@ -100,8 +123,12 @@ export function validateBranding(input) {
     if (!w || !h || w > 640 || h > 640)
       throw new Error("Logo dimensions exceed 640 pixels. Upload it again.");
   }
-  const contact = { phone: brandingPhone(phone), area: brandingArea(area) };
-  // Saved profiles without contact details keep their original shape.
+  const contact = {
+    phone: brandingPhone(phone),
+    area: brandingArea(area),
+    welcome: brandingWelcome(welcome),
+  };
+  // Saved profiles without these optional details keep their original shape.
   return {
     name: name.trim(),
     website: address,

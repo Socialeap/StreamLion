@@ -11,6 +11,8 @@ import NotificationSettings from "./NotificationSettings.jsx";
 import IntakeTemplateSettings from "./IntakeTemplateSettings.jsx";
 import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
 import ProspectIntake from "./ProspectIntake.jsx";
+import RequestAssistant from "./RequestAssistant.jsx";
+import { assistantSupported } from "./request-assistant.js";
 import RequestProgress from "./RequestProgress.jsx";
 import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
 import ProjectValue from "./ProjectValue.jsx";
@@ -163,7 +165,9 @@ export default function CoordinationPortal({
     [createdInvitation, setCreatedInvitation] = useState(null),
     [prepareBrief, setPrepareBrief] = useState(false),
     [prospect, setProspect] = useState(null),
-    [prospectToken, setProspectToken] = useState("");
+    [prospectToken, setProspectToken] = useState(""),
+    [intakeView, setIntakeView] = useState("chat"),
+    [intakeSeed, setIntakeSeed] = useState(null);
   const [verified, setVerified] = useState(false),
     [showClosed, setShowClosed] = useState(false),
     [verification, setVerification] = useState("");
@@ -643,6 +647,27 @@ export default function CoordinationPortal({
         ]
       : []),
   ];
+  // Shared forms and invitations open the guided request assistant; the
+  // one-page form stays one tap away.
+  if (
+    client &&
+    prospect &&
+    !verified &&
+    intakeView === "chat" &&
+    assistantSupported(prospect)
+  )
+    return (
+      <RequestAssistant
+        key={prospectToken}
+        descriptor={prospect}
+        token={prospectToken}
+        api={api}
+        onShowForm={(seed) => {
+          setIntakeSeed(seed);
+          setIntakeView("form");
+        }}
+      />
+    );
   return (
     <div className="coord-shell has-section-navigation">
       <AppHeader
@@ -781,6 +806,12 @@ export default function CoordinationPortal({
               descriptor={prospect}
               token={prospectToken}
               api={api}
+              initial={intakeSeed}
+              onShowAssistant={
+                assistantSupported(prospect)
+                  ? () => setIntakeView("chat")
+                  : undefined
+              }
             />
           </div>
         )}

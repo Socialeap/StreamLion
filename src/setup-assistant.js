@@ -1,10 +1,11 @@
-// The setup assistant is an ordered list of conditional steps. Each answer is
-// validated, committed to this device immediately, and the next question is
-// the first applicable step that is not yet confirmed. Editing an answer
-// re-asks only that step; steps that depend on it are re-asked as well.
+// The setup assistant is a chat flow (chat-flow.js): an ordered list of
+// conditional steps whose answers are committed to this device immediately.
 import {
+  WELCOME_LIMIT,
   brandingArea,
   brandingPhone,
+  brandingWelcome,
+  formatPhone,
   validateBranding,
 } from "./provider-branding.js";
 import {
@@ -12,7 +13,9 @@ import {
   decimalUnits,
   validatePricing,
 } from "./provider-pricing.js";
+import { createFlow } from "./chat-flow.js";
 
+export { formatPhone };
 export const SETUP_KEY = "streamlion-setup-v1";
 export const STAGES = [
   "About you",
@@ -194,15 +197,6 @@ const yesNo = (yes, no) => [
 ];
 const priced = (answers) =>
   ["area", "tiers", "flat"].includes(answers.pricingMethod);
-export function formatPhone(value) {
-  const digits = value.replace(/\D/g, "");
-  // Only plain ten-digit or +1 numbers are reformatted; others keep their form.
-  if (/^[\d\s().-]+$/.test(value) && digits.length === 10)
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  if (/^\+1[\d\s().-]+$/.test(value) && digits.length === 11)
-    return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-  return value;
-}
 export function normalizeWebsite(value) {
   const text = value.trim();
   if (!text) return "";
@@ -797,6 +791,23 @@ export const STEPS = [
     summary: (value) => (value ? "Logo added" : "No logo for now"),
   },
   {
+    id: "welcome",
+    title: "Client welcome",
+    label: "Welcome line for clients",
+    stage: 6,
+    kind: "text",
+    maxLength: WELCOME_LIMIT,
+    optional: "Use the standard greeting",
+    when: (answers) => has(answers, "focus", "requests"),
+    prompt: (answers) => ({
+      text: "When a client opens your request form, a request assistant walks them through it. What should it say first?",
+      hint: `Leave it to us and they’ll read: “Hi there! I’m ${answers.business}’s request assistant, and I’ll help you request a capture of your space.”`,
+    }),
+    placeholder: "e.g., Welcome to Harbor Spatial! Let’s plan your capture.",
+    validate: (value) => brandingWelcome(value),
+    summary: (value) => value || "Standard greeting",
+  },
+  {
     id: "theme",
     title: "Theme",
     stage: 6,
@@ -825,8 +836,9 @@ export const STEPS = [
     summary: () => "Saved my setup",
   },
 ];
+const flow = createFlow(STEPS);
 const byId = new Map(STEPS.map((step) => [step.id, step]));
-export const stepById = (id) => byId.get(id);
+export const stepById = flow.stepById;
 
 export const newSetup = (now = new Date().toISOString()) => ({
   version: 1,
@@ -865,92 +877,14 @@ export function writeSetup(state, storage = globalThis.localStorage) {
 }
 export const setupStatus = (state = readSetup()) => state?.status || "none";
 
-// Walk the ordered steps. Action steps (Google, workbook) count as done only
-// while the live connection confirms them. A done step whose stored answer no
-// longer validates (for example after an option list changed) is asked again.
-// Stored answers are re-checked without runtime limits such as being offline.
-export function walk(state, ctx = {}) {
-  const answers = {},
-    history = [];
-  for (const step of STEPS) {
-    if (step.when && !step.when(answers, ctx)) continue;
-    const automatic = step.satisfied?.(ctx, state.answers[step.id]);
-    if (automatic !== undefined) {
-      answers[step.id] = automatic;
-      history.push({ step, value: automatic, automatic: true });
-      continue;
-    }
-    if (state.done.includes(step.id) && !step.action) {
-      try {
-        const value = step.validate(state.answers[step.id], answers, {});
-        answers[step.id] = value;
-        history.push({ step, value });
-        continue;
-      } catch {
-        /* ask again below */
-      }
-    }
-    return { answers, history, current: step };
-  }
-  return { answers, history, current: null };
-}
-export function suggestedValue(state, step, answers, ctx = {}) {
-  if (Object.hasOwn(state.answers, step.id)) return state.answers[step.id];
-  return step.defaultValue?.(answers, ctx);
-}
-function withoutDependents(done, id) {
-  const remove = new Set();
-  const queue = [...(byId.get(id)?.dependents || [])];
-  while (queue.length) {
-    const next = queue.shift();
-    if (remove.has(next)) continue;
-    remove.add(next);
-    queue.push(...(byId.get(next)?.dependents || []));
-  }
-  return done.filter((item) => !remove.has(item));
-}
-export function answerStep(state, id, value, ctx = {}, now) {
-  const step = byId.get(id);
-  const { answers, current } = walk(state, ctx);
-  if (!step || current?.id !== id)
-    throw new Error("This question changed. Review the current question.");
-  const clean = step.validate(value, answers, ctx);
-  const changed =
-    JSON.stringify(state.answers[id]) !== JSON.stringify(clean) &&
-    Object.hasOwn(state.answers, id);
-  const done = changed ? withoutDependents(state.done, id) : state.done;
-  return {
-    ...state,
-    status: id === "review" ? "complete" : "active",
-    answers: { ...state.answers, [id]: clean },
-    done: [...done.filter((item) => item !== id), id],
-    updatedAt: now || new Date().toISOString(),
-    ...(id === "review"
-      ? { completedAt: now || new Date().toISOString() }
-      : {}),
-  };
-}
-export function editStep(state, id, now) {
-  return {
-    ...state,
-    status: "active",
-    done: state.done.filter((item) => item !== id && item !== "review"),
-    updatedAt: now || new Date().toISOString(),
-  };
-}
-// Reopen a finished setup on its review card so any answer can be revised.
-export const reopenSetup = (state, now) => editStep(state, "review", now);
-
-export function stageProgress(walked) {
-  const stage = walked.current ? walked.current.stage : STAGES.length;
-  return {
-    stage: Math.min(stage, STAGES.length - 1),
-    label: walked.current ? STAGES[walked.current.stage] : "All set",
-    percent: walked.current
-      ? Math.round((walked.current.stage / STAGES.length) * 100)
-      : 100,
-  };
-}
+export const {
+  walk,
+  suggestedValue,
+  answerStep,
+  editStep,
+  reopen: reopenSetup,
+} = flow;
+export const stageProgress = (walked) => flow.stageProgress(walked, STAGES);
 
 // The stored answers as one provider profile for the rest of the app. Only
 // answers that still apply (by their branching) are included.
@@ -994,6 +928,7 @@ export function setupProfile(state = readSetup()) {
     units: applies("units") ? a.units : "",
     pricing,
     logo: applies("logo") ? a.logo : null,
+    welcome: applies("welcome") ? a.welcome : "",
     theme: a.theme || "",
     ai: {
       uses: labels(AI_USES, a.aiUses),
@@ -1018,6 +953,7 @@ export function brandingSuggestion(profile = setupProfile()) {
     website: profile.website,
     phone: profile.phone,
     area: profile.area,
+    welcome: profile.welcome || "",
     logo: profile.logo?.logo || "",
     shape: profile.logo?.shape || "rounded",
   };

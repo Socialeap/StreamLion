@@ -329,3 +329,138 @@ test("active 160-credit policy drives both displayed prices; missing policy has 
   assert.ok(ui.getByText("Dollar estimate unavailable"));
   assert.equal(ui.queryByText("USD 2.00"), null);
 });
+function savedCardFetch(t, { card = null, replies = {} } = {}) {
+  const calls = [];
+  let current = card;
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    const path = url.split("/").at(-1);
+    if (options.method === "POST") {
+      calls.push({ path, body: JSON.parse(options.body) });
+      const reply = replies[path]?.shift?.() || { processing: true };
+      if (path === "card") current = null;
+      return Response.json(reply);
+    }
+    return Response.json(
+      path === "config"
+        ? {
+            enabled: true,
+            savedCards: true,
+            mode: "test",
+            projectMicros: 3000000,
+            packs,
+          }
+        : {
+            enabled: true,
+            connected: true,
+            account: "a@example.test",
+            subject: "a",
+            purchased: true,
+            balanceMicros: 10000000,
+            card: current,
+          },
+    );
+  });
+  return calls;
+}
+const visa = { brand: "visa", last4: "4242", expMonth: 3, expYear: 2030 };
+test("a card can be saved at checkout for one-tap top-ups, by explicit choice only", async (t) => {
+  const calls = savedCardFetch(t);
+  t.after(cleanup);
+  let ui;
+  await act(async () => {
+    ui = render(<Credits />);
+  });
+  const save = ui.getByRole("checkbox", {
+    name: /Save my card for one-tap top-ups/,
+  });
+  assert.equal(save.checked, false);
+  assert.ok(ui.getByText(/never automatically/));
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "800 credits for $10.00" })),
+  );
+  assert.deepEqual(calls[0], { path: "checkout", body: { packId: "small" } });
+  await act(async () => fireEvent.click(save));
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "2000 credits for $25.00" }),
+    ),
+  );
+  assert.deepEqual(calls[1], {
+    path: "checkout",
+    body: { packId: "medium", saveCard: true },
+  });
+});
+test("with a saved card, choosing a pack asks to confirm before one tap pays", async (t) => {
+  const calls = savedCardFetch(t, {
+    card: visa,
+    replies: { topup: [{ credited: true }, { authenticationRequired: true }] },
+  });
+  t.after(cleanup);
+  let ui;
+  await act(async () => {
+    ui = render(<Credits />);
+  });
+  assert.ok(ui.getByText("Visa •••• 4242"));
+  assert.ok(ui.getByText(/expires 03\/30/));
+  assert.equal(ui.queryByRole("checkbox"), null);
+  const pack = ui.getByRole("button", { name: "2000 credits for $25.00" });
+  await act(async () => fireEvent.click(pack));
+  assert.equal(calls.length, 0);
+  assert.equal(pack.getAttribute("aria-pressed"), "true");
+  const confirm = ui.getByRole("group", { name: "Confirm top-up" });
+  assert.match(
+    confirm.textContent,
+    /2000 credits for \$25\.00 with Visa •••• 4242/,
+  );
+  await act(async () =>
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" })),
+  );
+  assert.equal(ui.queryByRole("group", { name: "Confirm top-up" }), null);
+  await act(async () => fireEvent.click(pack));
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Pay $25.00" })),
+  );
+  assert.deepEqual(calls[0], { path: "topup", body: { packId: "medium" } });
+  assert.ok(await ui.findByText("Credits added to your wallet."));
+  // A bank that wants to confirm sends the same pack to Stripe Checkout.
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "800 credits for $10.00" })),
+  );
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Pay $10.00" })),
+  );
+  assert.ok(ui.getByText(/Your bank wants to confirm this payment/));
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Continue in Checkout" })),
+  );
+  assert.deepEqual(calls.at(-1), {
+    path: "checkout",
+    body: { packId: "small" },
+  });
+});
+test("a saved card can be removed after confirmation", async (t) => {
+  const calls = savedCardFetch(t, {
+    card: visa,
+    replies: { card: [{ removed: true }] },
+  });
+  t.after(cleanup);
+  let ui;
+  await act(async () => {
+    ui = render(<Credits />);
+  });
+  window.confirm = () => false;
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Remove card" })),
+  );
+  assert.equal(calls.length, 0);
+  window.confirm = () => true;
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Remove card" })),
+  );
+  assert.deepEqual(calls[0], { path: "card", body: { action: "remove" } });
+  assert.ok(await ui.findByText("Saved card removed."));
+  assert.equal(ui.queryByText("Visa •••• 4242"), null);
+  assert.ok(
+    ui.getByRole("checkbox", { name: /Save my card for one-tap top-ups/ }),
+  );
+});
