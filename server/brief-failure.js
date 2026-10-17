@@ -42,6 +42,6 @@ export function briefFailure(error) {
   return {
     errorCode: code,
     reference,
-    error: `${messages[code]} Reserved credits were returned; your draft is unchanged. Reference: ${reference}. Recover this attempt before starting anything else.`,
+    error: `${messages[code]} Reserved credits were returned; your draft is unchanged. Reference: ${reference}.`,
   };
 }

@@ -20,6 +20,8 @@ Object.defineProperty(globalThis, "navigator", {
 const { render, fireEvent, cleanup, waitFor } =
   await import("@testing-library/react");
 const { default: BriefImporter } = await import("./BriefImporter.jsx");
+const { BriefFailure, briefFailure } =
+  await import("../server/brief-failure.js");
 const { intakeFor } = await import("./project-schema.js");
 const { fillEmptyBriefFields, readPendingBrief, briefRequest } =
   await import("./brief-import.js");
@@ -79,7 +81,9 @@ test("a classified failed replacement preserves source and draft and never sugge
   t.after(cleanup);
   localStorage.clear();
   localStorage.setItem("preserved-draft", "original draft contents");
-  const reference = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  t.mock.method(console, "warn", () => {});
+  const failure = briefFailure(new BriefFailure("invalid_project")),
+    { reference } = failure;
   let posts = 0,
     imports = 0;
   const ui = render(
@@ -92,9 +96,7 @@ test("a classified failed replacement preserves source and draft and never sugge
           posts++;
           return {
             state: "failed",
-            errorCode: "invalid_project",
-            reference,
-            error: `The prepared details did not pass the project checks. Reserved credits were returned; your draft is unchanged. Reference: ${reference}. Recover this attempt before starting anything else.`,
+            ...failure,
           };
         }
         return posts
@@ -135,6 +137,14 @@ test("a classified failed replacement preserves source and draft and never sugge
   );
   assert(ui.getByRole("button", { name: "Prepare my project" }).disabled);
   assert.equal(readPendingBrief("failed-replacement"), null);
+  assert.equal(
+    ui.queryByRole("button", { name: "Recover prepared brief" }),
+    null,
+  );
+  assert.doesNotMatch(
+    ui.getByText(new RegExp(reference)).textContent,
+    /recover/i,
+  );
   assert.equal(
     localStorage.getItem("preserved-draft"),
     "original draft contents",
@@ -429,6 +439,8 @@ test("interrupted preparation survives remount and recovers without another paid
 test("unreadable PDF and failed preparation keep existing fields and return to a usable input", async (t) => {
   t.after(cleanup);
   localStorage.clear();
+  t.mock.method(console, "warn", () => {});
+  const failure = briefFailure(new BriefFailure("invalid_project"));
   let uses = 0;
   const ui = render(
     <BriefImporter
@@ -439,9 +451,7 @@ test("unreadable PDF and failed preparation keep existing fields and return to a
         throw new Error("Page 1 has no readable text");
       }}
       request={async (route) =>
-        route === "config"
-          ? config
-          : { state: "failed", error: "Reserved credits were returned." }
+        route === "config" ? config : { state: "failed", ...failure }
       }
     />,
   );
@@ -461,8 +471,21 @@ test("unreadable PDF and failed preparation keep existing fields and return to a
   fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
   );
-  await waitFor(() => assert(ui.getByText("Reserved credits were returned.")));
+  await waitFor(() => assert(ui.getByText(new RegExp(failure.reference))));
   assert.equal(readPendingBrief("draft"), null);
+  assert.equal(
+    ui.queryByRole("button", { name: "Recover prepared brief" }),
+    null,
+  );
+  assert.doesNotMatch(
+    ui.getByText(new RegExp(failure.reference)).textContent,
+    /recover/i,
+  );
+  assert.equal(
+    ui.getByRole("button", { name: "Prepare my project · 12 credits" })
+      .disabled,
+    false,
+  );
   assert.equal(input.disabled, false);
   assert.equal(uses, 0);
   assert.equal(fields.title, "Existing draft");

@@ -752,6 +752,7 @@ test("brief failure reports a safe cause and reference without exposing upstream
   assert.equal(result.errorCode, "invalid_project");
   assert.match(result.reference, /^[0-9a-f-]{36}$/);
   assert.match(result.error, /credits were returned/);
+  assert.doesNotMatch(result.error, /recover/i);
   assert.deepEqual(logs, [
     {
       service: "streamlion",
