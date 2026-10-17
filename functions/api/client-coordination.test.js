@@ -2979,6 +2979,465 @@ test("public form email confirmation is optional, pinned per pending submission,
     /unavailable/,
   );
 });
+test("expired public verification is renewed through matching-email recovery without replacing answers or creating another request", async (t) => {
+  const f = await publicFixture(t, true),
+    body = publicBody(f, "recover-verification", "client@example.com");
+  Object.assign(body.fields, {
+    title: "QA venue",
+    propertySizeSqFt: "8400",
+    address2: "Floor 3",
+    city: "New York",
+    region: "NY",
+    postal: "10001",
+    country: "United States",
+    accessInstructions: "Escorted entry. Elevator dimensions unknown.",
+    deliverables: "35–45 photos; measurements in feet and inches.",
+    proposedTimes: "October 27, 2026, 9 AM–1 PM Eastern",
+    deliveryDeadline: "October 30, 2026, 5 PM Eastern",
+    notes: "No survey-grade measurements.",
+    companyName: "QA Events",
+    contact1Phone: "212-555-0147",
+  });
+  const receipt = await f.submit(body),
+    id = "job-public-recover-verification";
+  assert.equal(receipt.jobId, id);
+  assert.equal(new URL(receipt.verificationUrl).searchParams.get("job"), id);
+  const before = f.sql
+    .prepare("SELECT * FROM streamlion_public_submissions_v1 WHERE job_id=?")
+    .get(id);
+  const priorNotice = f.sql
+    .prepare("SELECT * FROM streamlion_coordination_outbox_v1 WHERE job_id=?")
+    .get(id);
+  f.sql
+    .prepare(
+      "UPDATE streamlion_public_submissions_v1 SET challenge_expires=? WHERE job_id=?",
+    )
+    .run(Date.now() - 1, id);
+  f.sql
+    .prepare(
+      "UPDATE streamlion_coordination_outbox_v1 SET status='skipped',payload=? WHERE id=?",
+    )
+    .run(
+      await seal(f.env, { skipped: true }, "mail:" + priorNotice.id),
+      priorNotice.id,
+    );
+  const request = (email) =>
+    handleCoordination({
+      env: f.env,
+      params: { path: "client/request" },
+      request: new Request(
+        "https://app.example/api/coordination/client/request",
+        {
+          method: "POST",
+          headers: {
+            Origin: "https://app.example",
+            "Content-Type": "application/json",
+            "CF-Connecting-IP": "192.0.2.17",
+          },
+          body: JSON.stringify({ jobId: id, email }),
+        },
+      ),
+    });
+  assert.equal((await request("other@example.com")).status, 200);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1")
+      .get().n,
+    1,
+  );
+  const recovered = await request(body.email);
+  assert.equal(recovered.status, 200);
+  const after = f.sql
+    .prepare("SELECT * FROM streamlion_public_submissions_v1 WHERE job_id=?")
+    .get(id);
+  for (const key of [
+    "job_id",
+    "form_id",
+    "operation",
+    "fingerprint",
+    "access_hash",
+    "payload",
+    "created_at",
+    "expires_at",
+    "state",
+  ])
+    assert.equal(after[key], before[key], key);
+  assert.notEqual(after.challenge_hash, before.challenge_hash);
+  assert.ok(after.challenge_expires > Date.now());
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_jobs_v1")
+      .get().n,
+    1,
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT COUNT(*) AS n FROM streamlion_coordination_challenges_v1",
+      )
+      .get().n,
+    0,
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT status FROM streamlion_coordination_outbox_v1 WHERE id=?",
+      )
+      .get(priorNotice.id).status,
+    "skipped",
+  );
+  await request(body.email);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1")
+      .get().n,
+    2,
+  );
+  const notice = f.sql
+    .prepare("SELECT * FROM streamlion_coordination_outbox_v1 WHERE id!=?")
+    .get(priorNotice.id);
+  const mail = await unseal(f.env, notice.payload, "mail:" + notice.id);
+  assert.equal(mail.to, body.email);
+  assert.equal(mail.subject, "Confirm your work-order request");
+  const token = new URLSearchParams(new URL(mail.url).hash.slice(1)).get(
+    "verify",
+  );
+  assert.equal(
+    await verifyPublicSubmission(
+      f.env,
+      await hash(token),
+      await hash(randomProspectToken()),
+      Date.now(),
+    ),
+    true,
+  );
+  await syncPublicSubmission(f.env, f.engine, id);
+  const job = f.google.heads.get(id);
+  for (const [key, value] of Object.entries(body.fields))
+    assert.equal(job.fields[key], value, key);
+  assert.equal(job.fields.requesterEmail, body.email);
+  assert.equal(job.emailVerified, true);
+  assert.equal(f.google.heads.size, 1);
+  await syncPublicSubmission(f.env, f.engine, id);
+  assert.equal(f.google.events.size, 1);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1").get()
+      .n,
+    0,
+  );
+});
+test("public email verification rejects unapproved recipients before creating a stranded request", async (t) => {
+  const f = await publicFixture(t, true);
+  Object.assign(f.env, {
+    ENABLE_RESEND_EMAIL: "true",
+    RESEND_API_KEY: "synthetic",
+    RESEND_FROM_EMAIL: "projects@example.com",
+    RESEND_DAILY_LIMIT: "20",
+    RESEND_MONTHLY_LIMIT: "500",
+    RESEND_TEST_RECIPIENTS: "owner@example.com",
+  });
+  await assert.rejects(
+    () => f.submit(publicBody(f, "blocked-client", "client@example.com")),
+    /email.*test|recipient/i,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_jobs_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_public_submissions_v1")
+      .get().n,
+    0,
+  );
+  assert.equal(f.google.heads.size, 0);
+});
+test("concurrent public confirmation recovery queues one fresh challenge and invalidates the expired token", async (t) => {
+  const f = await publicFixture(t, true),
+    body = publicBody(f, "concurrent-recovery", "client@example.com");
+  await f.submit(body);
+  const id = "job-public-concurrent-recovery",
+    before = f.sql
+      .prepare("SELECT * FROM streamlion_public_submissions_v1")
+      .get();
+  f.sql
+    .prepare("UPDATE streamlion_public_submissions_v1 SET challenge_expires=1")
+    .run();
+  const { renewPublicVerification } =
+      await import("../../server/public-intake.js"),
+    row = f.sql
+      .prepare("SELECT * FROM streamlion_coordination_jobs_v1 WHERE id=?")
+      .get(id);
+  await Promise.all([
+    renewPublicVerification(f.env, row),
+    renewPublicVerification(f.env, row),
+  ]);
+  const after = f.sql
+    .prepare("SELECT * FROM streamlion_public_submissions_v1")
+    .get();
+  assert.notEqual(after.challenge_hash, before.challenge_hash);
+  assert.equal(after.payload, before.payload);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1")
+      .get().n,
+    2,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) AS n FROM streamlion_public_submissions_v1")
+      .get().n,
+    1,
+  );
+  assert.equal(
+    await verifyPublicSubmission(
+      f.env,
+      before.challenge_hash,
+      await hash(randomProspectToken()),
+      Date.now(),
+    ),
+    false,
+  );
+});
+test("a skipped public confirmation can recover before token expiry without replaying its old outbox record", async (t) => {
+  const f = await publicFixture(t, true),
+    body = publicBody(f, "skipped-recovery", "client@example.com");
+  await f.submit(body);
+  const before = f.sql
+      .prepare("SELECT * FROM streamlion_public_submissions_v1")
+      .get(),
+    notice = f.sql
+      .prepare("SELECT * FROM streamlion_coordination_outbox_v1")
+      .get();
+  f.sql
+    .prepare("UPDATE streamlion_coordination_outbox_v1 SET status='skipped'")
+    .run();
+  const { renewPublicVerification } =
+    await import("../../server/public-intake.js");
+  await renewPublicVerification(
+    f.env,
+    f.sql.prepare("SELECT * FROM streamlion_coordination_jobs_v1").get(),
+  );
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT status FROM streamlion_coordination_outbox_v1 WHERE id=?",
+      )
+      .get(notice.id).status,
+    "skipped",
+  );
+  const after = f.sql
+    .prepare("SELECT * FROM streamlion_public_submissions_v1")
+    .get();
+  assert.notEqual(after.challenge_hash, before.challenge_hash);
+  assert.equal(after.payload, before.payload);
+});
+for (const paused of [false, true]) {
+  test(
+    "verified pending public request recovers lost-cookie sign-in; paused=" +
+      paused,
+    async (t) => {
+      const f = await publicFixture(t, true);
+      const body = publicBody(f, "pending-signin", "client@example.com");
+      await f.submit(body);
+      const id = "job-public-pending-signin";
+      const original = f.sql
+        .prepare("SELECT * FROM streamlion_public_submissions_v1")
+        .get();
+      assert.equal(
+        await verifyPublicSubmission(
+          f.env,
+          original.challenge_hash,
+          await hash(randomProspectToken()),
+          Date.now(),
+        ),
+        true,
+      );
+      if (paused)
+        f.sql.prepare("UPDATE streamlion_public_forms_v1 SET active=0").run();
+      const pending = f.sql
+        .prepare("SELECT * FROM streamlion_public_submissions_v1")
+        .get();
+      assert.equal(pending.state, "pending");
+      assert.equal(f.google.heads.size, 0);
+      const post = (route, data) =>
+        handleCoordination({
+          env: f.env,
+          params: { path: route },
+          request: new Request(
+            "https://app.example/api/coordination/" + route,
+            {
+              method: "POST",
+              headers: {
+                Origin: "https://app.example",
+                "Content-Type": "application/json",
+                "CF-Connecting-IP": "192.0.2.29",
+              },
+              body: JSON.stringify(data),
+            },
+          ),
+        });
+      const response = await post("client/request", {
+        jobId: id,
+        email: body.email,
+      });
+      assert.equal(response.status, 200);
+      const notice = f.sql
+        .prepare(
+          "SELECT * FROM streamlion_coordination_outbox_v1 WHERE id LIKE 'invite-%'",
+        )
+        .get();
+      assert.ok(
+        notice,
+        "normal sign-in is queued while synchronization remains pending",
+      );
+      const mail = await unseal(f.env, notice.payload, "mail:" + notice.id);
+      assert.equal(mail.to, body.email);
+      assert.equal(mail.subject, "Open your StreamLion project");
+      const token = new URLSearchParams(new URL(mail.url).hash.slice(1)).get(
+        "verify",
+      );
+      const verified = await post("client/verify", { token });
+      assert.equal(verified.status, 200);
+      assert.match(verified.headers.get("Set-Cookie"), /HttpOnly/i);
+      assert.equal((await post("client/verify", { token })).status, 401);
+      assert.deepEqual(
+        f.sql.prepare("SELECT * FROM streamlion_public_submissions_v1").get(),
+        pending,
+      );
+      await syncPublicSubmission(f.env, f.engine, id);
+      await syncPublicSubmission(f.env, f.engine, id);
+      for (const [key, value] of Object.entries(body.fields))
+        assert.equal(f.google.heads.get(id).fields[key], value, key);
+      assert.equal(f.google.heads.size, 1);
+      assert.equal(f.google.events.size, 1);
+      assert.equal(
+        f.sql
+          .prepare("SELECT COUNT(*) AS n FROM streamlion_public_submissions_v1")
+          .get().n,
+        1,
+      );
+      assert.equal(
+        f.sql
+          .prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1")
+          .get().n,
+        0,
+      );
+    },
+  );
+}
+for (const scenario of [
+  "expired request",
+  "paused form",
+  "revoked provider",
+  "refunded provider",
+  "closed request",
+  "blocked recipient",
+]) {
+  test(
+    "public verification recovery fails closed for " + scenario,
+    async (t) => {
+      const f = await publicFixture(t, true),
+        body = publicBody(f, "guarded-recovery", "client@example.com");
+      await f.submit(body);
+      f.sql
+        .prepare(
+          "UPDATE streamlion_public_submissions_v1 SET challenge_expires=1",
+        )
+        .run();
+      if (scenario === "expired request")
+        f.sql
+          .prepare("UPDATE streamlion_public_submissions_v1 SET expires_at=1")
+          .run();
+      if (scenario === "paused form")
+        f.sql.prepare("UPDATE streamlion_public_forms_v1 SET active=0").run();
+      if (scenario === "revoked provider")
+        f.sql
+          .prepare(
+            "UPDATE streamlion_coordination_connections_v1 SET revoked=1",
+          )
+          .run();
+      if (scenario === "refunded provider")
+        f.sql
+          .prepare("UPDATE streamlion_purchases_v1 SET status='refunded'")
+          .run();
+      if (scenario === "closed request")
+        f.sql
+          .prepare("UPDATE streamlion_coordination_jobs_v1 SET closed_at=1")
+          .run();
+      if (scenario === "blocked recipient")
+        Object.assign(f.env, {
+          ENABLE_RESEND_EMAIL: "true",
+          RESEND_API_KEY: "synthetic",
+          RESEND_FROM_EMAIL: "projects@example.com",
+          RESEND_DAILY_LIMIT: "20",
+          RESEND_MONTHLY_LIMIT: "500",
+          RESEND_TEST_RECIPIENTS: "owner@example.com",
+        });
+      const before = f.sql
+        .prepare("SELECT * FROM streamlion_public_submissions_v1")
+        .get();
+      const recover = (email) =>
+        handleCoordination({
+          env: f.env,
+          params: { path: "client/request" },
+          request: new Request(
+            "https://app.example/api/coordination/client/request",
+            {
+              method: "POST",
+              headers: {
+                Origin: "https://app.example",
+                "Content-Type": "application/json",
+                "CF-Connecting-IP": "192.0.2.18",
+              },
+              body: JSON.stringify({
+                jobId: "job-public-guarded-recovery",
+                email,
+              }),
+            },
+          ),
+        });
+      const unmatched = await recover("other@example.com");
+      const response = await recover(body.email);
+      assert.equal(unmatched.status, 200);
+      assert.deepEqual([...response.headers], [...unmatched.headers]);
+      assert.deepEqual(await response.clone().json(), await unmatched.json());
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        message:
+          "If the details match an open project, a private sign-in link will be sent.",
+      });
+      assert.deepEqual(
+        f.sql.prepare("SELECT * FROM streamlion_public_submissions_v1").get(),
+        before,
+      );
+      assert.equal(
+        f.sql
+          .prepare(
+            "SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1",
+          )
+          .get().n,
+        1,
+      );
+      assert.equal(
+        f.sql
+          .prepare(
+            "SELECT COUNT(*) AS n FROM streamlion_coordination_challenges_v1",
+          )
+          .get().n,
+        0,
+      );
+      assert.equal(
+        f.sql
+          .prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_jobs_v1")
+          .get().n,
+        1,
+      );
+    },
+  );
+}
 test("public intake preserves and recovers an interrupted original Google operation without duplicating the request", async (t) => {
   const f = await publicFixture(t),
     body = publicBody(f),

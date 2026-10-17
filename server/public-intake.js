@@ -9,6 +9,7 @@ import { CoordinationEngine, operationID } from "./coordination-engine.js";
 import {
   enqueueNotice,
   emailDeliveryStatus,
+  emailRecipientAllowed,
 } from "./coordination-notifications.js";
 import {
   newClientJob,
@@ -23,6 +24,117 @@ import { captureEstimate } from "../src/capture-estimate.js";
 const validToken = (t) => /^[A-Za-z0-9_-]{43}$/.test(t || "");
 const unavailable = () =>
   new CoordinationError("This form is unavailable. Contact the provider.", 404);
+async function requirePublicEmail(env, email) {
+  if (!(await emailDeliveryStatus(env)).email)
+    throw new CoordinationError(
+      "Email confirmation is temporarily unavailable. Contact the provider.",
+      503,
+    );
+  if (!emailRecipientAllowed(env, email))
+    throw new CoordinationError(
+      "Email confirmation is restricted to approved test recipients. Contact the provider; your answers stay on this page.",
+      403,
+    );
+}
+async function queuePublicVerification(env, row, submission, challenge) {
+  await enqueueNotice(env, row, "public-verify-" + submission.challenge_hash, {
+    subject: "Confirm your work-order request",
+    text: "The provider requires email confirmation before receiving this request. No agreement or payment occurs here. This confirmation link expires in 20 minutes.",
+    url:
+      env.GOOGLE_AUTH_ORIGIN +
+      "/api/client-portal?job=" +
+      row.id +
+      "#verify=" +
+      challenge,
+    expiresAt: submission.challenge_expires,
+  });
+}
+// Matching-email recovery uses the existing request; it never accepts new answers
+// or grants access before the recipient follows the new one-use email challenge.
+export async function renewPublicVerification(env, row) {
+  if (!(await publicIntakeSchema(env))) return false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const s = await env.GOOGLE_SESSIONS.prepare(
+      "SELECT * FROM streamlion_public_submissions_v1 WHERE job_id=?",
+    )
+      .bind(row.id)
+      .first();
+    if (!s || s.state === "complete") return false;
+    const now = Date.now();
+    if (
+      !["verification", "pending"].includes(s.state) ||
+      !s.payload ||
+      s.expires_at <= now ||
+      row.archived ||
+      row.closed_at !== null
+    )
+      throw unavailable();
+    await connectionFor(env, row.connection_id);
+    await requirePublicEmail(
+      env,
+      await unseal(env, row.client_email, "job-email:" + row.id),
+    );
+    // Verification already succeeded; a lost cookie must not wait for Google sync.
+    // Form availability governs new submissions, not access to verified requests.
+    if (s.state === "pending") return false;
+    const form = await env.GOOGLE_SESSIONS.prepare(
+      "SELECT active FROM streamlion_public_forms_v1 WHERE id=? AND connection_id=?",
+    )
+      .bind(s.form_id, row.connection_id)
+      .first();
+    if (!form?.active) throw unavailable();
+    const notice =
+      s.challenge_hash &&
+      (await env.GOOGLE_SESSIONS.prepare(
+        "SELECT status FROM streamlion_coordination_outbox_v1 WHERE id=? AND job_id=?",
+      )
+        .bind("public-verify-" + s.challenge_hash, row.id)
+        .first());
+    if (
+      s.challenge_expires > now &&
+      s.challenge_token &&
+      !["skipped", "failed", "bounced", "complained"].includes(notice?.status)
+    ) {
+      await queuePublicVerification(
+        env,
+        row,
+        s,
+        await unseal(env, s.challenge_token, "public-confirm:" + row.id),
+      );
+      return true;
+    }
+    const challenge = randomProspectToken(),
+      challengeHash = await hash(challenge),
+      expires = Math.min(now + 20 * 60000, s.expires_at);
+    const changed = await env.GOOGLE_SESSIONS.prepare(
+      "UPDATE streamlion_public_submissions_v1 SET challenge_hash=?,challenge_token=?,challenge_expires=? WHERE job_id=? AND state='verification' AND challenge_hash IS ? AND payload IS NOT NULL AND expires_at>? AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id JOIN streamlion_coordination_jobs_v1 j ON j.id=streamlion_public_submissions_v1.job_id WHERE f.id=streamlion_public_submissions_v1.form_id AND f.active=1 AND c.id=? AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND j.connection_id=c.id AND j.archived=0 AND j.closed_at IS NULL AND EXISTS(SELECT 1 FROM streamlion_purchases_v1 p WHERE p.google_subject=c.google_subject AND p.mode=c.mode AND p.status='paid'))",
+    )
+      .bind(
+        challengeHash,
+        await seal(env, challenge, "public-confirm:" + row.id),
+        expires,
+        row.id,
+        s.challenge_hash,
+        now,
+        row.connection_id,
+        now,
+        paymentMode(env),
+      )
+      .run();
+    if (changed.meta.changes !== 1) continue;
+    await queuePublicVerification(
+      env,
+      row,
+      { ...s, challenge_hash: challengeHash, challenge_expires: expires },
+      challenge,
+    );
+    return true;
+  }
+  throw new CoordinationError(
+    "Verification changed. Retry the original recovery link.",
+    409,
+  );
+}
 export async function publicIntakeSchema(env) {
   try {
     return Boolean(
@@ -439,11 +551,7 @@ export async function submitPublicForm(
     if (estimate) job.estimate = estimate;
     const challenge = randomProspectToken(),
       challengeHash = row.verification_required ? await hash(challenge) : null;
-    if (row.verification_required && !(await emailDeliveryStatus(env)).email)
-      throw new CoordinationError(
-        "Email confirmation is temporarily unavailable. Contact the provider.",
-        503,
-      );
+    if (row.verification_required) await requirePublicEmail(env, email);
     // One transaction enforces the workspace bound even for concurrent public submissions.
     await env.GOOGLE_SESSIONS.batch([
       env.GOOGLE_SESSIONS.prepare(
@@ -505,6 +613,7 @@ export async function submitPublicForm(
       throw new CoordinationError("Submission identity changed.", 409);
   }
   if (s.state === "verification") {
+    await requirePublicEmail(env, email);
     if (s.challenge_expires <= now)
       throw new CoordinationError(
         "Confirmation expired. Start a new request.",
@@ -520,21 +629,13 @@ export async function submitPublicForm(
       s.challenge_token,
       "public-confirm:" + id,
     );
-    await enqueueNotice(env, mailRow, "public-verify-" + s.challenge_hash, {
-      subject: "Confirm your work-order request",
-      text: "The provider requires email confirmation before receiving this request. No agreement or payment occurs here. This confirmation link expires in 20 minutes.",
-      url:
-        env.GOOGLE_AUTH_ORIGIN +
-        "/api/client-portal?job=" +
-        id +
-        "#verify=" +
-        challenge,
-      expiresAt: s.challenge_expires,
-    });
+    await queuePublicVerification(env, mailRow, s, challenge);
   }
   if (s.state === "verification")
     return {
       verificationRequired: true,
+      jobId: id,
+      verificationUrl: env.GOOGLE_AUTH_ORIGIN + "/api/client-portal?job=" + id,
       message:
         "Check your email to confirm and submit this request. No payment is due.",
     };
