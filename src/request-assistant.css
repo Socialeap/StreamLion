@@ -205,3 +205,7 @@
 .request-link .setup-link-button {
   gap: 8px;
 }
+.request-email-link {
+  margin: 10px 0 0;
+  font-weight: 500;
+}

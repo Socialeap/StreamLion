@@ -546,3 +546,79 @@ h3 {
 .coord-prospect { max-width: 1000px; margin: 0 auto; }
 @media (max-width: 1000px) { .coord-progress ol { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .coord-progress { padding: 16px; } .coord-progress ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.coord-choices {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+.coord-choices legend {
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.coord-progress {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+.coord-progress li {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 0 0 16px;
+  color: var(--muted);
+}
+.coord-progress li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 26px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--line);
+}
+.coord-progress li.is-done:not(:last-child)::before {
+  background: var(--green);
+}
+.coord-progress-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.coord-progress li.is-done .coord-progress-mark {
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--on-accent);
+}
+.coord-progress li.is-current .coord-progress-mark {
+  border-color: var(--green);
+}
+.coord-progress li.is-done,
+.coord-progress li.is-current {
+  color: var(--text);
+}
+.coord-progress small {
+  display: block;
+  color: var(--muted);
+}
+.coord-progress-stopped {
+  font-weight: 600;
+}

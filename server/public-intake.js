@@ -646,14 +646,39 @@ export async function submitPublicForm(
   )
     .bind(s.access_hash, id, s.expires_at)
     .run();
+  const url =
+    env.GOOGLE_AUTH_ORIGIN +
+    "/api/client-portal?job=" +
+    id +
+    "#access=" +
+    body.accessToken;
+  // On request, the status link goes once to the email given with this
+  // request; a failure to queue it never fails the submitted request.
+  let linkEmailed;
+  if (body.emailLink === true && email) {
+    linkEmailed = false;
+    try {
+      await requirePublicEmail(env, email);
+      const mailRow = await env.GOOGLE_SESSIONS.prepare(
+        "SELECT * FROM streamlion_coordination_jobs_v1 WHERE id=?",
+      )
+        .bind(id)
+        .first();
+      await enqueueNotice(env, mailRow, "public-link-" + id, {
+        subject: "Your private StreamLion request link",
+        text: "Use this private link to follow the provider's reply to your work-order request. Anyone with the link can see the request, so keep it private. No agreement or payment has been made.",
+        url,
+        kind: "action",
+      });
+      linkEmailed = true;
+    } catch {
+      /* the link is still shown on the page */
+    }
+  }
   return {
     jobId: id,
-    url:
-      env.GOOGLE_AUTH_ORIGIN +
-      "/api/client-portal?job=" +
-      id +
-      "#access=" +
-      body.accessToken,
+    url,
+    ...(linkEmailed === undefined ? {} : { linkEmailed }),
     expiresAt: s.expires_at,
     message:
       "Request submitted. Save your private status link to follow the provider's response.",

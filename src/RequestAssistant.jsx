@@ -91,6 +91,13 @@ function StatusLink({ receipt, brand }) {
           {copied}
         </p>
       )}
+      {receipt.linkEmailed !== undefined && (
+        <p className="setup-hint">
+          {receipt.linkEmailed
+            ? `We’ve also emailed this link to ${receipt.email}.`
+            : "We couldn’t email this link just now, so copy it from here."}
+        </p>
+      )}
       <p className="setup-hint">
         Save this link: it’s how you follow {brand}’s reply from any device.
         Anyone with it can see this request, so keep it private.
@@ -134,6 +141,7 @@ export default function RequestAssistant({
     [busy, setBusy] = useState(""),
     [notice, setNotice] = useState(""),
     [pricingChanged, setPricingChanged] = useState(false),
+    [emailLink, setEmailLink] = useState(true),
     [storageWarning, setStorageWarning] = useState(false);
   const feed = useRef(null),
     dock = useRef(null);
@@ -219,6 +227,7 @@ export default function RequestAssistant({
     if (reusable && !attempt) {
       attempt = {
         ...requestBody(descriptor, answers, token),
+        ...(linkOffered && emailLink ? { emailLink: true } : {}),
         visit: descriptor.visit,
         operation: crypto.randomUUID(),
         accessToken: randomToken(),
@@ -237,6 +246,9 @@ export default function RequestAssistant({
         message: result.message || "Request sent.",
         confirm: Boolean(result.verificationRequired) || !reusable,
         ...(result.url ? { url: result.url, expiresAt: result.expiresAt } : {}),
+        ...(typeof result.linkEmailed === "boolean"
+          ? { linkEmailed: result.linkEmailed, email: answers.contact?.email }
+          : {}),
       };
       commit(flow.answerStep(stateRef.current, "review", sent, ctx));
     } catch (e) {
@@ -299,6 +311,11 @@ export default function RequestAssistant({
   }
 
   const disabled = !!busy;
+  // A public form without email confirmation can also email the status link.
+  const linkOffered =
+    descriptor.reusable &&
+    !emailRequired(descriptor) &&
+    Boolean(answers.contact?.email);
   const estimate = requestEstimate(descriptor, answers);
   const lastHistory = history.at(-1)?.step.id;
   function widget() {
@@ -369,6 +386,17 @@ export default function RequestAssistant({
                 </li>
               )}
             </ul>
+            {linkOffered && !locked && (
+              <label className="setup-check request-email-link">
+                <input
+                  type="checkbox"
+                  checked={emailLink}
+                  disabled={disabled}
+                  onChange={(event) => setEmailLink(event.target.checked)}
+                />
+                Also email my private status link to {answers.contact.email}
+              </label>
+            )}
             {locked && (
               <p className="setup-notice" role="status">
                 Your request may already have reached {brand}. Retry sending to

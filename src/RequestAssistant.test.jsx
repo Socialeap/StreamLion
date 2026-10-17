@@ -445,3 +445,88 @@ test("shared form links open the assistant, and the one-page form keeps the answ
   await ui.findByText(/Nice to meet you, Jordan!/);
   window.history.replaceState(null, "", "/api/client-portal");
 });
+
+test("a public form can also email the status link to the address given", async () => {
+  const storage = memoryStorage();
+  const d = descriptor();
+  seed(d, storage);
+  const bodies = [];
+  const ui = render(
+    <RequestAssistant
+      descriptor={d}
+      token={TOKEN}
+      storage={storage}
+      api={async (path, body) => {
+        bodies.push(body);
+        return {
+          url: "https://app.example/x#access=" + body.accessToken,
+          linkEmailed: true,
+          message: "Request submitted.",
+        };
+      }}
+    />,
+  );
+  const box = await ui.findByRole("checkbox", {
+    name: "Also email my private status link to j@example.com",
+  });
+  assert.equal(box.checked, true);
+  await choose(ui, "Send request");
+  await ui.findByText("We’ve also emailed this link to j@example.com.");
+  assert.equal(bodies[0].emailLink, true);
+});
+
+test("the one-page form offers several answers as checkboxes and can email the link", async () => {
+  const { default: ProspectIntake } = await import("./ProspectIntake.jsx");
+  const bodies = [];
+  const ui = render(
+    <ProspectIntake
+      token={TOKEN}
+      descriptor={descriptor({
+        pricing: null,
+        intake: {
+          id: "intake-multi",
+          version: 1,
+          name: "Multi",
+          description: "",
+          questions: [
+            {
+              field: "deliverables",
+              label: "Which results?",
+              help: "",
+              required: true,
+              options: ["3D tour", "Floor plan"],
+              multiple: true,
+            },
+          ],
+        },
+      })}
+      api={async (path, body) => {
+        bodies.push(body);
+        return { url: "https://app.example/x#access=a", message: "Sent." };
+      }}
+    />,
+  );
+  const results = ui.getByRole("group", { name: "Which results?" });
+  fireEvent.click(
+    within(results).getByRole("checkbox", { name: "Floor plan" }),
+  );
+  fireEvent.click(within(results).getByRole("checkbox", { name: "3D tour" }));
+  for (const [label, value] of [
+    [/Requested by/, "Jordan"],
+    [/Street address/, "1 Pier Way"],
+    [/Scope of work/, "Lobby"],
+    [/Email · optional/, "j@example.com"],
+  ])
+    fireEvent.change(ui.getByLabelText(label), { target: { value } });
+  assert.equal(
+    ui.getByRole("checkbox", { name: /Also email my private status link/ })
+      .checked,
+    true,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Submit work-order request" }),
+  );
+  await ui.findByText("Sent.");
+  assert.equal(bodies[0].fields.deliverables, "3D tour\nFloor plan");
+  assert.equal(bodies[0].emailLink, true);
+});

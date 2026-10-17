@@ -44,8 +44,18 @@ export function questionApplies(question, fields) {
   if (op === "not_empty") return Boolean(answer.trim());
   if (op === "greater_than")
     return answer.trim() !== "" && Number(answer) > Number(value);
+  // "contains" matches any part of the answer, so it also finds one choice
+  // among several chosen answers (stored one per line).
+  if (op === "contains")
+    return answer.toLowerCase().includes(value.trim().toLowerCase());
   return answer.trim().toLowerCase() === value.toLowerCase();
 }
+// Answers to a multiple-choice question are stored one per line.
+export const chosenAnswers = (value = "") =>
+  value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 export const activeIntakeQuestions = (job, fields = job.fields) =>
   (job.intake?.questions || []).filter((q) => questionApplies(q, fields));
 export function validateIntakeAnswers(job, fields) {
@@ -53,7 +63,9 @@ export function validateIntakeAnswers(job, fields) {
     if (
       q.options?.length &&
       fields[q.field]?.trim() &&
-      !q.options.includes(fields[q.field].trim())
+      (q.multiple
+        ? chosenAnswers(fields[q.field]).some((a) => !q.options.includes(a))
+        : !q.options.includes(fields[q.field].trim()))
     )
       throw new CoordinationError(
         `Choose one of the listed answers for ${q.label}.`,
@@ -84,7 +96,15 @@ export function validateIntakeConfig(input) {
     throw new CoordinationError("Use at most 12 service questions.");
   const seen = new Set();
   const questions = input.questions.map((q) => {
-    object(q, ["field", "label", "help", "required", "when", "options"]);
+    object(q, [
+      "field",
+      "label",
+      "help",
+      "required",
+      "when",
+      "options",
+      "multiple",
+    ]);
     if (
       !CLIENT_FIELDS.has(q.field) ||
       seen.has(q.field) ||
@@ -114,13 +134,25 @@ export function validateIntakeConfig(input) {
         throw new CoordinationError("Question choices must be distinct.");
     } else if (q.options !== undefined && !Array.isArray(q.options))
       throw new CoordinationError("Question choices must be a list.");
+    if (q.multiple !== undefined && typeof q.multiple !== "boolean")
+      throw new CoordinationError(
+        "Choose whether several answers are allowed.",
+      );
+    if (q.multiple) {
+      if (!question.options)
+        throw new CoordinationError(
+          "List the answer choices for a question with several answers.",
+        );
+      // Saved templates without this option keep their original shape.
+      question.multiple = true;
+    }
     if (q.when !== undefined && q.when !== null) {
       object(q.when, ["field", "op", "value"]);
       if (
         !CLIENT_FIELDS.has(q.when.field) ||
         q.when.field === q.field ||
         REQUIRED_FIELDS.includes(q.field) ||
-        !["equals", "not_empty", "greater_than"].includes(q.when.op)
+        !["equals", "not_empty", "greater_than", "contains"].includes(q.when.op)
       )
         throw new CoordinationError(
           "Use a supported condition; core required fields remain visible.",
