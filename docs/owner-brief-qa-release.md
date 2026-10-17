@@ -106,6 +106,41 @@ QA funding/attempt exhaustion does not direct them to buy credits.
    early. Keep job history for budget/recovery; no deletion, rearming or automatic
    renewal. A new round needs new approval and reviewed budget handling.
 
+## Maintenance of an already approved QA window
+
+A reservation bug fix does not authorize another window, new budget or more
+attempts. Keep failed/interrupted job history. Recovering a stale job after five
+minutes marks it failed and refunds reserved credits exactly once; it does not
+run inference or return the attempt to the allowance. Refresh availability after
+recovery. Before an app update, keep a copy of pasted source: unsubmitted source
+text is held in memory, while project drafts and recovery references persist.
+
+Treat follow-up release checkpoints separately:
+
+1. **Code review/merge:** review the fix and its required check; do not merge
+   without owner approval. Runtime tests must use D1's trigger-inclusive change
+   count, not only SQLite's directly affected row count.
+2. **D1 migration:** none for the reservation-count fix. Do not replay 0016,
+   reset job history, change wallets, or rerun the initial zero-history policy
+   activation against an existing window.
+3. **Configuration:** hold for explicit authorization to retain the existing
+   approved window. Preserve its exact subject/start/expiry, fixed policy and
+   lifetime usage. The two QA approval flags declared in Wrangler are
+   `plain_text` runtime switches; do not create duplicate Secret bindings for
+   them. The subject/start/expiry remain server-only Secrets. Git builds use the
+   committed false defaults, so verify the intended switch values in the final
+   deployment. An approved runtime override may change only these two switches;
+   do not change unrelated modes, secrets or bindings, or extend the expiry.
+4. **Functions deployment:** hold until the fix is merged and server deployment
+   is explicitly authorized. Release the exact merged SHA; check anonymous
+   rejection and authenticated recovery/configuration without a preparation POST.
+5. **Frontend release:** hold for explicit authorization. Verify the same merged
+   SHA's assets and the ordinary PWA update; do not clear device storage.
+6. **Owner QA:** within the original remaining allowance/window only, prepare a
+   synthetic brief, review the result, fill empty draft fields explicitly, then
+   save the mock project explicitly. Verify saved-detail lookup in Ask. The
+   separate conversational AI pilot remains closed; brief QA does not activate it.
+
 ## Validation
 
 Mocked Responses and in-memory SQLite cover private owner access, spoofed and

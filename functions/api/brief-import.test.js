@@ -49,9 +49,16 @@ async function fixture(t, { migration = true } = {}) {
     bind: (...next) => wrap(query, next),
     first: async () => sql.prepare(query).get(...args) || null,
     all: async () => ({ results: sql.prepare(query).all(...args) }),
-    run: async () => ({
-      meta: { changes: sql.prepare(query).run(...args).changes },
-    }),
+    run: async () => {
+      // Match D1: trigger updates count as changes, unlike SQLite changes().
+      const before = sql.prepare("SELECT total_changes() AS n").get().n;
+      sql.prepare(query).run(...args);
+      return {
+        meta: {
+          changes: sql.prepare("SELECT total_changes() AS n").get().n - before,
+        },
+      };
+    },
   });
   const db = {
     prepare: wrap,

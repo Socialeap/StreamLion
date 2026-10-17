@@ -149,6 +149,15 @@ export default function BriefImporter({
             : e.message,
       );
     } finally {
+      if (persisted) {
+        try {
+          // A pending or failed attempt still consumes the owner QA allowance.
+          // Refresh only configuration; never retry the paid preparation.
+          setConfig(await request("config"));
+        } catch {
+          // Keep the prepared result/recovery marker if this read is unavailable.
+        }
+      }
       setBusy(false);
     }
   }
