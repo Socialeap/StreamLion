@@ -2,6 +2,7 @@ import { getSession, hash } from "./google-auth.js";
 import { getExtensionProject } from "./extension-workbook.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
 import { boundedText } from "./request-body.js";
+import { privateAIInput, restoreAIAnswer } from "./ai-privacy.js";
 import {
   paidCreditMode,
   creditAccount,
@@ -12,7 +13,6 @@ import {
 } from "./ai-credit-ledger.js";
 import {
   AI_LIMITS,
-  projectContext,
   streamAnswer,
   synthesize,
   streamSpeech,
@@ -308,7 +308,22 @@ export async function handleAI(context) {
         { session, bookId: session.workbook_id },
         input.projectId,
       );
-      const records = projectContext(snapshot.project, snapshot.notes);
+      let privateInput;
+      try {
+        privateInput = privateAIInput(
+          input.question.trim(),
+          snapshot.project,
+          snapshot.notes,
+        );
+      } catch {
+        return json(
+          {
+            error:
+              "AI could not safely filter this question or project. No credits were charged. Use saved-detail lookup instead.",
+          },
+          422,
+        );
+      }
       if (controller.signal.aborted) throw new Error("cancelled");
       try {
         if (paid)
@@ -413,22 +428,28 @@ export async function handleAI(context) {
             priceMicros: wallet.price_micros,
             source: `Google workbook · read ${snapshot.destination.asOf}`,
           });
+          // Hold the bounded model response until its references and restored
+          // length are verified. No token fragments or unverified text may
+          // reach the browser, speech provider, or completion charge.
+          let filteredAnswer = "";
           for await (const delta of streamAnswer(
             env,
-            input.question.trim(),
-            records,
+            privateInput.question,
+            privateInput.context,
             controller.signal,
           )) {
-            firstTextMs ??= Date.now() - started;
-            await send({ type: "text", delta });
-            phrase += delta;
-            if (speechCount < 5) {
-              const [ready, rest] = takePhrase(phrase);
-              if (ready) {
-                phrase = rest;
-                enqueueSpeech(ready);
-              }
-            }
+            filteredAnswer += delta;
+          }
+          const answer = restoreAIAnswer(filteredAnswer, privateInput.privacy);
+          if (controller.signal.aborted) throw new Error("cancelled");
+          firstTextMs = Date.now() - started;
+          await send({ type: "text", delta: answer });
+          phrase = answer;
+          while (speechCount < 5) {
+            const [ready, rest] = takePhrase(phrase);
+            if (!ready) break;
+            phrase = rest;
+            enqueueSpeech(ready);
           }
           await finish("complete");
           textComplete = true;
@@ -468,7 +489,7 @@ export async function handleAI(context) {
             type: "error",
             message: textComplete
               ? "The answer completed, but playback was interrupted."
-              : "AI did not finish. Any partial text is incomplete; your credits were returned.",
+              : "AI did not finish a verified answer. Your credits were returned.",
           };
           if (!request.signal.aborted) {
             const errorTimeout = setTimeout(stopStream, 1000);

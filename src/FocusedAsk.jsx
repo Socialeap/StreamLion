@@ -346,8 +346,15 @@ export default function FocusedAsk({
                 <p>
                   {ai.demo
                     ? "This demo uses synthetic records and device speech. No providers are contacted."
-                    : "Your question and this project's Google records go to OpenAI. DeepInfra provides voice."}
+                    : "StreamLion filters detected names, contact details and codes before your question and Google project records go to OpenAI. Names are restored in the answer. If you choose hosted voice, DeepInfra receives that restored answer."}
                 </p>
+                {!ai.demo && (
+                  <p className="hint">
+                    Filtering can miss details. Use saved-detail lookup for
+                    access instructions.{" "}
+                    <a href="/api/privacy#ai-questions">AI data handling</a>.
+                  </p>
+                )}
                 <p className="hint">
                   Remember this choice for this Google account and workbook. You
                   can switch to free lookup in Settings.
@@ -462,9 +469,10 @@ export default function FocusedAsk({
                 </p>
               )}
               <p className="hint">
-                Free lookup uses saved project details. With AI credits enabled,
-                your question and Google project records go to OpenAI; answer
-                text goes to DeepInfra for voice. Browser dictation may use its
+                Free lookup does not send questions to OpenAI. Optional AI
+                answers use filtered questions and Google project records;
+                StreamLion restores names afterward. Hosted voice sends the
+                restored answer to DeepInfra. Browser dictation may use its own
                 speech service. StreamLion does not store question audio.
               </p>
             </>
