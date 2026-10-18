@@ -383,7 +383,10 @@ test("active 160-credit policy drives both displayed prices; missing policy has 
     stage(ui, 5).querySelector(".credits-pill").textContent,
     "Not available yet",
   );
-  assert.equal(ui.queryByRole("list", { name: "Credit packs" }), null);
+  // Packs stay listed without a coordination price; only coverage is omitted.
+  const list = ui.getByRole("list", { name: "Credit packs" });
+  assert.match(list.textContent, /\$10\.00800 credits/);
+  assert.doesNotMatch(list.textContent, /Coordination page/);
 });
 function savedCardFetch(t, { card = null, replies = {} } = {}) {
   const calls = [];

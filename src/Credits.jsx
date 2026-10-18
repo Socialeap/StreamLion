@@ -401,7 +401,7 @@ export default function Credits() {
           </section>
           <section id="credits-cost" aria-labelledby="credits-cost-title">
             <h2 id="credits-cost-title">Cost</h2>
-            {projectPrice !== null && config?.packs?.length > 0 ? (
+            {config?.packs?.length > 0 ? (
               <ul className="credits-pack-list" aria-label="Credit packs">
                 {[...config.packs]
                   .sort((a, b) => a.amount - b.amount)
@@ -409,11 +409,16 @@ export default function Credits() {
                     <li key={pack.id}>
                       <strong>{money(pack.amount)}</strong>
                       <span>{creditLabel(pack.creditsMicros)}</span>
-                      <span>
-                        {coverage(
-                          Math.floor(pack.creditsMicros / config.projectMicros),
+                      {Number.isSafeInteger(config.projectMicros) &&
+                        config.projectMicros > 0 && (
+                          <span>
+                            {coverage(
+                              Math.floor(
+                                pack.creditsMicros / config.projectMicros,
+                              ),
+                            )}
+                          </span>
                         )}
-                      </span>
                     </li>
                   ))}
               </ul>
