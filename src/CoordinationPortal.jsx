@@ -17,6 +17,7 @@ import { assistantSupported } from "./request-assistant.js";
 import RequestProgress from "./RequestProgress.jsx";
 import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
 import ProjectValue from "./ProjectValue.jsx";
+import BriefPrivacyNotice from "./BriefPrivacyNotice.jsx";
 import {
   ArchiveRestore,
   Bell,
@@ -2276,6 +2277,7 @@ function JobPanel({
         hidden={tab !== "Brief"}
         aria-label="Brief"
       >
+        <BriefPrivacyNotice client={client} />
         <div className="coord-summary">
           <div>
             <span>Location</span>

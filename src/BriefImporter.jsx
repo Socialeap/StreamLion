@@ -287,10 +287,16 @@ export default function BriefImporter({
             {text.length.toLocaleString()} / 6,000 characters · {sourceName}
           </p>
           <p id="native-brief-privacy" className="hint">
-            Turn your messages into a clear project brief, then review the
-            result. Preview and hide personal details before sending text to
-            OpenAI. Your original PDF stays on your device. Review{" "}
-            <a href="/api/privacy" target="_blank" rel="noreferrer">
+            Turn your messages into a clear project brief. StreamLion filters
+            detected names, contact details and addresses on your device, and
+            leaves out detected passwords and access codes. Review the preview
+            and hide anything else before sending text to OpenAI. Your original
+            PDF stays on your device. Review{" "}
+            <a
+              href="/api/privacy#brief-preparation"
+              target="_blank"
+              rel="noreferrer"
+            >
               data handling
             </a>{" "}
             for more information.
@@ -312,10 +318,10 @@ export default function BriefImporter({
             </p>
             <p>
               StreamLion receives the replacement details separately to restore
-              names and contacts; that list is not sent to OpenAI. The restored
-              result is encrypted for 24-hour recovery and normally removed
-              within 48 hours. Nothing is saved to Google until you save the
-              project.
+              names and contacts; that list is not sent to OpenAI. Removed
+              access codes are not restored. The restored result is encrypted
+              for 24-hour recovery and normally removed within 48 hours. Nothing
+              is saved to Google until you save the project.
             </p>
           </details>
           {!pending && (

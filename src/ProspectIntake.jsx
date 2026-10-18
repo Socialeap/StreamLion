@@ -4,6 +4,7 @@ import React, { useState, useRef } from "react";
 import { captureEstimate, estimateMoney } from "./capture-estimate.js";
 import { PROJECT_FIELDS } from "./project-schema.js";
 import { activeIntakeQuestions, chosenAnswers } from "./intake-templates.js";
+import BriefPrivacyNotice from "./BriefPrivacyNotice.jsx";
 const fieldKeys = [
   "title",
   "propertySizeSqFt",
@@ -113,6 +114,7 @@ export default function ProspectIntake({
             : descriptor.intake.description}
         </p>
       )}
+      <BriefPrivacyNotice client />
       <form
         onSubmit={async (e) => {
           e.preventDefault();

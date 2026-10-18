@@ -6,6 +6,7 @@ import CoordinationPortal from "./CoordinationPortal.jsx";
 import "./coordination.css";
 import "./setup-assistant.css";
 import "./request-assistant.css";
+import "./brief-privacy-notice.css";
 import "./app-navigation.css";
 import { preferredTheme, applyTheme } from "./theme.js";
 import { registerSW } from "virtual:pwa-register";
