@@ -151,6 +151,11 @@
   font-size: clamp(30px, 4vw, 44px);
   letter-spacing: -1.2px;
 }
+.credits-starter {
+  padding-left: 12px;
+  border-left: 3px solid var(--green);
+  font-weight: 600;
+}
 .credits-balance-line {
   display: inline-block;
   padding: 10px 14px;
