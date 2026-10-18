@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
-import { hash } from "../../server/google-auth.js";
+import { hash, seal } from "../../server/google-auth.js";
 import { handleBriefImport, extractBrief } from "../../server/brief-import.js";
+import { filterBrief } from "../../src/brief-privacy.js";
 import { intakeFor } from "../../src/project-schema.js";
 import { BRIEF_LIMITS, BRIEF_MODEL } from "../../src/brief-import-contract.js";
 import { purgeBriefState } from "../../ops/session-cleanup.js";
@@ -133,10 +134,12 @@ async function fixture(t, { migration = true } = {}) {
     assert.equal(data.store, false);
     assert.equal(data.service_tier, "default");
     assert.equal(data.text.format.strict, true);
-    assert.equal(data.max_output_tokens, BRIEF_LIMITS.outputTokens);
+    assert([BRIEF_LIMITS.outputTokens, 1200].includes(data.max_output_tokens));
     assert.equal(data.tools, undefined);
     assert(options.signal instanceof AbortSignal);
-    return output();
+    return data.text.format.name === "streamlion_brief_review"
+      ? output({ issues: [] })
+      : output();
   };
   const call = (route = "config", body, options = {}) =>
     handleBriefImport(
@@ -168,8 +171,7 @@ async function fixture(t, { migration = true } = {}) {
       scope: quote.scope,
       quoteKey: quote.quoteKey,
       priceMicros: quote.priceMicros,
-      text: "Capture the lobby and stairs at 10 Example Street.",
-      sourceName: "brief.pdf",
+      ...filterBrief("Capture the lobby and stairs."),
     };
   };
   const balance = () =>
@@ -264,6 +266,212 @@ function ownerQA(f) {
 }
 const qaId = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
+test("stale clients and malformed privacy envelopes are rejected before reserving credits", async (t) => {
+  const f = await fixture(t);
+  f.activate();
+  const input = await f.input();
+  for (const privacy of [
+    undefined,
+    {
+      version: 1,
+      entries: [{ token: "SLP_1_", value: "jane@example.test", kind: "email" }],
+    },
+  ]) {
+    assert.equal((await f.call("prepare", { ...input, privacy })).status, 400);
+  }
+  assert.equal(f.balance(), 1050000);
+  assert.equal(f.calls(), 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
+    0,
+  );
+});
+
+test("owner QA expiry between generation and review prevents further provider calls and refunds once", async (t) => {
+  const f = await fixture(t);
+  ownerQA(f);
+  const input = await f.input();
+  let calls = 0;
+  const result = await (
+    await f.call("prepare", input, {
+      fetcher: async () => {
+        calls++;
+        f.advance(86400001);
+        return output();
+      },
+    })
+  ).json();
+  assert.equal(calls, 1);
+  assert.equal(result.state, "failed");
+  assert.equal(result.errorCode, "qa_permission_changed");
+  assert.equal(
+    f.sql
+      .prepare(
+        "SELECT balance_micros n FROM streamlion_credit_wallets_v1 WHERE mode='test' AND google_subject='a'",
+      )
+      .get().n,
+    19000000,
+  );
+});
+
+test("four-pass correction charges one job and restores encrypted results for a separate session", async (t) => {
+  const f = await fixture(t);
+  f.activate();
+  const input = {
+    ...(await f.input()),
+    ...filterBrief(
+      "Client: Jane Smith\nEmail jane@example.test\nPhotos of stage\nMeasure entrance width.\nDoor code: 9842",
+    ),
+  };
+  const name = input.privacy.entries.find(
+    (e) => e.value === "Jane Smith",
+  ).token;
+  const email = input.privacy.entries.find(
+    (e) => e.value === "jane@example.test",
+  ).token;
+  let calls = 0;
+  const fetcher = async (url, init) => {
+    assert.doesNotMatch(init.body, /Jane Smith|jane@example|9842/);
+    const n = ++calls;
+    if (n === 2)
+      return output({
+        issues: [
+          {
+            kind: "brief_error",
+            field: "deliverables",
+            message: "Entrance measurement omitted",
+            evidence: "Measure entrance width.",
+          },
+        ],
+      });
+    if (n === 4) return output({ issues: [] });
+    return output({
+      ...intakeFor({
+        title: "Stage",
+        requesterName: name,
+        deliverables:
+          n === 3
+            ? "Photos of stage; measure entrance width"
+            : "Photos of stage",
+      }),
+      fields: {
+        ...intakeFor({
+          title: "Stage",
+          requesterName: name,
+          deliverables:
+            n === 3
+              ? "Photos of stage; measure entrance width"
+              : "Photos of stage",
+        }).fields,
+        requesterEmail: email,
+      },
+    });
+  };
+  const first = await (await f.call("prepare", input, { fetcher })).json();
+  assert.equal(first.state, "complete");
+  assert.equal(first.workflowVersion, 2);
+  assert.equal(calls, 4);
+  assert.equal(f.balance(), 900000);
+  assert.equal(
+    (await (await f.call("prepare", input, { fetcher })).json()).state,
+    "complete",
+  );
+  assert.equal(calls, 4);
+  const newCookie = "c".repeat(43);
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_google_sessions_v1(session_hash,google_subject,email,credentials,expires_at,workbook_id) VALUES(?,'a','a@example.test','encrypted',?,'book-a')",
+    )
+    .run(await hash(newCookie), f.now() + 86400000);
+  const recovered = await (
+    await f.call("result?id=" + id, null, {
+      headers: { Cookie: `__Host-streamlion-session=${newCookie}` },
+    })
+  ).json();
+  assert.equal(recovered.project.fields.requesterName, "Jane Smith");
+  assert.equal(recovered.project.fields.requesterEmail, "jane@example.test");
+  assert.match(recovered.project.fields.deliverables, /entrance width/);
+  assert.doesNotMatch(JSON.stringify(recovered.project), /9842|SLP_/);
+  assert.doesNotMatch(
+    JSON.stringify(
+      f.sql.prepare("SELECT * FROM streamlion_brief_jobs_v1").all(),
+    ),
+    /Jane Smith|jane@example|9842|SLP_/,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
+    1,
+  );
+  assert.equal(f.balance(), 900000);
+});
+
+test("failures in review, correction and recheck refund once and never replay paid work", async (t) => {
+  for (const failureAt of [2, 3, 4])
+    await t.test(`pass ${failureAt}`, async (t) => {
+      const f = await fixture(t);
+      f.activate();
+      const input = await f.input();
+      let calls = 0;
+      const fetcher = async () => {
+        const n = ++calls;
+        if (n === failureAt)
+          return new Response("private upstream detail", { status: 503 });
+        return n % 2
+          ? output()
+          : output({
+              issues: [
+                {
+                  kind: "brief_error",
+                  field: "scope",
+                  message: "Missing stairs",
+                  evidence: "stairs",
+                },
+              ],
+            });
+      };
+      assert.equal(
+        (await (await f.call("prepare", input, { fetcher })).json()).state,
+        "failed",
+      );
+      assert.equal(f.balance(), 1050000);
+      await f.call("prepare", input, { fetcher });
+      await f.call("result?id=" + id);
+      assert.equal(calls, failureAt);
+      assert.equal(f.balance(), 1050000);
+      assert.equal(
+        f.sql
+          .prepare("SELECT SUM(reserve_micros) n FROM streamlion_brief_jobs_v1")
+          .get().n,
+        100000,
+      );
+    });
+});
+
+test("historical unwrapped encrypted results remain recoverable after the workflow changes", async (t) => {
+  const f = await fixture(t);
+  f.activate();
+  const input = await f.input();
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_brief_jobs_v1(mode,google_subject,request_id,scope,input_hash,quote_key,price_micros,reserve_micros,promotional,purchased,created_at,expires_at) VALUES('live','a',?,?,?,'legacy-quote',150000,100000,50000,100000,?,?)",
+    )
+    .run(id, input.scope, "legacy-hash", f.now(), f.now() + 86400000);
+  const legacy = await seal(
+    f.env,
+    project,
+    JSON.stringify(["brief-result-v1", "live", "a", id]),
+  );
+  f.sql
+    .prepare(
+      "UPDATE streamlion_brief_jobs_v1 SET state='complete',result=? WHERE state='pending'",
+    )
+    .run(legacy);
+  f.env.ENABLE_BRIEF_IMPORT = "false";
+  const recovered = await (await f.call("result?id=" + id)).json();
+  assert.deepEqual(recovered.project, project);
+  assert.equal(recovered.workflowVersion, 1);
+});
+
 async function replacementFixture(t) {
   const f = await fixture(t);
   ownerQA(f);
@@ -329,7 +537,7 @@ test("replacement QA is disabled by default and grants exactly one attempt in th
     (await (await f.call("prepare", input)).json()).state,
     "complete",
   );
-  assert.equal(f.calls(), 1);
+  assert.equal(f.calls(), 2);
   assert.equal(
     (await (await f.call()).json()).reason,
     "qa_replacement_exhausted",
@@ -346,7 +554,7 @@ test("replacement QA is disabled by default and grants exactly one attempt in th
     (await (await f.call("result?id=" + qaId(4))).json()).state,
     "complete",
   );
-  assert.equal(f.calls(), 1);
+  assert.equal(f.calls(), 2);
   assert.deepEqual(
     f.sql
       .prepare(
@@ -495,7 +703,7 @@ test("replacement reservation atomically rejects a changed baseline and concurre
       f.call("prepare", { ...input, requestId: qaId(5) }),
     ]);
     assert.deepEqual(responses.map((r) => r.status).sort(), [200, 429]);
-    assert.equal(f.calls(), 1);
+    assert.equal(f.calls(), 2);
     assert.equal(
       f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
       4,
@@ -565,7 +773,7 @@ test("owner QA uses only existing test credits and preserves live wallets and pi
     (await (await f.call("prepare", input)).json()).state,
     "complete",
   );
-  assert.equal(f.calls(), 1);
+  assert.equal(f.calls(), 2);
 });
 
 test("owner QA rejects anonymous, other subjects and spoofed owner identity without reservations", async (t) => {
@@ -667,7 +875,7 @@ test("owner QA expiry blocks new work but retains authenticated recovery", async
     (await (await f.call("result?id=" + id)).json()).state,
     "complete",
   );
-  assert.equal(f.calls(), 1);
+  assert.equal(f.calls(), 2);
 });
 
 test("three attempts including failures exhaust lifetime QA budget across midnight and expiry changes", async (t) => {
@@ -864,7 +1072,7 @@ test("post-provider storage failure is safely classified and refunds exactly onc
   assert.equal(logs[0].code, "processing_failed");
   assert(!JSON.stringify([result, logs]).includes("private database"));
   assert.equal(f.balance(), 1050000);
-  assert.equal(f.calls(), 1);
+  assert.equal(f.calls(), 2);
 });
 
 test("model request is bounded and cannot inherit a premium processing tier", async (t) => {
@@ -954,11 +1162,13 @@ test("concurrent final QA attempts cannot exceed three; pending and completed re
     calls = 0;
   const ready = new Promise((r) => (started = r)),
     hold = new Promise((r) => (release = r));
-  const fetcher = async () => {
+  const fetcher = async (url, init) => {
     calls++;
     started();
     await hold;
-    return output();
+    return JSON.parse(init.body).text.format.name === "streamlion_brief_review"
+      ? output({ issues: [] })
+      : output();
   };
   const first = f.call("prepare", input, { fetcher });
   await ready;
@@ -975,7 +1185,7 @@ test("concurrent final QA attempts cannot exceed three; pending and completed re
     (await (await f.call("prepare", input, { fetcher })).json()).state,
     "complete",
   );
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
   assert.equal(
     f.sql.prepare("SELECT COUNT(*) n FROM streamlion_brief_jobs_v1").get().n,
     3,
@@ -1034,7 +1244,7 @@ test("completed preparation charges once, stores only encrypted results, and rec
   const replay = await (await f.call("prepare", value)).json();
   assert.equal(replay.state, "complete");
   assert.deepEqual(replay.project, project);
-  assert.equal(f.calls(), 1);
+  assert.equal(f.calls(), 2);
   assert.equal(f.balance(), 900000);
   const row = f.sql.prepare("SELECT * FROM streamlion_brief_jobs_v1").get();
   assert(!JSON.stringify(row).includes("Example Street"));
@@ -1073,11 +1283,13 @@ test("concurrent same-ID retries infer once; a second job cannot overlap the acc
   const ready = new Promise((r) => (started = r)),
     hold = new Promise((r) => (release = r));
   let calls = 0;
-  const fetcher = async () => {
+  const fetcher = async (url, init) => {
     calls++;
     started();
     await hold;
-    return output();
+    return JSON.parse(init.body).text.format.name === "streamlion_brief_review"
+      ? output({ issues: [] })
+      : output();
   };
   const first = f.call("prepare", value, { fetcher });
   await ready;
@@ -1090,7 +1302,7 @@ test("concurrent same-ID retries infer once; a second job cannot overlap the acc
   assert.equal(f.balance(), 900000);
   release();
   assert.equal((await first).status, 200);
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
 });
 
 test("refusal, incomplete, invalid and empty outputs, errors and timeouts refund once without inference retries", async (t) => {
@@ -1201,7 +1413,7 @@ test("workbook changes block recovery; stale interrupted jobs refund and cannot 
   assert.equal(f.balance(), 900000);
   await f.call("result?id=" + otherId);
   assert.equal(f.balance(), 900000);
-  assert.equal(f.calls(), 1);
+  assert.equal(f.calls(), 2);
 });
 
 test("daily cleanup supports pre-migration databases, erases expired results and retains financial history", async (t) => {

@@ -46,6 +46,77 @@ const completed = {
   }),
 };
 
+test("privacy preview masks contacts before sending and recovery needs no local replacement map", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const requests = [];
+  const request = async (route, body) => {
+    if (route === "prepare") {
+      requests.push(body);
+      throw new Error("Lost response");
+    }
+    if (route.startsWith("result"))
+      return {
+        ...completed,
+        project: intakeFor({
+          title: "Venue",
+          requesterName: "Jane Smith",
+          requesterEmail: "jane@example.test",
+        }),
+      };
+    return config;
+  };
+  let ui = render(
+    <BriefImporter
+      draftKey="privacy-recovery"
+      fields={fields}
+      onUse={() => {}}
+      request={request}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Upload a brief or paste text" }),
+  );
+  await waitFor(() =>
+    assert(ui.getByRole("button", { name: /Prepare my project ·/ })),
+  );
+  fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
+    target: {
+      value:
+        "Client: Jane Smith\nEmail jane@example.test\nPhotos of stage\nDoor code: 9842",
+    },
+  });
+  assert(ui.getByRole("button", { name: /Prepare my project ·/ }).disabled);
+  fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
+  assert.doesNotMatch(
+    ui.getByLabelText("Text for OpenAI").value,
+    /Jane Smith|jane@example|9842/,
+  );
+  fireEvent.click(ui.getByRole("button", { name: /Prepare my project ·/ }));
+  await waitFor(() => assert.equal(requests.length, 1));
+  assert.doesNotMatch(requests[0].text, /Jane Smith|jane@example|9842/);
+  assert.equal(requests[0].sourceName, "Project brief");
+  assert(requests[0].privacy.entries.some((e) => e.value === "Jane Smith"));
+  assert.doesNotMatch(
+    JSON.stringify(localStorage),
+    /Jane Smith|jane@example|9842/,
+  );
+  ui.unmount();
+  ui = render(
+    <BriefImporter
+      draftKey="privacy-recovery"
+      fields={fields}
+      onUse={() => {}}
+      request={request}
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Recover prepared brief" }));
+  await waitFor(() => assert(ui.getByText("jane@example.test")));
+  assert.equal(requests.length, 1);
+});
+
 test("replacement QA shows one attempt and preserves the original expiry", async (t) => {
   t.after(cleanup);
   localStorage.clear();
@@ -127,6 +198,9 @@ test("a classified failed replacement preserves source and draft and never sugge
     },
   });
   fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
+  fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 8 credits" }),
   );
   await waitFor(() => assert(ui.getByText(new RegExp(reference))));
@@ -195,6 +269,9 @@ test("pending preparation refreshes the reserved balance and remaining attempts 
   fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
     target: { value: "Synthetic venue brief" },
   });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
   fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 8 credits" }),
   );
@@ -361,13 +438,17 @@ test("PDF text and quoted price lead to review; explicit use fills only empty fi
     ),
   );
   fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
+  fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
   );
   await waitFor(() =>
     assert(ui.getByRole("region", { name: "Review prepared brief" })),
   );
   assert.equal(imported, undefined);
-  assert.equal(prepared.sourceName, "capture.pdf");
+  assert.equal(prepared.sourceName, "Project brief");
+  assert.doesNotMatch(prepared.text, /10 Example Street/);
   assert.equal(prepared.priceMicros, 150000);
   assert.equal(readPendingBrief("draft").requestId, prepared.requestId);
   assert(ui.getByText(/Keeping your existing detail: Existing draft/));
@@ -408,6 +489,9 @@ test("interrupted preparation survives remount and recovers without another paid
   fireEvent.change(ui.getByLabelText(/Or, paste the PDF text/), {
     target: { value: "Capture the lobby" },
   });
+  fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
   fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
   );
@@ -468,6 +552,9 @@ test("unreadable PDF and failed preparation keep existing fields and return to a
     assert(ui.getByRole("alert").textContent.includes("no readable text")),
   );
   assert.equal(input.value, "Keep this pasted source");
+  fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
   fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
   );
@@ -537,6 +624,9 @@ test("blocked device storage prevents a paid request; failed draft import keeps 
   };
   t.after(() => (dom.window.Storage.prototype.setItem = original));
   fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
+  fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
   );
   await waitFor(() =>
@@ -544,6 +634,9 @@ test("blocked device storage prevents a paid request; failed draft import keeps 
   );
   assert.equal(posts, 0);
   dom.window.Storage.prototype.setItem = original;
+  fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
   fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
   );

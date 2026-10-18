@@ -1,6 +1,7 @@
 // Closed diagnostic vocabulary only. Never pass provider error text, source,
 // credentials, account IDs or job IDs into a log or customer-facing error.
 const messages = {
+  result_size: "The restored brief exceeded the recoverable size limit.",
   request_size: "The preparation request exceeded the allowed size.",
   provider_auth: "The preparation service's access needs attention.",
   provider_request: "The preparation service rejected the request format.",
@@ -11,7 +12,11 @@ const messages = {
   invalid_response: "The preparation service returned an unreadable response.",
   incomplete_result: "The preparation service did not return a complete brief.",
   refused: "The preparation service could not prepare this brief.",
+  invalid_review: "The brief review could not be checked safely.",
+  review_failed: "The final check still found errors after correction.",
   invalid_project: "The prepared details did not pass the project checks.",
+  permission_changed:
+    "Account access or brief preparation permission changed during processing.",
   qa_permission_changed: "Owner QA permission changed before processing.",
   processing_failed: "The prepared brief could not be processed safely.",
 };
