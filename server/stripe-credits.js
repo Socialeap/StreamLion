@@ -18,8 +18,11 @@ import {
   paidCreditMode,
   creditAccount,
   creditCapacity,
+  creditPrice,
 } from "./ai-credit-ledger.js";
 import { AI_LIMITS } from "./ai-providers.js";
+import { paidAIOpen } from "./ai-pilot.js";
+import { approved as briefImportOpen } from "./brief-import.js";
 import { coordinationReady } from "./coordination-readiness.js";
 
 export const CREDIT_PACKS = [
@@ -212,6 +215,35 @@ async function catalog(env, stripe, mode) {
       return { ...pack, priceId: price.id };
     }),
   );
+}
+// Prices for the optional brief and AI features, or null while either is
+// closed, so the credits guide never advertises a price nobody can use.
+export async function featurePrices(env, mode) {
+  const price = async (open, sql, toMicros) => {
+    if (!open) return null;
+    try {
+      const row = await env.GOOGLE_SESSIONS.prepare(sql).bind(mode).first();
+      const micros = row ? toMicros(row) : null;
+      return Number.isSafeInteger(micros) && micros > 0 ? micros : null;
+    } catch {
+      return null;
+    }
+  };
+  return {
+    briefMicros: await price(
+      briefImportOpen(env),
+      "SELECT price_micros FROM streamlion_brief_policy_v1 WHERE mode=? AND active=1",
+      (row) => row.price_micros,
+    ),
+    aiMicros: await price(
+      paidAIOpen(env),
+      "SELECT cost_micros FROM streamlion_credit_policy_v1 WHERE mode=? AND active=1",
+      (row) =>
+        row.cost_micros >= AI_LIMITS.reserveMicros
+          ? creditPrice(row.cost_micros)
+          : null,
+    ),
+  };
 }
 async function projectCharge(env, mode) {
   try {
@@ -893,6 +925,7 @@ export async function handleCredits({ request, env, params }) {
         mode,
         markupPercent: 30,
         projectMicros: await projectCharge(env, mode),
+        ...(await featurePrices(env, mode)),
         packs: packs.map(({ id, amount, creditsMicros }) => ({
           id,
           amount,

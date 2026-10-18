@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import {
   CREDIT_PACKS,
+  featurePrices,
   handleCredits,
   reconcileCredits,
 } from "../../server/stripe-credits.js";
@@ -1276,6 +1277,60 @@ test("public credit config uses only the active coordination policy in the curre
     "UPDATE streamlion_coordination_policy_v1 SET active=0 WHERE mode='test'",
   );
   assert.equal((await (await f.request("config")).json()).projectMicros, null);
+});
+
+test("public credit config prices the brief and AI options only while they are open", async (t) => {
+  const f = fixture(t);
+  const config = await (await f.request("config")).json();
+  assert.equal(config.briefMicros, null);
+  assert.equal(config.aiMicros, null);
+  const sql = new DatabaseSync(":memory:");
+  t.after(() => sql.close());
+  for (const name of ["0008_streamlion_ai_credits", "0016_brief_import"])
+    sql.exec(
+      readFileSync(
+        new URL(`../../migrations/${name}.sql`, import.meta.url),
+        "utf8",
+      ),
+    );
+  const wrap = (q, args = []) => ({
+    bind: (...a) => wrap(q, a),
+    first: async () => sql.prepare(q).get(...args) || null,
+  });
+  const live = {
+    GOOGLE_SESSIONS: { prepare: wrap },
+    GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64url"),
+    STREAMLION_PAYMENTS_MODE: "live",
+    STREAMLION_LIVE_PAYMENTS_APPROVED: "true",
+    STREAMLION_AI_CREDITS_MODE: "live",
+    STREAMLION_AI_COST_APPROVED: "true",
+    ENABLE_AI_PILOT: "true",
+    ENABLE_BRIEF_IMPORT: "true",
+    STREAMLION_BRIEF_IMPORT_COST_APPROVED: "true",
+    OPENAI_API_KEY: "synthetic",
+    DEEPINFRA_API_KEY: "synthetic",
+  };
+  // Inactive policies advertise nothing, even with every flag approved.
+  assert.deepEqual(await featurePrices(live, "live"), {
+    briefMicros: null,
+    aiMicros: null,
+  });
+  sql.exec(
+    "UPDATE streamlion_brief_policy_v1 SET active=1,price_micros=100000,reserve_micros=100000 WHERE mode='live'; UPDATE streamlion_credit_policy_v1 SET active=1,cost_micros=9600 WHERE mode='live'",
+  );
+  assert.deepEqual(await featurePrices(live, "live"), {
+    briefMicros: 100000,
+    aiMicros: 12480,
+  });
+  // Closing either feature hides only its price.
+  assert.deepEqual(
+    await featurePrices({ ...live, ENABLE_BRIEF_IMPORT: "false" }, "live"),
+    { briefMicros: null, aiMicros: 12480 },
+  );
+  assert.deepEqual(
+    await featurePrices({ ...live, ENABLE_AI_PILOT: "false" }, "live"),
+    { briefMicros: 100000, aiMicros: null },
+  );
 });
 
 // Saved cards for one-tap top-ups.

@@ -28,14 +28,20 @@ test("client copy explains free access and accurate saved-update behavior withou
   );
   assert.equal(ui.queryByRole("button"), null);
 });
-test("provider value includes an accessible three-step graphic and fresh work approval", (t) => {
+test("provider value is one three-step sequence with each benefit stated once", (t) => {
   t.after(cleanup);
   const ui = render(<ProjectValue />);
-  const steps = ui.getByRole("list", { name: "Shared project workflow" });
+  const steps = ui.getByRole("list", {
+    name: "Coordination page, step by step",
+  });
   assert.equal(steps.children.length, 3);
-  assert.match(
-    ui.getByText(/Changes to the agreed work/).textContent,
-    /fresh approval/,
-  );
+  assert.match(steps.children[0].textContent, /01 · Agree the work/);
+  assert.match(steps.children[0].textContent, /needs both approvals/);
+  for (const benefit of [
+    "Clearer instructions",
+    "Fewer follow-up messages",
+    "One current record",
+  ])
+    assert.equal(ui.getAllByText(benefit).length, 1);
 });
 test.after(() => dom.window.close());

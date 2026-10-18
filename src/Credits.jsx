@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Info, WalletCards, ListChecks, BadgeDollarSign } from "lucide-react";
+import {
+  Info,
+  WalletCards,
+  ListChecks,
+  BadgeDollarSign,
+  CreditCard,
+  Table2,
+} from "lucide-react";
 import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
 import { creditLabel } from "./managed-ai.js";
 import ProjectValue from "./ProjectValue.jsx";
-import { projectCreditPrice, usd } from "./project-credit-price.js";
+import { priceLabels, projectCreditPrice } from "./project-credit-price.js";
 export async function creditRequest(path, { account, ...options } = {}) {
   const response = await fetch("/api/credits/" + path, {
     credentials: "same-origin",
@@ -34,6 +41,29 @@ const BRANDS = {
 };
 export const cardLabel = (card) =>
   `${BRANDS[card.brand] || card.brand.charAt(0).toUpperCase() + card.brand.slice(1)} •••• ${card.last4}`;
+const coverage = (count) =>
+  `Covers ${count} Coordination ${count === 1 ? "page" : "pages"}`;
+function PricePill({ state }) {
+  if (state.status !== "open")
+    return (
+      <span className="credits-pill credits-pill-muted">
+        {state.status === "checking" ? "Checking price…" : "Not available yet"}
+      </span>
+    );
+  return (
+    <span className="credits-pill">
+      <strong>{state.credits}</strong>
+      {state.usd && (
+        <>
+          <span aria-hidden="true"> | </span>
+          <span className="credits-sr">, </span>
+          {state.usd}
+        </>
+      )}{" "}
+      {state.per}
+    </span>
+  );
+}
 export default function Credits() {
   const [config, setConfig] = useState(null),
     [account, setAccount] = useState(null),
@@ -222,14 +252,54 @@ export default function Credits() {
     }
   }
   const projectPrice = projectCreditPrice(config?.packs, config?.projectMicros);
-  const firstPack =
-    projectPrice !== null
-      ? config.packs.reduce(
-          (first, pack) =>
-            !first || pack.amount < first.amount ? pack : first,
-          null,
-        )
-      : null;
+  // A feature's pill reflects its live state: checking, closed or priced.
+  const pill = (micros, per) => {
+    if (!config) return { status: error ? "closed" : "checking" };
+    const labels = priceLabels(config.packs, micros);
+    return labels ? { status: "open", ...labels, per } : { status: "closed" };
+  };
+  const stages = [
+    {
+      title: "1. Set up your request form",
+      free: "The setup assistant builds your branded request form and invitation link.",
+    },
+    {
+      title: "2. Client sends a work-order request",
+      free: "Your client fills in your form or chats with the request assistant.",
+    },
+    {
+      title: "3. Review the request and agree the brief",
+      free: "Ask your client questions, edit the Project Brief together, or decline. Your client follows along on their Request page.",
+    },
+    {
+      title: "4. Prepare the Project Brief",
+      free: "Use the free “Prepare my brief in (your own) ChatGPT” helper, or type the details yourself.",
+      credit: {
+        price: pill(config?.briefMicros, "per brief"),
+        text: "StreamLion uses ChatGPT to prepare a Project Brief from content you upload or paste (PDF, emails, messages) for easy reference.",
+      },
+    },
+    {
+      title: "5. Coordinate the job with your client",
+      free: "Copy the agreed details into your own project, then send updates, changes and results by email, text or phone.",
+      credit: {
+        price: pill(config?.projectMicros, "per project"),
+        text: "You authorize the charge once you and your client mutually approve the Project Brief, which becomes your shared Coordination Brief. You both get a real-time Coordination page that stays in sync: progress, questions, changes and delivery links; archived to your Google Drive once complete, visible to your client for 90 days.",
+      },
+    },
+    {
+      title: "6. In the field: add notes",
+      free: "Add notes by text, voice or camera photo.",
+    },
+    {
+      title: "7. In the field: ask for project details",
+      free: "Saved-detail lookup gives short answers to basic questions (address, site contact, access, visit time, scope, outputs, payment).",
+      credit: {
+        price: pill(config?.aiMicros, "per answer"),
+        text: "AI answers more complex questions in plain words, with deeper detail and clarification drawn from the brief and your field notes, while in the field, right before, or after.",
+      },
+    },
+  ];
   return (
     <>
       <AppHeader
@@ -242,106 +312,144 @@ export default function Credits() {
           className="purchase-card credits-card"
           aria-labelledby="credits-title"
         >
-          <div id="credits-value" className="credits-intro">
-            <p className="credits-eyebrow">
-              Credits for shared capture projects
-            </p>
-            <h1 id="credits-title">
-              One shared brief. Less time chasing details.
-            </h1>
+          <div id="credits-intro" className="credits-intro">
+            <h1 id="credits-title">How credits work</h1>
             <p>
-              Agree what needs capturing, keep instructions and changes
-              together, and give your client one place to follow the work.
+              Credits are an optional prepaid balance. Every stage of a project
+              works without them. Credits pay only for the optional upgrades
+              marked with a price below, and your clients never need them.
             </p>
+            {account?.connected && (
+              <p className="credits-balance-line">
+                You have <strong>{creditLabel(account.balanceMicros)}</strong>.{" "}
+                <a href="#credits-wallet">Add credits</a>
+              </p>
+            )}
           </div>
-          <section
-            id="credits-project-price"
-            className="credits-project-price"
-            aria-label="Typical project cost"
-          >
-            <div>
-              <span className="credits-price-label">
-                {Number.isSafeInteger(config?.projectMicros) &&
-                config.projectMicros > 0
-                  ? `${creditLabel(config.projectMicros)} per confirmed project`
-                  : "Project credit charge unavailable"}
-              </span>
-              <strong>
-                {projectPrice !== null
-                  ? usd(projectPrice)
-                  : config || error
-                    ? "Dollar estimate unavailable"
-                    : "Checking dollar equivalent…"}
-              </strong>
-              <span>Typical project credit usage · paid by the provider</span>
-            </div>
-            <p>
-              One project charge after both sides approve the current brief.
-              Clients use their invited project portal free.
-            </p>
-            {config?.mode === "test" ? (
+          <section id="credits-compare" aria-labelledby="credits-compare-title">
+            <h2 id="credits-compare-title">
+              Credits at each stage of a project
+            </h2>
+            <table className="credits-stages">
+              <thead>
+                <tr>
+                  <th scope="col">Stage</th>
+                  <th scope="col">Non-Credit Option</th>
+                  <th scope="col">Credit-based Option</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stages.map((stage) => (
+                  <tr
+                    key={stage.title}
+                    className={stage.credit ? "credits-stage-paid" : undefined}
+                  >
+                    <th scope="row">{stage.title}</th>
+                    <td data-label="Non-Credit Option">{stage.free}</td>
+                    {stage.credit ? (
+                      <td data-label="Credit-based Option">
+                        <PricePill state={stage.credit.price} />
+                        {stage.credit.text}
+                      </td>
+                    ) : (
+                      <td className="credits-stage-none">
+                        <span aria-hidden="true">–</span>
+                        <span className="credits-sr">
+                          No credit-based option
+                        </span>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {config?.mode === "test" && (
               <p className="credits-availability">
                 Test mode · test credits have no cash value.
-                {config.enabled === false && " Purchases are closed."}
               </p>
-            ) : config?.enabled === false ? (
-              <p className="credits-availability">Purchases are closed.</p>
-            ) : null}
+            )}
           </section>
-          <p className="credits-price-note">
-            This is credit usage from your wallet, not a separate project
-            checkout.
-            {projectPrice !== null && firstPack && (
-              <>
-                {" "}
-                Packs start at {creditLabel(firstPack.creditsMicros)} for{" "}
-                {usd(firstPack.amount)}.
-              </>
-            )}{" "}
-            The app purchase is separate. Your actual project charge is shown
-            before you approve it.
-          </p>
           <section id="credits-benefits">
             <ProjectValue />
           </section>
-          <section
-            id="credits-included"
-            className="credits-included"
-            aria-label="What the project charge covers"
-          >
-            <h2>What the project charge covers</h2>
+          <section id="credits-charges" aria-labelledby="credits-charges-title">
+            <h2 id="credits-charges-title">When credits are charged</h2>
             <ul>
               <li>
-                A shared brief with capture areas, expected outputs and site
-                instructions.
+                Nothing is charged automatically. Each credit-based option shows
+                its price, and you confirm it before any credits are used.
               </li>
               <li>
-                Review and approval by both sides, with changes kept in the
-                project history.
+                <strong>Coordination page:</strong> you authorize the charge
+                when you approve the Project Brief, and it is taken once your
+                client approves too. A declined or unfinished request costs
+                nothing. Later edits, corrections or reopening the same job do
+                not add a second charge.
               </li>
               <li>
-                A private client portal for saved updates, progress and delivery
-                links.
+                <strong>Brief preparation and AI answers:</strong> if a brief
+                cannot be prepared or an answer does not finish, the reserved
+                credits are returned. A finished text answer is charged even if
+                spoken playback is unavailable.
+              </li>
+              <li>
+                Before you share your request form, check that your balance
+                covers each job you expect to accept. If it falls short, the
+                approval waits until you add credits; the request is kept.
               </li>
             </ul>
+          </section>
+          <section id="credits-cost" aria-labelledby="credits-cost-title">
+            <h2 id="credits-cost-title">Cost</h2>
+            {projectPrice !== null && config?.packs?.length > 0 ? (
+              <ul className="credits-pack-list" aria-label="Credit packs">
+                {[...config.packs]
+                  .sort((a, b) => a.amount - b.amount)
+                  .map((pack) => (
+                    <li key={pack.id}>
+                      <strong>{money(pack.amount)}</strong>
+                      <span>{creditLabel(pack.creditsMicros)}</span>
+                      <span>
+                        {coverage(
+                          Math.floor(pack.creditsMicros / config.projectMicros),
+                        )}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            ) : (
+              <p>
+                {config || error
+                  ? "Credit pack prices are unavailable right now."
+                  : "Checking credit packs…"}
+              </p>
+            )}
             <p>
-              For a renovation team, designer, property manager or owner, that
-              means clearer instructions before the visit and less searching for
-              the latest information afterward.
+              Eligible StreamLion app purchasers receive 600 starter credits
+              once, shared between Coordination pages and AI answers. Starter
+              credits are used first.
+            </p>
+            <p>
+              No subscription, no expiry and no automatic recharge. Credits are
+              separate from your one-time StreamLion app purchase.
+            </p>
+          </section>
+          <section id="credits-payment" aria-labelledby="credits-payment-title">
+            <h2 id="credits-payment-title">Payment</h2>
+            <p>
+              Pay by card in Stripe Checkout. Credits are added to the Google
+              account you are signed in with and work on all your devices.
+              {config?.savedCards &&
+                " You can save your card for one-tap top-ups; it is charged only when you choose a pack and confirm."}
+            </p>
+            <p>
+              Buying credits does not turn on an option marked “Not available
+              yet”. Refunds follow the{" "}
+              <a href="/api/terms#ai-credits">credit terms</a>.
             </p>
           </section>
           <section id="credits-wallet" aria-label="Credit wallet">
-            <h2>Your credit wallet</h2>
-            <p>
-              Add credits when you need them. No subscription or automatic
-              recharge.
-              {config?.savedCards &&
-                " You can save a card for one-tap top-ups; it is charged only when you confirm a top-up yourself."}
-            </p>
-            <p>
-              AI answers are optional and separately enabled. Buying credits
-              does not turn them on.
-            </p>
+            <h2>Your wallet</h2>
             {(config?.mode || account?.mode) === "test" && (
               <p className="purchase-test" role="note">
                 Stripe test checkout. Test credits have no monetary value and
@@ -383,8 +491,8 @@ export default function Credits() {
             {config?.enabled === false && (
               <>
                 <p>
-                  Credit purchases are not open yet. Your saved-detail voice
-                  lookup remains included in StreamLion.
+                  Credit purchases are not open yet. Every stage still works
+                  with its non-credit option.
                 </p>
                 {!account?.connected && (
                   <a href="/api/google/start?returnTo=credits">
@@ -513,31 +621,6 @@ export default function Credits() {
                   )}
                 </>
               ))}
-            {config?.enabled && (
-              <p>
-                Purchased credits stay with this Google account across devices
-                and do not expire. Credits are separate from your one-time app
-                purchase. Promotional starter credits follow the eligibility
-                shown in client requests.
-              </p>
-            )}
-          </section>
-          <section id="credit-uses" aria-labelledby="credit-uses-title">
-            <h2 id="credit-uses-title">When are credits used?</h2>
-            <p>
-              Creating a request uses no project credits. The provider reviews
-              and authorizes the charge before both sides approve the brief. One
-              project charge applies when that agreement is complete. Reopening
-              or recovering the same job does not add a second job charge.
-              Client access follows the access and archive dates shown in the
-              project. <a href="/api/client-requests">See client requests</a>.
-            </p>
-            <p>
-              Optional AI answers show their credit charge before you ask.
-              Incomplete text answers return reserved credits; a completed text
-              answer uses the quoted credits even if spoken playback is
-              unavailable. Saved-detail lookup remains included in Core.
-            </p>
           </section>
           {message && <p role="status">{message}</p>}
           {error && <p role="alert">{error}</p>}
@@ -556,16 +639,13 @@ export default function Credits() {
       </main>
       <SectionNavigation
         sections={[
-          { id: "credits-value", label: "Value", icon: ListChecks },
-          {
-            id: "credits-project-price",
-            label: "Project cost",
-            icon: BadgeDollarSign,
-          },
+          { id: "credits-intro", label: "Overview", icon: Info },
+          { id: "credits-compare", label: "Compare", icon: Table2 },
           { id: "credits-benefits", label: "Benefits", icon: ListChecks },
-          { id: "credits-included", label: "Included", icon: Info },
+          { id: "credits-charges", label: "Charges", icon: Info },
+          { id: "credits-cost", label: "Cost", icon: BadgeDollarSign },
+          { id: "credits-payment", label: "Payment", icon: CreditCard },
           { id: "credits-wallet", label: "Wallet", icon: WalletCards },
-          { id: "credit-uses", label: "Credit uses", icon: Info },
         ]}
       />
     </>

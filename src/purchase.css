@@ -151,79 +151,189 @@
   font-size: clamp(30px, 4vw, 44px);
   letter-spacing: -1.2px;
 }
-.purchase-card .credits-eyebrow {
-  color: var(--green);
-  text-transform: uppercase;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  font-weight: 750;
-  margin: 0 0 14px;
-}
-.credits-project-price {
-  margin-top: 24px;
-  padding: 24px;
-  border-radius: 16px;
+.credits-balance-line {
+  display: inline-block;
+  padding: 10px 14px;
+  border-radius: 10px;
   background: var(--accent-soft);
+  font-size: 15px;
+}
+.credits-card > section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.credits-card > section > h2 {
+  margin-top: 0;
+}
+.credits-card > section#credits-benefits .project-value {
+  margin: 0;
+}
+.credits-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.credits-stages {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 15px;
+  line-height: 1.5;
   border: 1px solid var(--line);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  gap: 24px;
+  border-radius: 14px;
+  overflow: hidden;
 }
-.credits-project-price div {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+.credits-stages th,
+.credits-stages td {
+  padding: 14px 16px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
 }
-.credits-project-price strong {
-  font-size: clamp(28px, 4vw, 38px);
-  letter-spacing: -1px;
-  line-height: 1.15;
-  color: var(--green);
+.credits-stages tbody tr:last-child > * {
+  border-bottom: 0;
 }
-.credits-price-label {
-  font-size: 16px;
+.credits-stages thead th {
+  background: var(--surface-raised);
+  font-size: 13px;
   font-weight: 700;
 }
-.credits-project-price div > span:last-child {
+.credits-stages thead th:first-child {
+  width: 26%;
+}
+.credits-stages thead th:nth-child(2) {
+  width: 32%;
+}
+.credits-stages tbody th {
+  font-weight: 650;
+}
+.credits-stages .credits-stage-paid > :last-child {
+  background: var(--accent-soft);
+}
+.credits-stages .credits-stage-none {
+  text-align: center;
+  vertical-align: middle;
+  color: var(--muted);
+  font-size: 18px;
+}
+.credits-pill {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--green);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.credits-pill-muted {
+  background: var(--surface-raised);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.credits-stages td > .credits-pill {
+  display: table;
+}
+.credits-availability {
   font-size: 13px;
   color: var(--muted);
 }
-.credits-project-price p {
-  margin: 0;
-  font-size: 15px;
-}
-.credits-project-price .credits-availability {
-  grid-column: 1 / -1;
-  font-size: 13px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.credits-price-note {
-  font-size: 13px;
-}
-.credits-included {
-  padding: 24px 0;
-  border-top: 1px solid var(--line);
-}
-.credits-included ul {
+#credits-charges ul {
   padding-left: 22px;
   line-height: 1.6;
 }
-.credits-included li + li {
+#credits-charges li + li {
   margin-top: 10px;
 }
-.credits-card #credits-wallet,
-.credits-card #credit-uses {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
+.credits-pack-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+.credits-pack-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: center;
+}
+.credits-pack-list strong {
+  font-size: 20px;
+}
+.credits-pack-list span:last-child {
+  font-size: 13px;
+  color: var(--muted);
 }
 @media (max-width: 640px) {
-  .credits-project-price {
+  .credits-stages,
+  .credits-stages tbody,
+  .credits-stages tr,
+  .credits-stages th,
+  .credits-stages td {
+    display: block;
+    width: auto;
+  }
+  .credits-stages {
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+  }
+  .credits-stages thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .credits-stages tbody {
+    display: grid;
+    gap: 10px;
+  }
+  .credits-stages tbody tr {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .credits-stages tbody tr.credits-stage-paid {
+    border-color: var(--green);
+    border-width: 1px 1px 1px 4px;
+  }
+  .credits-stages th,
+  .credits-stages td {
+    padding: 10px 14px;
+    border-bottom: 0;
+  }
+  .credits-stages tbody th {
+    padding-top: 14px;
+  }
+  .credits-stages td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .credits-stages tr:not(.credits-stage-paid) td[data-label]::before {
+    content: none;
+  }
+  .credits-stages .credits-stage-none {
+    display: none;
+  }
+  .credits-stages .credits-stage-paid > :last-child {
+    padding-bottom: 14px;
+  }
+  .credits-pack-list {
     grid-template-columns: 1fr;
-    gap: 16px;
-    padding: 20px;
   }
 }
 .credit-packs {
