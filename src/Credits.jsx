@@ -316,9 +316,16 @@ export default function Credits() {
           <div id="credits-intro" className="credits-intro">
             <h1 id="credits-title">How credits work</h1>
             <p>
-              Credits are an optional prepaid balance. Every stage of a project
-              works without them. Credits pay only for the optional upgrades
-              marked with a price below, and your clients never need them.
+              Credits represent your ability to use optional, automated and
+              AI-assisted actions. While every stage of a project can work
+              manually without them, they help you work more efficiently. When
+              prepaid, credits are available to use for the listed assisted
+              options below.
+            </p>
+            <p className="credits-starter">
+              To start, eligible StreamLion app purchasers receive 600 free
+              starter credits, enough for two Coordination pages. They are used
+              before any credits you buy.
             </p>
             {account?.connected && (
               <p className="credits-balance-line">
@@ -431,11 +438,6 @@ export default function Credits() {
                   : "Checking credit packs…"}
               </p>
             )}
-            <p>
-              Eligible StreamLion app purchasers receive 600 starter credits
-              once, shared between Coordination pages and AI answers. Starter
-              credits are used first.
-            </p>
             <p>
               No subscription, no expiry and no automatic recharge. Credits are
               separate from your one-time StreamLion app purchase.
