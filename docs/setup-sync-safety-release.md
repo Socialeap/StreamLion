@@ -27,12 +27,12 @@ pilot modes.
 
 ## Separate release gates
 
-1. **Code review/merge:** this PR is stacked on PR #107's wording branch,
-   `codex/setup-persistence-copy`. Review PR #107 first. After it merges, retarget
-   this PR to `main` and require passing checks on that base before merging this
-   follow-up. No merge is authorized by this implementation. Commits use
-   `[CF-Pages-Skip]` without `[skip ci]` so GitHub CI runs while Pages deployment
-   is suppressed.
+1. **Code review/merge:** PR #107 merged as
+   `719a17cf11ed0a8c59dd2ddda5afd254c6b698a6`. This PR now targets `main` and
+   includes that merged base, preserving its approved account wording. Require
+   passing checks on the current PR head before any merge. No merge is
+   authorized by this implementation. Commits use `[CF-Pages-Skip]` without
+   `[skip ci]` so GitHub CI runs while Pages deployment is suppressed.
 2. **Migration:** none added or replayed. Existing migration 0018 belongs to the
    previously released account-setup capability; this fix does not reapply it.
 3. **Configuration:** none. Preserve secrets, Google grants, sales restrictions,
