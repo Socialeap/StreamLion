@@ -64,6 +64,16 @@ test("the guide explains each stage before cost, payment and the wallet, even wh
   const ui = render(<Credits />);
   await act(async () => {});
   const title = ui.getByRole("heading", { level: 1, name: "How credits work" });
+  assert.match(
+    title.nextElementSibling.textContent,
+    /optional, automated and AI-assisted actions/,
+  );
+  // Starter credits follow the intro and are not repeated in Cost.
+  assert.match(
+    title.nextElementSibling.nextElementSibling.textContent,
+    /600 free starter credits/,
+  );
+  assert.equal(ui.getAllByText(/starter credits/).length, 1);
   const table = ui.getByRole("table");
   assert.deepEqual(
     [...table.querySelectorAll("thead th")].map((th) => th.textContent),
