@@ -93,10 +93,24 @@ export function filterPrivateTexts(
     for (const block of blocks)
       for (const span of block.spans.filter((s) => s.kind === "secret")) {
         const part = span.value.match(
-          /^(?:(?:password|passcode|door\s*code|entry\s*code|access\s*code|lockbox\s*code|alarm\s*code|social security(?: number)?|ssn|credit card(?: number)?|pin)\b[ \t]*(?::|=|#|\bis\b)?[ \t]*|Bearer[ \t]+)(\S+)/i,
+          /^(?:(?:password|passcode|door\s*code|entry\s*code|access\s*code|lockbox\s*code|alarm\s*code|social security(?: number)?|ssn|credit card(?: number)?|pin)\b[ \t]*(?::|=|#|\bis\b)?[ \t]*|Bearer[ \t]+)([^\r\n]+)/i,
         );
-        const value = (part?.[1] || span.value).replace(/[.,;!?]+$/, "");
-        if (value) hidden.add(value);
+        const value = (part?.[1] || span.value).trim();
+        // Keep the exact credential, including meaningful punctuation. Also
+        // recognize presentation quotes/prose punctuation on an unquoted repeat.
+        for (const candidate of [value, value.replace(/[.,;!?]+$/, "")]) {
+          if (!candidate) continue;
+          hidden.add(candidate);
+          const closing = { '"': '"', "'": "'", "“": "”", "‘": "’" }[
+            candidate[0]
+          ];
+          if (closing && candidate.endsWith(closing)) {
+            const unquoted = candidate.slice(1, -1).trim();
+            if (unquoted) hidden.add(unquoted);
+            const withoutProse = unquoted.replace(/[.,;!?]+$/, "");
+            if (withoutProse) hidden.add(withoutProse);
+          }
+        }
       }
   if (hidden.size > 100) throw new Error("Too many secrets to filter safely.");
   for (const value of hidden) {

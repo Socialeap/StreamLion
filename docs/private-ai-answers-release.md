@@ -67,11 +67,13 @@ StreamLion uses GitHub, Cloudflare and Google. No Lovable action is required.
 
 ## Validation
 
-- 912 unit/integration checks passed, including real local SQLite/Workers
+- 916 unit/integration checks passed, including real local SQLite/Workers
   fixtures with provider responses mocked. Route checks prove Google access
   remains GET-only, inputs are filtered, names and fractions are restored,
   malformed/unknown references and restoration overflow are withheld, and a
-  canceled model stream refunds without speech or a retry.
+  canceled model stream refunds without speech or a retry. Complete multi-word
+  credentials, including quoted/punctuated forms, are removed from repeated
+  questions and context without entering the restoration map.
 - Frontend/PWA/extension build, Pages Functions compile and local capacity checks
   passed. Both policy copies match and their internal section links resolve.
 - No production requests, real AI calls, email, checkout, activation or spending.

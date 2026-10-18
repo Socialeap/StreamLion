@@ -104,3 +104,32 @@ test("restoration cannot expand the answer beyond its original display and voice
     /filtered|reference/i,
   );
 });
+
+for (const [label, repeated, phrase] of [
+  ["Password: open sesame", "open sesame", "open sesame"],
+  ["Passcode is stone river!", "stone river!", "stone river!"],
+  ['Password: "quiet harbor"', "quiet harbor", "quiet harbor"],
+  ["Password: “copper lantern.”", "copper lantern", "copper lantern"],
+])
+  test(`multi-word secrets are removed in full from questions and other fields: ${label}`, () => {
+    const input = privateAIInput(
+      `Does ${repeated} still work?`,
+      {
+        title: "Venue",
+        scope: `Use ${repeated} at the rear entrance. Clearance 6 7/16 inches.`,
+      },
+      [{ text: label, area: "Entry", reviewed: true }],
+    );
+    const context = JSON.parse(input.context);
+    assert.equal(input.question, "Does [PRIVATE_ACCESS_REMOVED] still work?");
+    assert.equal(
+      context.project.scope,
+      "Use [PRIVATE_ACCESS_REMOVED] at the rear entrance. Clearance 6 7/16 inches.",
+    );
+    assert.equal(context.fieldRecords[0].text, "[PRIVATE_ACCESS_REMOVED]");
+    assert(!JSON.stringify(input).includes(phrase));
+    assert.equal(
+      input.privacy.entries.some((e) => phrase.includes(e.value)),
+      false,
+    );
+  });

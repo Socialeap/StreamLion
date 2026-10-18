@@ -1027,7 +1027,8 @@ test("AI questions and Google context mask shared identities and exclude secrets
       requesterEmail: "jane@example.test",
       address: "123 Harbor Street",
       accessInstructions: "2468",
-      scope: "Photograph Jane Rivera’s ballroom. Clearance 6 7/16 inches.",
+      scope:
+        "Photograph Jane Rivera’s ballroom. Use open sesame at the rear entrance. Clearance 6 7/16 inches.",
     },
     null,
     "project",
@@ -1036,7 +1037,7 @@ test("AI questions and Google context mask shared identities and exclude secrets
     {
       projectId: "project",
       area: "Ballroom",
-      text: "Contact: Jane Rivera\nDoor code: 7319\nPin the backdrop to the wall. Clearance 6 7/16 inches.",
+      text: "Contact: Jane Rivera\nDoor code: 7319\nPassword: open sesame\nPin the backdrop to the wall. Clearance 6 7/16 inches.",
       reviewState: "reviewed",
     },
     null,
@@ -1058,7 +1059,7 @@ test("AI questions and Google context mask shared identities and exclude secrets
     request: req("/answer", {
       projectId: "project",
       question:
-        "Can Jane Rivera confirm jane@example.test and 503-555-0142? Does 2468 or 7319 still work? PIN: 9842",
+        "Can Jane Rivera confirm jane@example.test and 503-555-0142? Does 2468, 7319 or open sesame still work? PIN: 9842",
       requestId: uuid,
       speech: true,
       priceMicros: 12500,
@@ -1071,7 +1072,7 @@ test("AI questions and Google context mask shared identities and exclude secrets
   assert.equal(requests.length, 1);
   assert.doesNotMatch(
     JSON.stringify(requests),
-    /Jane Rivera|jane@example.test|503-555-0142|123 Harbor Street|Harbor Hall|2468|7319|9842/,
+    /Jane Rivera|jane@example.test|503-555-0142|123 Harbor Street|Harbor Hall|2468|7319|9842|open|sesame/,
   );
   const content = requests[0].input[0].content;
   const records = JSON.parse(
