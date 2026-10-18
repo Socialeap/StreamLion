@@ -38,7 +38,7 @@ export function jobMilestones(job) {
   const done = [
     reached >= 1,
     reached >= 2,
-    Boolean(booked) || reached >= 4,
+    Boolean(booked),
     reached >= 4,
     reached >= 5,
   ];
@@ -61,12 +61,18 @@ export function jobMilestones(job) {
     },
     { label: "Results delivered", detail: "" },
   ];
-  const current = done.indexOf(false);
+  // Work that moved past the visit without a confirmed appointment never
+  // claims a visit was scheduled; that milestone is left out.
+  const skipVisit = !booked && reached >= 4;
+  const kept = steps
+    .map((step, i) => ({ step, done: done[i] }))
+    .filter((_, i) => !(skipVisit && i === 2));
+  const current = kept.findIndex((item) => !item.done);
   return {
     stopped: "",
-    steps: steps.map((step, i) => ({
+    steps: kept.map(({ step, done: finished }, i) => ({
       ...step,
-      state: done[i] ? "done" : i === current ? "current" : "next",
+      state: finished ? "done" : i === current ? "current" : "next",
     })),
   };
 }
