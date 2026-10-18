@@ -33,7 +33,7 @@ const reply = (data, status = 200) =>
 const idOK = (id) =>
   typeof id === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
-const approved = (env) => {
+export const approved = (env) => {
   try {
     return (
       env.ENABLE_BRIEF_IMPORT === "true" &&

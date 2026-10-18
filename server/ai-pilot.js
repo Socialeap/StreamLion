@@ -32,6 +32,14 @@ const settingsReady = (env) =>
   env.OPENAI_API_KEY &&
   env.DEEPINFRA_API_KEY &&
   env.GOOGLE_SESSIONS;
+// Test payments can exercise fulfillment but can never buy real provider calls.
+export const paidAIApproved = (env) =>
+  paidCreditMode(env) === "live" &&
+  env.STREAMLION_AI_COST_APPROVED === "true" &&
+  env.STREAMLION_PAYMENTS_MODE === "live" &&
+  env.STREAMLION_LIVE_PAYMENTS_APPROVED === "true";
+export const paidAIOpen = (env) =>
+  paidAIApproved(env) && Boolean(settingsReady(env));
 // The owner's closed-pilot allowance is cumulative, including failed attempts.
 // Raising this ceiling requires a separately authorized rollout.
 export const PILOT_CEILING = { attempts: 30, reserveMicros: 1000000 };
@@ -97,14 +105,7 @@ export async function handleAI(context) {
     return json({ error: "Method not allowed." }, 405);
   const creditMode = paidCreditMode(env),
     paid = creditMode !== "disabled";
-  // Test payments can exercise fulfillment but can never buy real provider calls.
-  if (
-    paid &&
-    (creditMode !== "live" ||
-      env.STREAMLION_AI_COST_APPROVED !== "true" ||
-      env.STREAMLION_PAYMENTS_MODE !== "live" ||
-      env.STREAMLION_LIVE_PAYMENTS_APPROVED !== "true")
-  )
+  if (paid && !paidAIApproved(env))
     return path.endsWith("/config")
       ? json({
           enabled: false,

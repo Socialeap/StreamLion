@@ -35,6 +35,9 @@ const packs = [
   { id: "medium", amount: 2500, creditsMicros: 25000000 },
   { id: "large", amount: 5000, creditsMicros: 50000000 },
 ];
+// Row n of the stage table (1-based; row 0 is the header).
+const stage = (ui, n) =>
+  ui.getByRole("table").querySelectorAll("tbody tr")[n - 1];
 async function goToSection(ui, label) {
   if (!ui.queryByRole("button", { name: "Go to " + label, exact: true }))
     await act(async () =>
@@ -47,7 +50,7 @@ async function goToSection(ui, label) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
-test("project value and verified USD cost lead the wallet even while sales are closed", async (t) => {
+test("the guide explains each stage before cost, payment and the wallet, even while sales are closed", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url, options = {}) => {
     calls.push({ url, method: options.method || "GET" });
@@ -60,26 +63,72 @@ test("project value and verified USD cost lead the wallet even while sales are c
   t.after(cleanup);
   const ui = render(<Credits />);
   await act(async () => {});
-  const value = ui.getByRole("heading", {
-    level: 1,
-    name: "One shared brief. Less time chasing details.",
-  });
-  const wallet = ui.getByRole("region", { name: "Credit wallet" });
-  assert.ok(within(wallet).getByText(/Buying credits does not turn them on/));
-  assert(
-    value.compareDocumentPosition(wallet) &
-      window.Node.DOCUMENT_POSITION_FOLLOWING,
+  const title = ui.getByRole("heading", { level: 1, name: "How credits work" });
+  const table = ui.getByRole("table");
+  assert.deepEqual(
+    [...table.querySelectorAll("thead th")].map((th) => th.textContent),
+    ["Stage", "Non-Credit Option", "Credit-based Option"],
   );
-  assert.ok(ui.getByText("USD 3.00"));
-  assert.ok(ui.getByText(/240 credits per confirmed project/));
-  assert.ok(ui.getByRole("list", { name: "Shared project workflow" }));
-  assert.ok(ui.getByText(/Clients use their invited project portal free/));
+  assert.equal(table.querySelectorAll("tbody tr").length, 7);
+  // Free stages show a dash and no price; the request itself is its own row.
+  for (const n of [1, 2, 3, 6])
+    assert.ok(within(stage(ui, n)).getByText("No credit-based option"));
+  assert.match(stage(ui, 2).textContent, /Client sends a work-order request/);
+  assert.match(
+    stage(ui, 5).querySelector(".credits-pill").textContent,
+    /^240 credits \| , USD.3\.00 per project$/,
+  );
+  assert.match(stage(ui, 5).textContent, /shared Coordination Brief/);
+  // Closed optional features never advertise a price.
+  for (const n of [4, 7])
+    assert.equal(
+      stage(ui, n).querySelector(".credits-pill").textContent,
+      "Not available yet",
+    );
+  const order = [
+    title,
+    table,
+    ui.getByRole("list", { name: "Coordination page, step by step" }),
+    ui.getByRole("heading", { name: "When credits are charged" }),
+    ui.getByRole("heading", { name: "Cost" }),
+    ui.getByRole("heading", { name: "Payment" }),
+    ui.getByRole("region", { name: "Credit wallet" }),
+  ];
+  for (let i = 1; i < order.length; i++)
+    assert(
+      order[i - 1].compareDocumentPosition(order[i]) &
+        window.Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  assert.ok(ui.getByRole("list", { name: "Credit packs" }));
+  assert.ok(ui.getByText(/Buying credits does not turn on an option/));
   assert.ok(ui.getByText(/Credit purchases are not open yet/));
   assert.equal(
     ui.queryByRole("button", { name: "800 credits for $10.00" }),
     null,
   );
   assert(calls.every((call) => call.method === "GET"));
+});
+test("brief and AI pills show their live prices once those options open", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url) =>
+    Response.json(
+      url.endsWith("config")
+        ? {
+            enabled: false,
+            mode: "live",
+            projectMicros: 3000000,
+            briefMicros: 100000,
+            aiMicros: 12480,
+            packs,
+          }
+        : { enabled: false, connected: false },
+    ),
+  );
+  t.after(cleanup);
+  const ui = render(<Credits />);
+  await act(async () => {});
+  const pill = (n) => stage(ui, n).querySelector(".credits-pill").textContent;
+  assert.match(pill(4), /^8 credits \| , USD.0\.10 per brief$/);
+  assert.match(pill(7), /^≈1 credit \| , ≈USD.0\.01 per answer$/);
 });
 test("approved live credit QA shows pack choices with an explicit real-payment notice", async (t) => {
   t.mock.method(globalThis, "fetch", async (url) =>
@@ -109,8 +158,8 @@ test("approved live credit QA shows pack choices with an explicit real-payment n
   const pack = ui.getByRole("button", { name: "800 credits for $10.00" });
   const wallet = ui.getByRole("region", { name: "Credit wallet" });
   assert.match(ui.getByRole("note").textContent, /real money/);
-  await goToSection(ui, "Credit uses");
-  assert.equal(document.activeElement.id, "credit-uses");
+  await goToSection(ui, "Charges");
+  assert.equal(document.activeElement.id, "credits-charges");
   assert.equal(ui.getByRole("region", { name: "Credit wallet" }), wallet);
   assert.equal(
     ui.getByRole("button", { name: "800 credits for $10.00" }),
@@ -290,8 +339,8 @@ test("failed configuration removes stale purchase buttons and keeps the balance 
   await act(async () => {
     ui = render(<Credits />);
   });
-  assert.ok(ui.getByText("$10.00"));
-  assert.ok(ui.getByText("USD 3.00"));
+  assert.ok(ui.getByRole("button", { name: "800 credits for $10.00" }));
+  assert.match(stage(ui, 5).textContent, /USD.3\.00 per project/);
   fail = true;
   await act(async () =>
     fireEvent.click(
@@ -299,7 +348,7 @@ test("failed configuration removes stale purchase buttons and keeps the balance 
     ),
   );
   assert.equal(ui.queryByText("$10.00"), null);
-  assert.equal(ui.queryByText("USD 3.00"), null);
+  assert.doesNotMatch(stage(ui, 5).textContent, /USD/);
   assert.ok(ui.getByText("800 credits available"));
   assert.ok(ui.getByRole("alert"));
 });
@@ -316,18 +365,25 @@ test("active 160-credit policy drives both displayed prices; missing policy has 
   t.after(cleanup);
   const ui = render(<Credits />);
   await act(async () => {});
-  assert.ok(ui.getByText("160 credits per confirmed project"));
-  assert.ok(ui.getByText("USD 2.00"));
-  assert.equal(ui.queryByText("USD 3.00"), null);
+  assert.match(
+    stage(ui, 5).querySelector(".credits-pill").textContent,
+    /^160 credits \| , USD.2\.00 per project$/,
+  );
+  assert.match(
+    ui.getByRole("list", { name: "Credit packs" }).textContent,
+    /\$10\.00800 creditsCovers 5 Coordination pages/,
+  );
   projectMicros = null;
   await act(async () =>
     fireEvent.click(
       ui.getByRole("button", { name: "Refresh balance and payment status" }),
     ),
   );
-  assert.ok(ui.getByText("Project credit charge unavailable"));
-  assert.ok(ui.getByText("Dollar estimate unavailable"));
-  assert.equal(ui.queryByText("USD 2.00"), null);
+  assert.equal(
+    stage(ui, 5).querySelector(".credits-pill").textContent,
+    "Not available yet",
+  );
+  assert.equal(ui.queryByRole("list", { name: "Credit packs" }), null);
 });
 function savedCardFetch(t, { card = null, replies = {} } = {}) {
   const calls = [];

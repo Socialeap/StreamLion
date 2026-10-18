@@ -7,36 +7,52 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-export function ProjectWorkflow() {
+// The credits guide shows what a Coordination page saves, one project step
+// at a time. Each benefit appears once, beside the step it belongs to.
+function CoordinationJourney() {
   return (
-    <ol className="project-workflow" aria-label="Shared project workflow">
-      {[
-        [
-          ClipboardCheck,
-          "Agree the work",
-          "Areas, outputs and access instructions",
-        ],
-        [
-          Camera,
-          "Capture with clarity",
-          "Work from the brief both sides approved",
-        ],
-        [
-          FolderCheck,
-          "Review the handover",
-          "Progress, updates and delivery links together",
-        ],
-      ].map(([Icon, title, detail], index) => (
-        <li key={title}>
-          <span className="project-workflow-symbol" aria-hidden="true">
-            <Icon size={25} />
-          </span>
-          <span className="project-workflow-step">0{index + 1}</span>
-          <strong>{title}</strong>
-          <span>{detail}</span>
-        </li>
-      ))}
-    </ol>
+    <>
+      <ol
+        className="project-workflow"
+        aria-label="Coordination page, step by step"
+      >
+        {[
+          [
+            ClipboardCheck,
+            "Agree the work",
+            "Clearer instructions",
+            "You and your client approve the same Coordination Brief: areas, outputs and site access. Any later change needs both approvals.",
+          ],
+          [
+            Camera,
+            "Capture the job",
+            "Fewer follow-up messages",
+            "Questions and changes stay with the job, so you work from the latest brief instead of searching messages.",
+          ],
+          [
+            FolderCheck,
+            "Hand over the results",
+            "One current record",
+            "Your client checks progress and delivery links on their Coordination page instead of asking you for updates.",
+          ],
+        ].map(([Icon, step, title, detail], index) => (
+          <li key={step}>
+            <span className="project-workflow-symbol" aria-hidden="true">
+              <Icon size={25} />
+            </span>
+            <span className="project-workflow-step">
+              0{index + 1} · {step}
+            </span>
+            <strong>{title}</strong>
+            <span>{detail}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="project-sync-note">
+        Saved updates appear on both Coordination pages while they are open and
+        connected. Unsubmitted drafts are not shared.
+      </p>
+    </>
   );
 }
 
@@ -98,10 +114,7 @@ export default function ProjectValue({ client = false, compact = false }) {
           <ProjectBenefits client={client} />
         </details>
       ) : (
-        <>
-          <ProjectBenefits client={client} />
-          <ProjectWorkflow />
-        </>
+        <CoordinationJourney />
       )}
       {client && (
         <p className="project-client-free">
