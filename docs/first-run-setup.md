@@ -25,7 +25,20 @@ is not yet confirmed, so answers drive branching:
 | Finish          | Logo and client welcome line (client requests only); theme; review card with Edit on every answer                                                                                                                                                               |
 
 Every confirmed answer is written to this device immediately under
-`streamlion-setup-v1` (browser storage only; no identity or authorization).
+`streamlion-setup-v1` (browser storage; no identity or authorization).
+
+**Kept with the Google account.** When Google is connected, the answers are
+also saved to the provider's account (`/api/provider-setup`, D1 table
+`streamlion_provider_setup_v1`, migration `0018`) shortly after each answer,
+and restored when the provider signs in on another device, browser, installed
+app or private window. Whichever copy changed most recently wins, and an
+empty new setup never replaces saved answers. Device-only providers keep the
+answers in that one browser: another device, the installed app versus the
+phone's browser, a private window or a different web address (for example a
+preview link) each start empty. Until migration `0018` is applied, setup
+stays on each device as before. Reopening a finished setup from Account
+(**Review or edit my setup**) opens on the review card and says the answers
+are saved.
 A reload, **Finish later**, or Google's sign-in page resumes at the exact
 pending question with the transcript intact; the opener then shows **Continue
 setup**. **Edit** re-asks only that answer and keeps later answers; answers
@@ -71,7 +84,7 @@ the capture provider, the deliverables field offers **Add my usual
 deliverables**, and measurement examples follow the chosen unit system.
 Device backups include the setup answers and the handover contact card; a
 restore adds them only where this device has none and rejects damaged ones.
-Account shows the setup summary with **Rerun setup assistant**, which reopens
+Account shows the setup summary with **Review or edit my setup**, which reopens
 on the review card.
 
 ## Existing entry points
@@ -129,6 +142,11 @@ cold draft recovery, console health and phone-width installation instructions.
 It does not grant Google access or install a real phone app.
 
 ## Release gates
+
+**Account-saved setup:** apply `migrations/0018_provider_setup.sql` (additive;
+one new table; take a D1 recovery bookmark first), then deploy the server code
+from the same commit. Before that, the endpoint reports itself unavailable
+and setup stays on each device; nothing breaks.
 
 The setup assistant is also frontend code and copy only. Its optional
 publishing reuses the existing `/api/provider-branding` and

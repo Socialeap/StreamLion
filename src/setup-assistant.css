@@ -589,6 +589,10 @@
   background: var(--warning-soft);
   border: 1px solid var(--warning-line);
 }
+.setup-saved {
+  font-size: 12px;
+  color: var(--muted);
+}
 .setup-editing {
   display: flex;
   flex-wrap: wrap;

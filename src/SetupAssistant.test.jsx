@@ -29,7 +29,8 @@ async function open(element) {
   return ui;
 }
 const { default: SetupAssistant } = await import("./SetupAssistant.jsx");
-const { SETUP_KEY, readSetup } = await import("./setup-assistant.js");
+const { SETUP_KEY, readSetup, answerStep, newSetup } =
+  await import("./setup-assistant.js");
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const config = {
@@ -68,6 +69,7 @@ const props = (extra = {}) => ({
   onSiteCopy: async () => calls.push(["siteCopy"]),
   onFinish: (to) => calls.push(["finish", to]),
   onExit: () => calls.push(["exit"]),
+  setupApi: async () => ({ available: false }),
   ...extra,
 });
 test.beforeEach(() => {
@@ -476,7 +478,6 @@ test("start over clears answers only after confirmation", async () => {
 });
 
 test("saving publishes phone and service area with branding and keeps them for handovers", async () => {
-  const { answerStep, newSetup } = await import("./setup-assistant.js");
   const { providerContact } = await import("./provider-contact.js");
   let state = newSetup();
   for (const [id, value] of [
@@ -547,7 +548,6 @@ test("saving publishes phone and service area with branding and keeps them for h
 });
 
 test("ChatGPT questions explain credits, set read-aloud and send built-in AI users to credits only when purchases are open", async () => {
-  const { answerStep, newSetup } = await import("./setup-assistant.js");
   const seed = (storage) => {
     let state = newSetup();
     for (const [id, value] of [
@@ -625,4 +625,39 @@ test("ChatGPT questions explain credits, set read-aloud and send built-in AI use
   await choose(ui, "Light");
   await choose(ui, "Save & finish");
   await ui.findByText(/Briefing Helper: create a project/);
+});
+
+test("a setup saved to the Google account is restored on another device and saves back after each answer", async () => {
+  const remote = answerStep(
+    answerStep(newSetup("2026-10-01T00:00:00.000Z"), "name", "Alex", {}),
+    "business",
+    "Harbor Spatial",
+    {},
+  );
+  const saved = [];
+  const setupApi = async (state, subject) => {
+    if (state) {
+      saved.push([state, subject]);
+      return { available: true, subject: "s", state };
+    }
+    return { available: true, subject: "s", state: remote };
+  };
+  const ui = await open(
+    <SetupAssistant
+      {...props({ setupApi, google: fakeGoogle({ hasSession: () => true }) })}
+      connected
+      account="a@b.co"
+    />,
+  );
+  await ui.findByText("Restored from your Google account");
+  assert(ui.getByText(/Nice to meet you, Alex!/));
+  assert.equal(readSetup().answers.business, "Harbor Spatial");
+  assert.equal(saved.length, 0);
+  const email = await ui.findByLabelText("Business email");
+  fireEvent.change(email, { target: { value: "alex@harbor.example" } });
+  await choose(ui, "Continue");
+  await waitFor(() => assert.equal(saved.length, 1), { timeout: 2000 });
+  assert.equal(saved[0][1], "s");
+  assert.equal(saved[0][0].answers.contact.email, "alex@harbor.example");
+  await ui.findByText("Saved to your Google account");
 });

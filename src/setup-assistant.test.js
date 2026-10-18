@@ -514,3 +514,42 @@ test("ChatGPT questions branch: credits only for built-in AI, read-aloud only fo
   assert.equal(walk(edited, online).current.id, "theme");
   assert.equal(setupProfile(edited).ai.credits, "");
 });
+
+test("the newest answered setup wins between this device and the account", async () => {
+  const { newerSetup } = await import("./setup-assistant.js");
+  const { syncSetup } = await import("./setup-sync.js");
+  const answered = (iso, name) =>
+    answerStep(newSetup(iso), "name", name, online, iso);
+  const old = answered("2026-10-18T09:00:00.000Z", "Old");
+  const recent = answered("2026-10-18T10:00:00.000Z", "Alex");
+  assert.equal(newerSetup(old, recent), recent);
+  assert.equal(newerSetup(recent, old), recent);
+  // A brand-new empty setup never replaces saved answers.
+  assert.equal(newerSetup(newSetup("2026-10-19T00:00:00.000Z"), old), old);
+  assert.equal(newerSetup(null, old), old);
+  assert.equal(newerSetup(null, null), null);
+
+  const storage = memoryStorage();
+  const pushed = [];
+  let remote = recent;
+  const api = async (state, subject) => {
+    if (state) {
+      pushed.push([state, subject]);
+      remote = state;
+    }
+    return { available: true, subject: "s", state: remote };
+  };
+  // A new device receives the account's answers without writing back.
+  assert.equal((await syncSetup(api, storage)).answers.name, "Alex");
+  assert.equal(readSetup(storage).answers.name, "Alex");
+  assert.equal(pushed.length, 0);
+  // Newer answers on this device go up to the account.
+  writeSetup(answered("2026-10-18T12:00:00.000Z", "Sam"), storage);
+  await syncSetup(api, storage);
+  assert.equal(pushed.length, 1);
+  assert.equal(remote.answers.name, "Sam");
+  assert.equal(
+    await syncSetup(async () => ({ available: false }), storage),
+    undefined,
+  );
+});

@@ -212,9 +212,10 @@ test("finished setup prefills new projects, offers usual deliverables and can be
   }).parentElement;
   assert(within(setup).getByText(/Harbor Spatial · alex@harbor.example/));
   fireEvent.click(
-    within(setup).getByRole("button", { name: "Rerun setup assistant" }),
+    within(setup).getByRole("button", { name: "Review or edit my setup" }),
   );
   await ui.findByText(/Here’s your setup, Alex/);
+  assert(ui.getByText(/Your answers are saved/));
   fireEvent.click(ui.getByRole("button", { name: "Finish later" }));
   await ui.findByRole("heading", { name: "Account", exact: true });
 });

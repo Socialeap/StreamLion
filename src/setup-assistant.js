@@ -829,8 +829,11 @@ export const STEPS = [
     stage: 6,
     kind: "review",
     editable: false,
-    prompt: (answers) => ({
+    prompt: (answers, ctx = {}) => ({
       text: `Here’s your setup, ${answers.name}. Review anything you like, then save.`,
+      hint: ctx.reopened
+        ? "Your answers are saved. Edit any of them, or save to keep them as they are."
+        : undefined,
     }),
     validate: (value) => value === true || fail("Review and save your setup."),
     summary: () => "Saved my setup",
@@ -859,13 +862,28 @@ function validState(value) {
     value.done.every((id) => byId.has(id))
   );
 }
-export function readSetup(storage = globalThis.localStorage) {
+// A stored or account-saved setup, or null when it is missing or invalid.
+export function parseSetup(text) {
   try {
-    const value = JSON.parse(storage.getItem(SETUP_KEY) || "null");
+    const value = JSON.parse(text || "null");
     return validState(value) ? value : null;
   } catch {
     return null;
   }
+}
+export function readSetup(storage = globalThis.localStorage) {
+  try {
+    return parseSetup(storage.getItem(SETUP_KEY));
+  } catch {
+    return null;
+  }
+}
+// The more recently changed of two saved setups (either may be missing).
+// A setup with no confirmed answers never replaces one that has answers.
+export function newerSetup(a, b) {
+  const blank = (s) => !s?.done?.length;
+  if (blank(a) || blank(b)) return blank(a) ? b || a || null : a;
+  return Date.parse(b.updatedAt) > Date.parse(a.updatedAt) ? b : a;
 }
 export function writeSetup(state, storage = globalThis.localStorage) {
   try {
