@@ -820,7 +820,7 @@ export default function SetupAssistant({
             <AssistantMessage
               fresh
               text={`You’re all set, ${answers.name}! Your StreamLion workspace is ready to turn client requests into completed, professional handovers.`}
-              hint="Your answers stay on this device. Rerun this assistant any time from Account."
+              hint="Reopen or edit your setup any time from Account. Answers saved to your account are available on other devices when you sign in with the same Google account."
             >
               {answers.aiUses?.includes("helper") && (
                 <p className="setup-hint">
