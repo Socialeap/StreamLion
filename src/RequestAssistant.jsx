@@ -46,6 +46,7 @@ import {
   writeRequest,
 } from "./request-assistant.js";
 import { budgetAllowed } from "./provider-pricing.js";
+import BriefPrivacyNotice from "./BriefPrivacyNotice.jsx";
 
 const randomToken = () =>
   btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
@@ -491,6 +492,7 @@ export default function RequestAssistant({
         aria-live="polite"
         aria-label="Request conversation"
       >
+        <BriefPrivacyNotice client />
         <ol>
           {history.map(({ step, value }) =>
             step.id === "review" ? null : (
