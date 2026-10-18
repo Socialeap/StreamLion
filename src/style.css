@@ -94,6 +94,9 @@
 .native-brief-card { grid-column: 1 / -1; min-width: 0; }
 .intake-choices .native-brief-card p { min-height: 0; }
 .native-brief-card textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.brief-privacy-preview { display: grid; gap: 10px; min-width: 0; margin-block: 16px; }
+.brief-privacy-preview input { width: 100%; min-width: 0; box-sizing: border-box; }
+.brief-privacy-preview li { overflow-wrap: anywhere; }
 .brief-pdf-tips { font-size: .9rem; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .brief-pdf-tips summary { cursor: pointer; font-weight: 600; }
 .brief-pdf-tips li { margin: 10px 0; }

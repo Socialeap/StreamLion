@@ -13,13 +13,7 @@ import {
 } from "./brief-qa.js";
 import { briefQALimits } from "./brief-qa-replacement.js";
 import { BriefFailure, briefFailure } from "./brief-failure.js";
-import {
-  BRIEF_LIMITS,
-  BRIEF_MODEL,
-  BRIEF_SCHEMA,
-  BRIEF_INSTRUCTIONS,
-  validateBriefResult,
-} from "../src/brief-import-contract.js";
+import { BRIEF_LIMITS, BRIEF_MODEL } from "../src/brief-import-contract.js";
 
 const reply = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -51,106 +45,12 @@ export const approved = (env) => {
 const jobContext = (mode, subject, id) =>
   JSON.stringify(["brief-result-v1", mode, subject, id]);
 
-export async function extractBrief(env, input, fetcher = fetch) {
-  // One request, no automatic inference retries and no paid tools/file storage.
-  const signal = AbortSignal.timeout(BRIEF_LIMITS.timeoutMs);
-  const body = JSON.stringify({
-    model: BRIEF_MODEL,
-    service_tier: "default",
-    store: false,
-    reasoning: { effort: "none" },
-    max_output_tokens: BRIEF_LIMITS.outputTokens,
-    instructions: BRIEF_INSTRUCTIONS,
-    input: [
-      {
-        role: "user",
-        content: JSON.stringify({
-          source: input.sourceName,
-          brief: input.text,
-        }),
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "streamlion_project",
-        strict: true,
-        schema: BRIEF_SCHEMA,
-      },
-    },
-  });
-  if (new TextEncoder().encode(body).byteLength > 65536)
-    throw new BriefFailure("request_size");
-  let response;
-  try {
-    response = await fetcher("https://api.openai.com/v1/responses", {
-      method: "POST",
-      redirect: "manual",
-      signal,
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body,
-    });
-  } catch (error) {
-    throw new BriefFailure(
-      ["TimeoutError", "AbortError"].includes(error?.name)
-        ? "provider_timeout"
-        : "provider_unavailable",
-    );
-  }
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => {});
-    const status = response.status;
-    throw new BriefFailure(
-      [401, 403].includes(status)
-        ? "provider_auth"
-        : [400, 404, 422].includes(status)
-          ? "provider_request"
-          : status === 429
-            ? "provider_capacity"
-            : "provider_unavailable",
-      status,
-    );
-  }
-  let data;
-  try {
-    data = JSON.parse(await boundedText(response, BRIEF_LIMITS.responseBytes));
-  } catch (error) {
-    throw new BriefFailure(
-      ["TimeoutError", "AbortError"].includes(error?.name)
-        ? "provider_timeout"
-        : "invalid_response",
-    );
-  }
-  if (!data || typeof data !== "object" || Array.isArray(data))
-    throw new BriefFailure("invalid_response");
-  if (data.status !== "completed" || data.error || data.incomplete_details)
-    throw new BriefFailure("incomplete_result");
-  if (!Array.isArray(data.output)) throw new BriefFailure("invalid_response");
-  const content = data.output.flatMap((item) => item?.content || []);
-  if (
-    content.some(
-      (item) =>
-        !item ||
-        typeof item !== "object" ||
-        (item.type === "output_text" && typeof item.text !== "string"),
-    )
-  )
-    throw new BriefFailure("invalid_response");
-  if (content.some((item) => item.type === "refusal"))
-    throw new BriefFailure("refused");
-  const text = content
-    .filter((item) => item.type === "output_text")
-    .map((item) => item.text)
-    .join("");
-  try {
-    return validateBriefResult(text);
-  } catch {
-    throw new BriefFailure("invalid_project");
-  }
-}
+export { preparePrivateBrief as extractBrief } from "./brief-pipeline.js";
+import {
+  preparePrivateBrief as extractBrief,
+  BRIEF_WORKFLOW,
+} from "./brief-pipeline.js";
+import { validatePrivateBrief } from "../src/brief-privacy.js";
 
 async function expire(db, mode, subject, now) {
   // Stale jobs are never run again. Failed attempts still count against budgets.
@@ -191,15 +91,17 @@ async function jobReply(env, row, scope, now, failure = null) {
       error:
         "This result expired after 24 hours. Check your saved draft before preparing another brief.",
     });
+  const recovered = await unseal(
+    env,
+    row.result,
+    jobContext(row.mode, row.google_subject, row.request_id),
+  );
   return reply({
     state: "complete",
     requestId: row.request_id,
     priceMicros: row.price_micros,
-    project: await unseal(
-      env,
-      row.result,
-      jobContext(row.mode, row.google_subject, row.request_id),
-    ),
+    project: recovered.workflowVersion === 2 ? recovered.project : recovered,
+    workflowVersion: recovered.workflowVersion === 2 ? 2 : 1,
   });
 }
 
@@ -327,6 +229,7 @@ export async function handleBriefImport(
       JSON.stringify([
         BRIEF_MODEL,
         BRIEF_LIMITS,
+        BRIEF_WORKFLOW,
         policy,
         ...(qa
           ? [
@@ -360,6 +263,7 @@ export async function handleBriefImport(
         balanceMicros: funding.available,
         canPrepare,
         maxCharacters: BRIEF_LIMITS.characters,
+        workflowVersion: BRIEF_WORKFLOW.version,
         ...(qa
           ? {
               ownerQA: {
@@ -387,7 +291,7 @@ export async function handleBriefImport(
       !idOK(input.requestId) ||
       typeof input.text !== "string" ||
       !input.text.trim() ||
-      input.text.length > BRIEF_LIMITS.characters ||
+      input.text.length > 16000 ||
       typeof input.sourceName !== "string" ||
       input.sourceName.length > 200 ||
       /[\x00-\x1f\x7f]/.test(input.sourceName)
@@ -396,6 +300,17 @@ export async function handleBriefImport(
         { error: "Choose a readable PDF or paste up to 6,000 characters." },
         400,
       );
+    try {
+      validatePrivateBrief(input);
+    } catch {
+      return reply(
+        {
+          error:
+            "Review the privacy preview in the updated app before preparing. No credits were charged.",
+        },
+        400,
+      );
+    }
     if (input.scope !== scope)
       return reply(
         {
@@ -404,7 +319,7 @@ export async function handleBriefImport(
         409,
       );
     const fingerprint = await hash(
-      JSON.stringify([input.text, input.sourceName]),
+      JSON.stringify([input.text, input.sourceName, input.privacy]),
     );
     const prior = await find(input.requestId);
     if (prior) {
@@ -497,37 +412,62 @@ export async function handleBriefImport(
     const run = async () => {
       let failure = null;
       try {
-        if (qa) {
-          const current = briefQAWindow(env);
-          const currentLimits = current
-            ? await briefQALimits(env, current, db)
-            : null;
-          const currentPolicy = await db
-            .prepare(
-              "SELECT * FROM streamlion_brief_policy_v1 WHERE mode='test'",
+        const authorize = async () => {
+          if (qa) {
+            const current = briefQAWindow(env);
+            const currentLimits = current
+              ? await briefQALimits(env, current, db)
+              : null;
+            const currentPolicy = await db
+              .prepare(
+                "SELECT * FROM streamlion_brief_policy_v1 WHERE mode='test'",
+              )
+              .first();
+            const currentSession = await getSession(request, env);
+            const licensed = await hasPurchase(env, subject);
+            if (
+              !current ||
+              current.subject !== subject ||
+              current.start !== window.start ||
+              current.until !== window.until ||
+              now() < current.start ||
+              now() >= current.until ||
+              currentLimits !== limits ||
+              !briefQAPolicy(currentPolicy, currentLimits) ||
+              !licensed ||
+              currentSession?.google_subject !== subject ||
+              currentSession.workbook_id !== session.workbook_id
             )
-            .first();
-          const currentSession = await getSession(request, env);
-          const licensed = await hasPurchase(env, subject);
-          if (
-            !current ||
-            current.subject !== subject ||
-            current.start !== window.start ||
-            current.until !== window.until ||
-            now() < current.start ||
-            now() >= current.until ||
-            currentLimits !== limits ||
-            !briefQAPolicy(currentPolicy, currentLimits) ||
-            !licensed ||
-            currentSession?.google_subject !== subject ||
-            currentSession.workbook_id !== session.workbook_id
-          )
-            throw new BriefFailure("qa_permission_changed");
-        }
-        const project = await extractBrief(env, input, fetcher);
+              throw new BriefFailure("qa_permission_changed");
+          }
+          if (!qa) {
+            const currentSession = await getSession(request, env);
+            const currentPolicy = await db
+              .prepare("SELECT * FROM streamlion_brief_policy_v1 WHERE mode=?")
+              .bind(mode)
+              .first();
+            if (
+              !approved(env) ||
+              !currentPolicy?.active ||
+              currentPolicy.price_micros !== policy.price_micros ||
+              currentPolicy.reserve_micros !== policy.reserve_micros ||
+              !(await hasPurchase(env, subject)) ||
+              currentSession?.google_subject !== subject ||
+              currentSession.workbook_id !== session.workbook_id
+            )
+              throw new BriefFailure("permission_changed");
+          }
+        };
+        const project = await extractBrief(
+          env,
+          input,
+          fetcher,
+          policy.reserve_micros,
+          authorize,
+        );
         const encrypted = await seal(
           env,
-          project,
+          { project, workflowVersion: BRIEF_WORKFLOW.version },
           jobContext(mode, subject, input.requestId),
         );
         await db
