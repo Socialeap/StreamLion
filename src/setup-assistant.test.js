@@ -544,7 +544,10 @@ test("the newest answered setup wins between this device and the account", async
   assert.equal(readSetup(storage).answers.name, "Alex");
   assert.equal(pushed.length, 0);
   // Newer answers on this device go up to the account.
-  writeSetup(answered("2026-10-18T12:00:00.000Z", "Sam"), storage);
+  writeSetup(
+    { ...answered("2026-10-18T12:00:00.000Z", "Sam"), accountSubject: "s" },
+    storage,
+  );
   await syncSetup(api, storage);
   assert.equal(pushed.length, 1);
   assert.equal(remote.answers.name, "Sam");
