@@ -69,7 +69,7 @@ const props = (extra = {}) => ({
   onSiteCopy: async () => calls.push(["siteCopy"]),
   onFinish: (to) => calls.push(["finish", to]),
   onExit: () => calls.push(["exit"]),
-  setupApi: async () => ({ available: false }),
+  setupApi: async () => ({ available: false, subject: "subject-a" }),
   ...extra,
 });
 test.beforeEach(() => {
@@ -304,6 +304,7 @@ test("Google sign-in, workbook creation, offline copy and publishing happen only
   ui.rerender(<SetupAssistant {...base} checking />);
   await ui.findByText(/Checking your Google connection/);
   ui.rerender(<SetupAssistant {...connected} />);
+  await choose(ui, "Use this device’s setup for this account");
   await ui.findByText("Signed in as alex@harbor.example");
   await choose(ui, /^Create a new workbook/);
   await waitFor(() =>
@@ -503,7 +504,10 @@ test("saving publishes phone and service area with branding and keeps them for h
     ["theme", "light"],
   ])
     state = answerStep(state, id, value, { online: true });
-  localStorage.setItem(SETUP_KEY, JSON.stringify(state));
+  localStorage.setItem(
+    SETUP_KEY,
+    JSON.stringify({ ...state, accountSubject: "subject-a" }),
+  );
   const writes = [];
   const brandingApi = async (body, subject) => {
     if (body) {
@@ -563,7 +567,10 @@ test("ChatGPT questions explain credits, set read-aloud and send built-in AI use
         online: true,
         googleAvailable: true,
       });
-    localStorage.setItem(SETUP_KEY, JSON.stringify(state));
+    localStorage.setItem(
+      SETUP_KEY,
+      JSON.stringify({ ...state, accountSubject: "subject-a" }),
+    );
   };
   const packs = [
     { id: "10", amount: 1000, creditsMicros: 1 },
@@ -660,4 +667,262 @@ test("a setup saved to the StreamLion account is restored on another device and 
   assert.equal(saved[0][1], "s");
   assert.equal(saved[0][0].answers.contact.email, "alex@harbor.example");
   await ui.findByText("Saved to your StreamLion account");
+});
+
+function reviewFixture(complete = false) {
+  let state = newSetup("2026-10-18T00:00:00.000Z");
+  for (const [id, value] of [
+    ["name", "Avery"],
+    ["business", "QA Harbor Spatial (TEST)"],
+    [
+      "contact",
+      {
+        email: "qa@example.com",
+        phone: "503-555-0142",
+        area: "Portland",
+        website: "",
+      },
+    ],
+    ["focus", ["briefs"]],
+    ["hardware", ["leica-blk360"]],
+    ["deliverables", ["e57"]],
+    ["storage", "device"],
+    ["aiUses", []],
+    ["theme", "light"],
+    ...(complete ? [["review", true]] : []),
+  ])
+    state = answerStep(
+      state,
+      id,
+      value,
+      { online: true },
+      "2026-10-18T00:00:01.000Z",
+    );
+  return { ...state, accountSubject: "subject-a" };
+}
+
+test("reopening a completed setup only displays review and never uploads an unfinished copy", async () => {
+  const saved = reviewFixture(true),
+    posts = [];
+  localStorage.setItem(SETUP_KEY, JSON.stringify(saved));
+  const setupApi = async (state) => {
+    if (state) posts.push(state);
+    return { available: true, subject: "subject-a", state: saved };
+  };
+  const ui = await open(
+    <SetupAssistant
+      {...props({ setupApi })}
+      connected
+      account="qa@example.com"
+    />,
+  );
+  await ui.findByRole("button", { name: "Save & finish" });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 650));
+  });
+  assert.equal(posts.length, 0);
+  assert.deepEqual(readSetup(), saved);
+  assert.equal(readSetup().status, "complete");
+});
+
+test("Finish later waits for the last confirmed answer to reach the account before unmounting", async () => {
+  const posts = [];
+  let release,
+    exited = false,
+    ui;
+  const setupApi = async (state, subject) => {
+    if (!state) return { available: true, subject: "subject-a", state: null };
+    posts.push([state, subject]);
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return { available: true, subject, state };
+  };
+  ui = await open(
+    <SetupAssistant
+      {...props({
+        setupApi,
+        onExit: () => {
+          exited = true;
+          ui.unmount();
+        },
+      })}
+      connected
+      account="qa@example.com"
+    />,
+  );
+  await say(ui, "What should I call you?", "Avery");
+  fireEvent.click(ui.getByRole("button", { name: "Finish later" }));
+  await waitFor(() => assert.equal(posts.length, 1));
+  assert.equal(exited, false);
+  assert.equal(posts[0][0].answers.name, "Avery");
+  assert.equal(posts[0][1], "subject-a");
+  await act(async () => release());
+  await waitFor(() => assert.equal(exited, true));
+});
+
+test("Save & finish awaits its completion save and review afterwards does not change persisted state", async () => {
+  const saved = reviewFixture(),
+    posts = [];
+  let release;
+  const setupApi = async (state, subject) => {
+    if (!state) return { available: true, subject: "subject-a", state: saved };
+    posts.push(state);
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return { available: true, subject, state };
+  };
+  const ui = await open(
+    <SetupAssistant
+      {...props({ setupApi, brandingApi: async () => ({ available: false }) })}
+      connected
+      account="qa@example.com"
+    />,
+  );
+  await choose(ui, "Save & finish");
+  await waitFor(() => assert.equal(posts.length, 1));
+  assert.equal(posts[0].status, "complete");
+  const next = ui.getByRole("button", { name: "Go to Projects" });
+  assert.equal(
+    next.disabled,
+    true,
+    "cannot navigate before the completion save settles",
+  );
+  await act(async () => release());
+  await waitFor(() => assert.equal(next.disabled, false));
+  const completed = readSetup();
+  fireEvent.click(ui.getByRole("button", { name: "Review answers" }));
+  await ui.findByRole("button", { name: "Save & finish" });
+  assert.deepEqual(readSetup(), completed);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 650));
+  });
+  assert.equal(posts.length, 1);
+  fireEvent.click(ui.getByRole("button", { name: "Finish later" }));
+  await waitFor(() => assert.deepEqual(calls, [["exit"]]));
+});
+
+test("an in-place account switch hides the old transcript and never sends its answers to the new subject", async () => {
+  const posts = [];
+  let subject = "subject-a",
+    release;
+  const saved = reviewFixture(true);
+  const setupApi = async (state, target) => {
+    if (state) posts.push([state, target]);
+    if (subject === "subject-b")
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+    return {
+      available: true,
+      subject,
+      state: subject === "subject-a" ? saved : null,
+    };
+  };
+  const supplied = props({ setupApi });
+  const ui = await open(
+    <SetupAssistant {...supplied} connected account="qa-a@example.com" />,
+  );
+  await ui.findByRole("button", { name: "Save & finish" });
+  subject = "subject-b";
+  ui.rerender(
+    <SetupAssistant {...supplied} connected account="qa-b@example.com" />,
+  );
+  assert.equal(ui.queryByRole("log", { name: "Setup conversation" }), null);
+  await act(async () => release());
+  await ui.findByLabelText("What should I call you?");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 650));
+  });
+  assert.equal(posts.length, 0);
+  assert.notEqual(readSetup()?.answers.name, "Avery");
+});
+
+test("account save failure blocks navigation, keeps answers, and allows an explicit retry", async () => {
+  let attempts = 0,
+    exited = false;
+  const setupApi = async (state, subject) => {
+    if (!state) return { available: true, subject: "subject-a", state: null };
+    if (++attempts === 1) throw Error("offline");
+    return { available: true, subject, state };
+  };
+  const ui = await open(
+    <SetupAssistant
+      {...props({
+        setupApi,
+        onExit: () => {
+          exited = true;
+        },
+      })}
+      connected
+      account="qa@example.com"
+    />,
+  );
+  await say(ui, "What should I call you?", "Avery");
+  fireEvent.click(ui.getByRole("button", { name: "Finish later" }));
+  await ui.findByRole("alert");
+  assert.equal(exited, false);
+  assert.equal(readSetup().answers.name, "Avery");
+  assert.equal(readSetup().accountSubject, "subject-a");
+  fireEvent.click(ui.getByRole("button", { name: "Finish later" }));
+  await waitFor(() => assert.equal(exited, true));
+  assert.equal(attempts, 2);
+});
+
+test("device-only legacy answers require an explicit choice before account saving", async () => {
+  const legacy = { ...reviewFixture(true) };
+  delete legacy.accountSubject;
+  localStorage.setItem(SETUP_KEY, JSON.stringify(legacy));
+  const posts = [];
+  const setupApi = async (state, subject) => {
+    if (state) posts.push([state, subject]);
+    return { available: true, subject: "subject-b", state: state || null };
+  };
+  const ui = await open(
+    <SetupAssistant
+      {...props({ setupApi })}
+      connected
+      account="qa@example.com"
+    />,
+  );
+  const use = await ui.findByRole("button", {
+    name: "Use this device’s setup for this account",
+  });
+  assert.equal(posts.length, 0);
+  assert.equal(ui.queryByText("QA Harbor Spatial (TEST)"), null);
+  fireEvent.click(use);
+  await ui.findByRole("button", { name: "Save & finish" });
+  fireEvent.click(ui.getByRole("button", { name: "Finish later" }));
+  await waitFor(() => assert.equal(posts.length, 1));
+  assert.equal(posts[0][1], "subject-b");
+  assert.equal(posts[0][0].answers.name, "Avery");
+});
+
+test("an account switch cancels the previous account debounce without discarding its local answer", async () => {
+  let subject = "subject-a";
+  const posts = [];
+  const setupApi = async (state, target) => {
+    if (state) posts.push([state, target]);
+    return { available: true, subject, state: null };
+  };
+  const supplied = props({ setupApi });
+  const ui = await open(
+    <SetupAssistant {...supplied} connected account="qa-a@example.com" />,
+  );
+  await say(ui, "What should I call you?", "Avery");
+  subject = "subject-b";
+  ui.rerender(
+    <SetupAssistant {...supplied} connected account="qa-b@example.com" />,
+  );
+  await ui.findByLabelText("What should I call you?");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 650));
+  });
+  assert.equal(posts.length, 0);
+  assert.equal(readSetup().accountSubject, "subject-b");
+  const archived = JSON.parse(
+    localStorage.getItem(`${SETUP_KEY}:account:subject-a`),
+  );
+  assert.equal(archived.answers.name, "Avery");
 });

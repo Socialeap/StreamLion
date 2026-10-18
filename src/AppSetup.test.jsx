@@ -28,7 +28,7 @@ const { TABS } = await import("./workbook.js");
 const { SETUP_KEY, answerStep, newSetup, readSetup, walk } =
   await import("./setup-assistant.js");
 const originalFetch = globalThis.fetch;
-let session;
+let session, remoteSetup;
 test.beforeEach(async () => {
   cleanup();
   disconnectGoogle();
@@ -38,7 +38,24 @@ test.beforeEach(async () => {
   await db.clear("workspace");
   await db.clear("audio");
   session = { enabled: true, connected: false };
+  remoteSetup = null;
   globalThis.fetch = async (url, options = {}) => {
+    if (url === "/api/provider-setup") {
+      if (options.method === "POST") {
+        const state = JSON.parse(options.body).state;
+        assert.equal(options.headers["X-StreamLion-Account"], session.subject);
+        assert.equal(state.accountSubject, session.subject);
+        remoteSetup = state;
+      }
+      return new Response(
+        JSON.stringify({
+          available: true,
+          subject: session.subject,
+          account: session.account,
+          state: remoteSetup,
+        }),
+      );
+    }
     assert(
       !options.method || options.method === "GET",
       "Opening setup must not write or start authentication automatically",
@@ -138,6 +155,11 @@ test("returning from Google's sign-in page reopens an unfinished setup at the wo
   window.history.replaceState(null, "", "/?google=connected");
   const ui = render(<App />);
   await ui.findByRole("heading", { name: "Setup assistant" });
+  fireEvent.click(
+    await ui.findByRole("button", {
+      name: "Use this device’s setup for this account",
+    }),
+  );
   await ui.findByText("Signed in as qa-a@example.com");
   assert(await ui.findByRole("button", { name: /^Create a new workbook/ }));
   assert.equal(readSetup().status, "active");
@@ -155,6 +177,11 @@ test("a restored account's saved workbook completes the Google step without crea
   };
   window.history.replaceState(null, "", "/?google=connected");
   const ui = render(<App />);
+  fireEvent.click(
+    await ui.findByRole("button", {
+      name: "Use this device’s setup for this account",
+    }),
+  );
   await ui.findByText("Use my saved workbook");
   await ui.findByText(/How would you like to use it/);
 });

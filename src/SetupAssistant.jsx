@@ -24,7 +24,6 @@ import {
   answerStep,
   editStep,
   newSetup,
-  newerSetup,
   readSetup,
   reopenSetup,
   setupProfile,
@@ -50,7 +49,7 @@ import { loadGoogleConfig } from "./google-config.js";
 import { fetchRead } from "./network.js";
 import { saveTheme } from "./theme.js";
 import { rememberProviderContact } from "./provider-contact.js";
-import { setupAPI } from "./setup-sync.js";
+import { setupAPI, selectSetupAccount, setupSaveQueue } from "./setup-sync.js";
 import {
   connectGoogle,
   createWorkbook,
@@ -145,6 +144,9 @@ export default function SetupAssistant({
   // A finished setup reopens on its review card with its answers kept.
   const reopened = useRef(readSetup()?.status === "complete");
   const stateRef = useRef(state);
+  const persisted = useRef(readSetup() || state);
+  const accountSubject = useRef("");
+  const saveQueue = useRef(null);
   const [editing, setEditing] = useState(""),
     [error, setError] = useState(""),
     [fieldErrors, setFieldErrors] = useState({}),
@@ -156,6 +158,8 @@ export default function SetupAssistant({
     [configAttempt, setConfigAttempt] = useState(0),
     [credits, setCredits] = useState({ loading: false, value: null }),
     [accountSaved, setAccountSaved] = useState(""),
+    [checkedAccount, setCheckedAccount] = useState(null),
+    [deviceAnswers, setDeviceAnswers] = useState(null),
     [, setGoogleTick] = useState(0);
   const feed = useRef(null),
     dock = useRef(null),
@@ -183,6 +187,10 @@ export default function SetupAssistant({
   }, [configAttempt, loadConfig]);
 
   const live = connected || google.hasSession();
+  const accountIdentity = account || google.account() || "";
+  const accountSyncEnabled = live && config.value?.persistentEnabled !== false;
+  const accountChecking =
+    accountSyncEnabled && checkedAccount !== accountIdentity;
   const ctx = {
     online,
     connected: live,
@@ -224,54 +232,122 @@ export default function SetupAssistant({
     focusAnswer(dock.current);
   }, [current?.id, editing]);
 
-  function commit(next, { sync = true } = {}) {
-    stateRef.current = next;
-    setState(next);
-    setStorageWarning(!writeSetup(next));
-    if (sync) queueAccountSave();
+  function commit(next) {
+    const saved = accountSubject.current
+      ? { ...next, accountSubject: accountSubject.current }
+      : next;
+    stateRef.current = saved;
+    persisted.current = saved;
+    setState(saved);
+    const written = writeSetup(saved);
+    setStorageWarning(!written);
+    if (saveQueue.current) {
+      setAccountSaved("Saving setup to your account…");
+      saveQueue.current.enqueue(saved);
+    }
   }
-  // With Google connected, answers are also kept with the account so they
-  // follow the provider to other devices. This device's copy always saves first.
-  const accountTimer = useRef(null),
-    accountSubject = useRef("");
-  function queueAccountSave() {
-    if (!accountSubject.current) return;
-    clearTimeout(accountTimer.current);
-    accountTimer.current = setTimeout(async () => {
-      try {
-        await setupApi(stateRef.current, accountSubject.current);
-        setAccountSaved("Saved to your StreamLion account");
-      } catch {
-        setAccountSaved(
-          "Saved on this device; your account copy will update later",
-        );
-      }
-    }, 600);
+  // Reopening is presentation only: never persist its active status or newer
+  // timestamp. Only confirmed edits and Save & finish change the saved copy.
+  function review(saved) {
+    const view = { ...reopenSetup(saved), updatedAt: saved.updatedAt };
+    reopened.current = true;
+    stateRef.current = view;
+    setState(view);
   }
-  useEffect(() => () => clearTimeout(accountTimer.current), []);
   useEffect(() => {
-    if (!live) return;
     let active = true;
-    const opened = stateRef.current;
+    accountSubject.current = "";
+    setAccountSaved("");
+    setDeviceAnswers(null);
+    if (!accountSyncEnabled) return;
     setupApi()
       .then((remote) => {
-        if (!active || !remote.available) return;
+        if (!active) return;
+        if (
+          remote.account &&
+          accountIdentity &&
+          remote.account.toLowerCase() !== accountIdentity.toLowerCase()
+        ) {
+          throw new Error("Google account changed.");
+        }
+        if (!remote.subject)
+          throw new Error("Your setup account could not be checked.");
+        // A missing setup table can still identify the signed-in account.
+        // Isolate its device copy even while account saving is unavailable.
+        const selected = selectSetupAccount({ ...remote, available: true });
         accountSubject.current = remote.subject;
-        const newest = newerSetup(stateRef.current, remote.state);
-        // A newer copy from another device replaces an untouched one here.
-        if (newest === remote.state && stateRef.current === opened) {
-          commit(newest.status === "complete" ? reopenSetup(newest) : newest, {
-            sync: false,
+        persisted.current = selected.state;
+        const saved = selected.state;
+        reopened.current = saved.status === "complete";
+        const view = reopened.current
+          ? { ...reopenSetup(saved), updatedAt: saved.updatedAt }
+          : saved;
+        stateRef.current = view;
+        setState(view);
+        setDeviceAnswers(selected.device);
+        if (remote.available) {
+          saveQueue.current = setupSaveQueue(setupApi, remote.subject, (ok) => {
+            if (!active) return;
+            setAccountSaved(
+              ok
+                ? "Saved to your StreamLion account"
+                : "Saved on this device; your account copy will update later",
+            );
           });
-          setAccountSaved("Restored from your StreamLion account");
-        } else if (newest !== remote.state) queueAccountSave();
-        else setAccountSaved("Saved to your StreamLion account");
+          if (selected.push) saveQueue.current.enqueue(saved);
+          else if (remote.state)
+            setAccountSaved("Restored from your StreamLion account");
+        } else {
+          setAccountSaved(
+            "Saved on this device; account saving is unavailable",
+          );
+        }
+        setCheckedAccount(accountIdentity);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (active)
+          setError(
+            "Could not check your setup account. Reopen setup to retry. Your device answers are kept.",
+          );
+      });
     return () => {
       active = false;
+      saveQueue.current?.cancel();
+      saveQueue.current = null;
+      accountSubject.current = "";
     };
-  }, [live]);
+  }, [accountSyncEnabled, accountIdentity, setupApi]);
+  async function leave(destination) {
+    if (!saveQueue.current) {
+      if (destination) onFinish(destination);
+      else onExit();
+      return;
+    }
+    setBusy("Saving your setup…");
+    setError("");
+    try {
+      await saveQueue.current?.flush();
+      if (destination) onFinish(destination);
+      else onExit();
+    } catch {
+      setError(
+        "Your setup is saved on this device, but the account save did not finish. Check your connection and try again before leaving.",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+  async function useDeviceAnswers() {
+    if (!deviceAnswers || !accountSubject.current) return;
+    const saved = {
+      ...deviceAnswers,
+      accountSubject: accountSubject.current,
+      updatedAt: new Date().toISOString(),
+    };
+    commit(saved);
+    if (saved.status === "complete") review(saved);
+    setDeviceAnswers(null);
+  }
   function fail(e) {
     setError(e.message);
     setFieldErrors(e.fields || {});
@@ -465,6 +541,7 @@ export default function SetupAssistant({
       const done =
         start.connected && profile.business ? await publish(profile) : [];
       commit(answerStep(stateRef.current, "review", true, start));
+      await saveQueue.current?.flush();
       setResults(done);
     } catch (e) {
       fail(e);
@@ -486,7 +563,7 @@ export default function SetupAssistant({
     commit(newSetup());
   }
 
-  const disabled = !!busy;
+  const disabled = !!busy || accountChecking;
   const prompt = (step) => step.prompt(answers, ctx);
   const lastHistory = history.at(-1)?.step.id;
   function widget() {
@@ -744,6 +821,22 @@ export default function SetupAssistant({
     }
   }
 
+  if (accountChecking)
+    return (
+      <main className="setup-assistant">
+        <h1>Setup assistant</h1>
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <button type="button" onClick={onExit}>
+              Back to Account
+            </button>
+          </>
+        ) : (
+          <p role="status">Checking your saved setup…</p>
+        )}
+      </main>
+    );
   return (
     <main className="setup-screen" aria-labelledby="setup-title">
       <ChatHeader
@@ -770,12 +863,24 @@ export default function SetupAssistant({
             type="button"
             className="setup-quiet"
             disabled={disabled}
-            onClick={onExit}
+            onClick={() => leave("")}
           >
             Finish later
           </button>
         )}
       </ChatHeader>
+      {deviceAnswers && !accountChecking && (
+        <section className="setup-notice" aria-label="Device setup recovery">
+          <p>
+            A setup saved only on this device is available. It has not been
+            saved to {accountIdentity || "this account"}. Use it only if these
+            are your answers.
+          </p>
+          <button type="button" disabled={disabled} onClick={useDeviceAnswers}>
+            Use this device’s setup for this account
+          </button>
+        </section>
+      )}
       <div
         className="setup-feed"
         ref={feed}
@@ -893,21 +998,27 @@ export default function SetupAssistant({
           <div className="setup-dock-actions setup-finish">
             <button
               type="button"
+              disabled={disabled}
               onClick={() => {
                 setResults(null);
-                commit(reopenSetup(stateRef.current));
+                review(persisted.current);
               }}
             >
               Review answers
             </button>
-            <button type="button" onClick={() => onFinish("Projects")}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => leave("Projects")}
+            >
               Go to Projects
             </button>
             <button
               type="button"
               className="primary"
               data-setup-focus
-              onClick={() => onFinish("new")}
+              disabled={disabled}
+              onClick={() => leave("new")}
             >
               Create my first project
             </button>

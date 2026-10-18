@@ -202,8 +202,10 @@ export default function App() {
         );
         return;
       }
+      // Hide previous-account defaults until this account's setup is checked.
+      setProfile(null);
       // Setup answers follow the Google account to every device.
-      syncSetup()
+      syncSetup(undefined, undefined, () => epoch === restoreEpoch.current)
         .then((setup) => {
           if (setup !== undefined && epoch === restoreEpoch.current)
             setProfile(setupProfile());
