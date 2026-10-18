@@ -240,7 +240,7 @@ export default function SetupAssistant({
     accountTimer.current = setTimeout(async () => {
       try {
         await setupApi(stateRef.current, accountSubject.current);
-        setAccountSaved("Saved to your Google account");
+        setAccountSaved("Saved to your StreamLion account");
       } catch {
         setAccountSaved(
           "Saved on this device; your account copy will update later",
@@ -263,9 +263,9 @@ export default function SetupAssistant({
           commit(newest.status === "complete" ? reopenSetup(newest) : newest, {
             sync: false,
           });
-          setAccountSaved("Restored from your Google account");
+          setAccountSaved("Restored from your StreamLion account");
         } else if (newest !== remote.state) queueAccountSave();
-        else setAccountSaved("Saved to your Google account");
+        else setAccountSaved("Saved to your StreamLion account");
       })
       .catch(() => {});
     return () => {
@@ -820,7 +820,7 @@ export default function SetupAssistant({
             <AssistantMessage
               fresh
               text={`You’re all set, ${answers.name}! Your StreamLion workspace is ready to turn client requests into completed, professional handovers.`}
-              hint="Reopen or edit your setup any time from Account. Answers saved to your account are available on other devices when you sign in with the same Google account."
+              hint="When saved to your StreamLion account, your setup can be restored on another device using the same Google sign-in. Reopen or edit it any time from Account."
             >
               {answers.aiUses?.includes("helper") && (
                 <p className="setup-hint">
