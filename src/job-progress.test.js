@@ -36,12 +36,18 @@ test("progress shows only what the job has recorded", () => {
     }),
     ["done", "done", "current", "next", "next"],
   );
-  assert.deepEqual(states({ state: "delivered", fields: {} }), [
+  // Without a confirmed appointment, no visit is claimed as scheduled.
+  const delivered = jobMilestones({ state: "delivered", fields: {} }).steps;
+  assert.deepEqual(
+    delivered.map((step) => step.label),
+    ["Request sent", "Brief agreed", "Capture complete", "Results delivered"],
+  );
+  assert(delivered.every((step) => step.state === "done"));
+  assert.deepEqual(states({ state: "work_completed", fields: {} }), [
     "done",
     "done",
     "done",
-    "done",
-    "done",
+    "current",
   ]);
   assert.deepEqual(jobMilestones({ state: "declined", fields: {} }), {
     stopped: "The provider declined this request.",

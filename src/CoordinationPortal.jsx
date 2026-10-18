@@ -1742,13 +1742,13 @@ export default function CoordinationPortal({
 }
 function JobProgress({ job }) {
   const { stopped, steps } = jobMilestones(job);
-  if (stopped) return <p className="coord-progress-stopped">{stopped}</p>;
+  if (stopped) return <p className="coord-milestones-stopped">{stopped}</p>;
   if (!steps.length) return null;
   return (
-    <ol className="coord-progress" aria-label="Project progress">
+    <ol className="coord-milestones" aria-label="Project progress">
       {steps.map((step) => (
         <li key={step.label} className={`is-${step.state}`}>
-          <span className="coord-progress-mark" aria-hidden="true">
+          <span className="coord-milestones-mark" aria-hidden="true">
             {step.state === "done" ? <Check size={14} /> : null}
           </span>
           <span>
