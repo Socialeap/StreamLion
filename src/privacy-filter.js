@@ -96,6 +96,13 @@ export function filterPrivateTexts(
           /^(?:(?:password|passcode|door\s*code|entry\s*code|access\s*code|lockbox\s*code|alarm\s*code|social security(?: number)?|ssn|credit card(?: number)?|pin)\b[ \t]*(?::|=|#|\bis\b)?[ \t]*|Bearer[ \t]+)([^\r\n]+)/i,
         );
         const value = (part?.[1] || span.value).trim();
+        // Retain the earlier single-token protection for credentials followed
+        // by explanatory prose; full phrases take precedence on overlap below.
+        const firstToken = (value.match(/^\S+/)?.[0] || "").replace(
+          /[.,;!?]+$/,
+          "",
+        );
+        if (firstToken) hidden.add(firstToken);
         // Keep the exact credential, including meaningful punctuation. Also
         // recognize presentation quotes/prose punctuation on an unquoted repeat.
         for (const candidate of [value, value.replace(/[.,;!?]+$/, "")]) {

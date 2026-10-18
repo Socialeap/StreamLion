@@ -67,7 +67,7 @@ StreamLion uses GitHub, Cloudflare and Google. No Lovable action is required.
 
 ## Validation
 
-- 916 unit/integration checks passed, including real local SQLite/Workers
+- 917 unit/integration checks passed, including real local SQLite/Workers
   fixtures with provider responses mocked. Route checks prove Google access
   remains GET-only, inputs are filtered, names and fractions are restored,
   malformed/unknown references and restoration overflow are withheld, and a

@@ -133,3 +133,15 @@ for (const [label, repeated, phrase] of [
       false,
     );
   });
+
+test("single-word codes followed by explanatory prose remain hidden in repeated questions", () => {
+  const input = privateAIInput("Does 7319 still work?", { title: "Venue" }, [
+    {
+      text: "Access code: 7319 for the rear entrance",
+      area: "Entry",
+      reviewed: true,
+    },
+  ]);
+  assert.equal(input.question, "Does [PRIVATE_ACCESS_REMOVED] still work?");
+  assert.doesNotMatch(JSON.stringify(input), /7319/);
+});
