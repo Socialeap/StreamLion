@@ -1,38 +1,8 @@
+import { filterPrivateTexts, privatePatterns } from "./privacy-filter.js";
 // Runs without an AI service. Detection assists review; it is not proof of anonymity.
 const reference = /SLP_\d+_/g;
-const secret =
-  /\b(?:password|passcode|door\s*code|entry\s*code|access\s*code|lockbox\s*code|alarm\s*code|social security(?: number)?|ssn|credit card(?: number)?)\b[ \t]*(?::|=|#|\bis\b)?[ \t]*[^\r\n]+|\bpin\b[ \t]*(?::|=|#|\bis\b)[ \t]*[^\r\n]+|\bsk-[A-Za-z0-9_-]{12,}|\bBearer[ \t]+\S+/gi;
-const email = /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const phone =
-  /(?<![\w.])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]\d{3}[ .-]\d{4}(?!\d)/g;
-const address =
-  /\b\d{1,6}[ \t]+(?:[\p{L}\d.'-]+[ \t]+){1,6}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct)\b(?:[ \t]+(?:Apt|Suite|Unit)[ .#\t]*[\w-]+)?/giu;
-// Stop at a Markdown label/target boundary, without excluding IPv6 brackets.
-const url = /https?:\/\/(?:(?!\]\()[^\s<>"'])+/gi;
-const knownKeys =
-  /^(?:requesterName|requesterEmail|contact[12](?:Name|Phone)|providerName|providerEmail|companyName|address|address2|postal|reference)$/;
+const [secret, email, phone, url, address] = privatePatterns;
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-function trimProseFromUrl(value) {
-  let previous;
-  do {
-    previous = value;
-    value = value.replace(/[.,;:!?]+$/, "");
-    for (const [open, close] of [
-      ["(", ")"],
-      ["[", "]"],
-      ["{", "}"],
-    ]) {
-      if (
-        value.endsWith(close) &&
-        value.split(close).length > value.split(open).length
-      )
-        value = value.slice(0, -1);
-    }
-  } while (value !== previous);
-  return value;
-}
-
 export function filterBrief(source, fields = {}, extra = []) {
   if (
     typeof source !== "string" ||
@@ -42,95 +12,16 @@ export function filterBrief(source, fields = {}, extra = []) {
     throw new Error(
       "Use up to 6,000 characters without reserved SLP_ references.",
     );
-  const spans = [];
-  const collect = (pattern, kind, group = 0) => {
-    for (const match of source.matchAll(pattern)) {
-      // Keep punctuation outside the private span, so prose round-trips while
-      // a URL field restores only its destination (including balanced brackets).
-      const value =
-        kind === "url" ? trimProseFromUrl(match[group]) : match[group];
-      const start = match.index + (group ? match[0].indexOf(value) : 0);
-      spans.push({ start, end: start + value.length, value, kind });
-    }
-  };
-  collect(secret, "secret");
-  collect(email, "email");
-  collect(phone, "phone");
-  collect(url, "url");
-  collect(address, "address");
-  collect(
-    /(?:^|\n)[ \t]*(?:Client|Contact|Requested by|Provider|Name|From|To)[ \t]*:[ \t]*([\p{L}][\p{L} .'’-]{2,70})(?=[<\n\r]|$)/giu,
-    "name",
-    1,
-  );
-  const phrases = [
-    ...Object.entries(fields)
-      .filter(
-        ([key, value]) => knownKeys.test(key) && typeof value === "string",
-      )
-      .map(([, value]) => value),
-    ...extra,
-    // Once a literal has been discovered, hide unlabeled repetitions too.
-    ...spans.filter((s) => s.kind !== "secret").map((s) => s.value),
-  ];
-  for (const value of phrases) {
-    if (typeof value !== "string" || !value.trim()) continue;
-    const phrase = value.trim();
-    if (phrase.length < 2 || phrase.length > 500)
-      throw new Error("Mark a private phrase between 2 and 500 characters.");
-    collect(
-      new RegExp(
-        `(?<![\\p{L}\\p{N}])${escape(phrase)}(?![\\p{L}\\p{N}])`,
-        "giu",
-      ),
-      "selected",
-    );
-  }
-  // Secrets take precedence; overlapping matches never expose a partial private value.
-  const selected = [];
-  for (const span of spans.sort(
-    (a, b) =>
-      (a.kind === "secret" ? -1 : 0) - (b.kind === "secret" ? -1 : 0) ||
-      b.value.length - a.value.length,
-  )) {
-    if (!selected.some((s) => span.start < s.end && span.end > s.start))
-      selected.push(span);
-  }
-  selected.sort((a, b) => a.start - b.start);
-  const entries = [];
-  let text = "",
-    cursor = 0,
-    removedSecrets = 0;
-  for (const span of selected) {
-    text += source.slice(cursor, span.start);
-    if (span.kind === "secret") {
-      text += "[PRIVATE_ACCESS_REMOVED]";
-      removedSecrets++;
-    } else {
-      let entry = entries.find(
-        (e) =>
-          e.value === span.value ||
-          ((e.kind === "name" || span.kind === "name") &&
-            e.value.toLocaleLowerCase() === span.value.toLocaleLowerCase()),
-      );
-      if (!entry) {
-        entry = {
-          token: `SLP_${entries.length + 1}_`,
-          value: span.value,
-          kind: span.kind,
-        };
-        entries.push(entry);
-      }
-      text += entry.token;
-    }
-    cursor = span.end;
-  }
-  text += source.slice(cursor);
+  const filtered = filterPrivateTexts([source], {
+    fields,
+    extra,
+    maxChars: 6000,
+  });
   const value = {
-    text,
+    text: filtered.texts[0],
     sourceName: "Project brief",
-    privacy: { version: 1, entries },
-    removedSecrets,
+    privacy: filtered.privacy,
+    removedSecrets: filtered.removedSecrets,
   };
   validatePrivateBrief(value);
   return value;

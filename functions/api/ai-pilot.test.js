@@ -553,7 +553,7 @@ test("end-to-end route reads the selected workbook, streams text and speech, cha
       return stream([
         {
           type: "response.output_text.delta",
-          delta: "The location is Synthetic venue. Source: Project name.",
+          delta: `The location is ${JSON.parse(JSON.parse(options.body).input[0].content.split("PROJECT RECORDS\n")[1].split("\nUSER QUESTION\n")[0]).project.title}. Source: Project name.`,
         },
         { type: "response.completed" },
       ]);
@@ -609,7 +609,7 @@ test("commercial answers debit only live purchased credits at the approved 30 pe
     STREAMLION_LIVE_PAYMENTS_APPROVED: "true",
   });
   const project = makeRevision({ title: "Synthetic venue" }, null, "project");
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
     calls.push(url);
     if (url.includes("sheets.googleapis.com"))
       return url.includes("batchGet")
@@ -631,7 +631,7 @@ test("commercial answers debit only live purchased credits at the approved 30 pe
       return stream([
         {
           type: "response.output_text.delta",
-          delta: "The location is Synthetic venue. Source: Project name.",
+          delta: `The location is ${JSON.parse(JSON.parse(options.body).input[0].content.split("PROJECT RECORDS\n")[1].split("\nUSER QUESTION\n")[0]).project.title}. Source: Project name.`,
         },
         { type: "response.completed" },
       ]);
@@ -861,7 +861,15 @@ test("PCM route completes text and credits before speech ends, cancels upstream 
     }
     if (url.includes("api.openai.com"))
       return stream([
-        { type: "response.output_text.delta", delta: "Synthetic venue. " },
+        {
+          type: "response.output_text.delta",
+          delta:
+            JSON.parse(
+              JSON.parse(options.body)
+                .input[0].content.split("PROJECT RECORDS\n")[1]
+                .split("\nUSER QUESTION\n")[0],
+            ).project.title + ". ",
+        },
         { type: "response.completed" },
       ]);
     speechCalls++;
@@ -949,4 +957,361 @@ test("PCM route completes text and credits before speech ends, cancels upstream 
     globalThis.fetch = original;
     sql.close();
   }
+});
+
+// Exercise the real authenticated route and SQLite ledger; only external services are mocked.
+function privacyUpstreams(t, project, notes, answer, speech = []) {
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    if (url.includes("sheets.googleapis.com")) {
+      assert.equal(
+        options?.method || "GET",
+        "GET",
+        "Google source access must remain read-only",
+      );
+      assert.equal(options?.body, undefined);
+      return url.includes("batchGet")
+        ? Response.json({
+            valueRanges: Object.keys(TABS).map((tab) => ({
+              values: [
+                TABS[tab],
+                ...(tab === "Projects"
+                  ? [rowFor(project, TABS.Projects)]
+                  : notes.map((n) => rowFor(n, TABS.Observations))),
+              ],
+            })),
+          })
+        : Response.json({
+            properties: { title: "Mock workbook" },
+            sheets: Object.keys(TABS).map((title) => ({
+              properties: { title, gridProperties: { rowCount: 20 } },
+            })),
+          });
+    }
+    if (url === "https://api.openai.com/v1/responses") {
+      const payload = JSON.parse(options.body);
+      requests.push(payload);
+      const content = payload.input[0].content;
+      const records = JSON.parse(
+        content.split("PROJECT RECORDS\n")[1].split("\nUSER QUESTION\n")[0],
+      );
+      const output =
+        typeof answer === "function"
+          ? answer(records, content, options)
+          : answer;
+      if (output instanceof Response) return output;
+      return stream([
+        { type: "response.output_text.delta", delta: output.slice(0, 5) },
+        { type: "response.output_text.delta", delta: output.slice(5) },
+        { type: "response.completed" },
+      ]);
+    }
+    if (url.startsWith("https://api.deepinfra.com/")) {
+      speech.push(JSON.parse(options.body).text);
+      return Response.json({ audio: "UklGRg==" });
+    }
+    throw new Error("Unexpected external request");
+  });
+  return requests;
+}
+
+test("AI questions and Google context mask shared identities and exclude secrets; answers restore names and exact measurements once", async (t) => {
+  const { sql, env, req, preferenceScope } = await routeFixture();
+  t.after(() => sql.close());
+  const project = makeRevision(
+    {
+      title: "Harbor Hall",
+      requesterName: "Jane Rivera",
+      contact1Name: "Jane Rivera",
+      contact1Phone: "503-555-0142",
+      requesterEmail: "jane@example.test",
+      address: "123 Harbor Street",
+      accessInstructions: "2468",
+      scope:
+        "Photograph Jane Rivera’s ballroom. Use open sesame at the rear entrance. Clearance 6 7/16 inches.",
+    },
+    null,
+    "project",
+  );
+  const note = makeRevision(
+    {
+      projectId: "project",
+      area: "Ballroom",
+      text: "Contact: Jane Rivera\nDoor code: 7319\nPassword: open sesame\nPin the backdrop to the wall. Clearance 6 7/16 inches.",
+      reviewState: "reviewed",
+    },
+    null,
+    "note-a",
+  );
+  const speech = [];
+  const requests = privacyUpstreams(
+    t,
+    project,
+    [note],
+    (records) =>
+      `Ask ${records.project.contact1Name}. Clearance is 6 7/16 inches.`,
+    speech,
+  );
+  const original = JSON.stringify({ project, note });
+  const tasks = [];
+  const r = await handleAI({
+    env,
+    request: req("/answer", {
+      projectId: "project",
+      question:
+        "Can Jane Rivera confirm jane@example.test and 503-555-0142? Does 2468, 7319 or open sesame still work? PIN: 9842",
+      requestId: uuid,
+      speech: true,
+      priceMicros: 12500,
+      preferenceScope,
+    }),
+    waitUntil: (p) => tasks.push(p),
+  });
+  const frames = (await r.text()).trim().split("\n").map(JSON.parse);
+  await Promise.all(tasks);
+  assert.equal(requests.length, 1);
+  assert.doesNotMatch(
+    JSON.stringify(requests),
+    /Jane Rivera|jane@example.test|503-555-0142|123 Harbor Street|Harbor Hall|2468|7319|9842|open|sesame/,
+  );
+  const content = requests[0].input[0].content;
+  const records = JSON.parse(
+    content.split("PROJECT RECORDS\n")[1].split("\nUSER QUESTION\n")[0],
+  );
+  assert.match(records.project.contact1Name, /^SLP_\d+_$/);
+  assert(
+    content.split("USER QUESTION\n")[1].includes(records.project.contact1Name),
+  );
+  assert.match(records.fieldRecords[0].text, /Pin the backdrop to the wall/);
+  assert.match(records.fieldRecords[0].text, /6 7\/16 inches/);
+  assert.equal(
+    frames
+      .filter((f) => f.type === "text")
+      .map((f) => f.delta)
+      .join(""),
+    "Ask Jane Rivera. Clearance is 6 7/16 inches.",
+  );
+  assert(frames.some((f) => f.type === "done"));
+  assert.equal(frames.at(-1).balanceMicros, 87500);
+  assert(speech.join("").includes("Jane Rivera")); // Existing explicit hosted-voice consent covers restored answer text.
+  assert.doesNotMatch(
+    JSON.stringify(frames),
+    /SLP_|privacy.*entries|7319|9842|2468/,
+  );
+  assert.equal(JSON.stringify({ project, note }), original);
+  const count = requests.length;
+  assert.equal((await handleAI({ env, request: req() })).status, 409);
+  assert.equal(requests.length, count);
+});
+
+for (const answer of [
+  "Ask SLP_999_.",
+  "Ask SLP_1 without the closing delimiter.",
+  "Ask SLP_1_extra.",
+  "Ask prefixSLP_1_.",
+  "Email invented@example.test.",
+])
+  test(`unsafe AI output is withheld and refunded before text or hosted speech: ${answer}`, async (t) => {
+    const { sql, env, req } = await routeFixture();
+    t.after(() => sql.close());
+    const speech = [],
+      requests = privacyUpstreams(
+        t,
+        makeRevision(
+          { title: "Venue", contact1Name: "Jane Rivera" },
+          null,
+          "project",
+        ),
+        [],
+        answer,
+        speech,
+      ),
+      tasks = [];
+    const r = await handleAI({
+      env,
+      request: req(),
+      waitUntil: (p) => tasks.push(p),
+    });
+    const frames = (await r.text()).trim().split("\n").map(JSON.parse);
+    await Promise.all(tasks);
+    assert.equal(requests.length, 1);
+    assert.equal(speech.length, 0);
+    assert.equal(
+      frames.some((f) =>
+        ["text", "text_done", "audio", "done"].includes(f.type),
+      ),
+      false,
+    );
+    assert(frames.some((f) => f.type === "error"));
+    assert.equal(
+      sql.prepare("SELECT state FROM streamlion_ai_turns_v1").get().state,
+      "failed",
+    );
+    assert.equal(
+      sql
+        .prepare(
+          "SELECT balance_micros b FROM streamlion_ai_wallets_v1 WHERE google_subject='a'",
+        )
+        .get().b,
+      100000,
+    );
+    assert.equal(
+      sql
+        .prepare("SELECT SUM(reserve_micros) n FROM streamlion_ai_turns_v1")
+        .get().n,
+      6000,
+    );
+  });
+
+test("unfilterable context stops before reservation or provider calls, preserving the existing ledger", async (t) => {
+  const { sql, env, req } = await routeFixture();
+  t.after(() => sql.close());
+  const requests = privacyUpstreams(
+    t,
+    makeRevision(
+      { title: "Venue", scope: "Source contains reserved SLP_123_ text." },
+      null,
+      "project",
+    ),
+    [],
+    "unused",
+  );
+  const r = await handleAI({ env, request: req() });
+  assert.equal(r.status, 422);
+  assert.match((await r.json()).error, /safely filter.*No credits/s);
+  assert.equal(requests.length, 0);
+  assert.equal(
+    sql.prepare("SELECT COUNT(*) n FROM streamlion_ai_turns_v1").get().n,
+    0,
+  );
+  assert.equal(
+    sql
+      .prepare(
+        "SELECT balance_micros b FROM streamlion_ai_wallets_v1 WHERE google_subject='a'",
+      )
+      .get().b,
+    100000,
+  );
+});
+
+test("restoration overflow is withheld before speech and refunds the one reservation", async (t) => {
+  const { sql, env, req } = await routeFixture();
+  t.after(() => sql.close());
+  const speech = [];
+  const requests = privacyUpstreams(
+      t,
+      makeRevision(
+        { title: "Venue", contact1Name: "a".repeat(480) },
+        null,
+        "project",
+      ),
+      [],
+      (r) => `${r.project.contact1Name} ${r.project.contact1Name}`,
+      speech,
+    ),
+    tasks = [];
+  const r = await handleAI({
+    env,
+    request: req(),
+    waitUntil: (p) => tasks.push(p),
+  });
+  const frames = (await r.text()).trim().split("\n").map(JSON.parse);
+  await Promise.all(tasks);
+  assert.equal(requests.length, 1);
+  assert.equal(speech.length, 0);
+  assert.equal(frames.filter((f) => f.type === "text").length, 0);
+  assert.equal(
+    sql.prepare("SELECT state FROM streamlion_ai_turns_v1").get().state,
+    "failed",
+  );
+  assert.equal(
+    sql
+      .prepare(
+        "SELECT balance_micros b FROM streamlion_ai_wallets_v1 WHERE google_subject='a'",
+      )
+      .get().b,
+    100000,
+  );
+});
+
+test("cancel during buffered private output emits no partial name or speech and refunds without a retry", async (t) => {
+  const { sql, env, req } = await routeFixture();
+  t.after(() => sql.close());
+  const speech = [];
+  let started,
+    aborted = false;
+  const ready = new Promise((r) => {
+    started = r;
+  });
+  const requests = privacyUpstreams(
+    t,
+    makeRevision(
+      { title: "Venue", contact1Name: "Jane Rivera" },
+      null,
+      "project",
+    ),
+    [],
+    (records, _content, options) =>
+      new Response(
+        new ReadableStream({
+          start(c) {
+            c.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "Ask " + records.project.contact1Name })}\n\n`,
+              ),
+            );
+            options.signal.addEventListener(
+              "abort",
+              () => {
+                aborted = true;
+                c.error(new DOMException("Stopped", "AbortError"));
+              },
+              { once: true },
+            );
+            started();
+          },
+        }),
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+    speech,
+  );
+  const controller = new AbortController(),
+    tasks = [];
+  const r = await handleAI({
+      env,
+      request: new Request(req(), { signal: controller.signal }),
+      waitUntil: (p) => tasks.push(p),
+    }),
+    reader = r.body.getReader();
+  assert.match(
+    new TextDecoder().decode((await reader.read()).value),
+    /"type":"start"/,
+  );
+  await ready;
+  let settled = false;
+  const next = reader.read().finally(() => {
+    settled = true;
+  });
+  next.catch(() => {});
+  await new Promise((r) => setImmediate(r));
+  assert.equal(settled, false);
+  assert.equal(speech.length, 0);
+  controller.abort();
+  await assert.rejects(next);
+  await Promise.all(tasks);
+  assert.equal(aborted, true);
+  assert.equal(requests.length, 1);
+  assert.equal(speech.length, 0);
+  assert.equal(
+    sql.prepare("SELECT state FROM streamlion_ai_turns_v1").get().state,
+    "failed",
+  );
+  assert.equal(
+    sql
+      .prepare(
+        "SELECT balance_micros b FROM streamlion_ai_wallets_v1 WHERE google_subject='a'",
+      )
+      .get().b,
+    100000,
+  );
 });

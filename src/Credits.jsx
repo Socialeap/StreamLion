@@ -297,7 +297,7 @@ export default function Credits() {
       free: "Saved-detail lookup gives short answers to basic questions (address, site contact, access, visit time, scope, outputs, payment).",
       credit: {
         price: pill(config?.aiMicros, "per answer"),
-        text: "AI answers more complex questions in plain words, with deeper detail and clarification drawn from the brief and your field notes, while in the field, right before, or after.",
+        text: "AI answers more complex questions using the brief and your field notes. StreamLion filters detected private details in your question and project records before OpenAI receives them, then restores names in the answer.",
       },
     },
   ];

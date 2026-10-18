@@ -1,7 +1,7 @@
 export default function BriefPrivacyNotice({ client = false }) {
   return (
     <details className="brief-privacy-notice">
-      <summary>How brief preparation protects your information</summary>
+      <summary>Privacy for brief preparation and AI questions</summary>
       {client && (
         <p>
           Your request goes to your provider. The form and request assistant do
@@ -22,9 +22,16 @@ export default function BriefPrivacyNotice({ client = false }) {
         remains useful. Removed access codes are not restored.
       </p>
       <p>
-        Later AI questions and sharing with your own ChatGPT do not use this
-        filter. Saved-detail lookup does not send questions to OpenAI. Manual
-        brief entry is also available. Read the{" "}
+        In-app AI questions also filter detected private details in the question
+        and current Google project records, on StreamLion’s service before
+        OpenAI receives them. Names are restored in the answer. Access
+        instructions stay in saved-detail lookup, which does not send questions
+        to OpenAI. If hosted voice is chosen, DeepInfra receives the restored
+        answer text.
+      </p>
+      <p>
+        Sharing with your own ChatGPT or its connected tools does not use these
+        filters. Manual brief entry is also available. Read the{" "}
         <a href="/api/privacy#brief-preparation">brief data-handling details</a>
         .
       </p>
