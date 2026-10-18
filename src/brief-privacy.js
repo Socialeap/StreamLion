@@ -1,16 +1,37 @@
 // Runs without an AI service. Detection assists review; it is not proof of anonymity.
 const reference = /SLP_\d+_/g;
 const secret =
-  /\b(?:password|passcode|door\s*code|entry\s*code|access\s*code|lockbox\s*code|alarm\s*code|pin|social security(?: number)?|ssn|credit card(?: number)?)\b[ \t]*(?::|=|#|\bis\b)?[ \t]*[^\r\n]+|\bsk-[A-Za-z0-9_-]{12,}|\bBearer[ \t]+\S+/gi;
+  /\b(?:password|passcode|door\s*code|entry\s*code|access\s*code|lockbox\s*code|alarm\s*code|social security(?: number)?|ssn|credit card(?: number)?)\b[ \t]*(?::|=|#|\bis\b)?[ \t]*[^\r\n]+|\bpin\b[ \t]*(?::|=|#|\bis\b)[ \t]*[^\r\n]+|\bsk-[A-Za-z0-9_-]{12,}|\bBearer[ \t]+\S+/gi;
 const email = /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const phone =
   /(?<![\w.])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]\d{3}[ .-]\d{4}(?!\d)/g;
 const address =
   /\b\d{1,6}[ \t]+(?:[\p{L}\d.'-]+[ \t]+){1,6}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct)\b(?:[ \t]+(?:Apt|Suite|Unit)[ .#\t]*[\w-]+)?/giu;
-const url = /https?:\/\/[^\s<>"']+/gi;
+// Stop at a Markdown label/target boundary, without excluding IPv6 brackets.
+const url = /https?:\/\/(?:(?!\]\()[^\s<>"'])+/gi;
 const knownKeys =
   /^(?:requesterName|requesterEmail|contact[12](?:Name|Phone)|providerName|providerEmail|companyName|address|address2|postal|reference)$/;
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function trimProseFromUrl(value) {
+  let previous;
+  do {
+    previous = value;
+    value = value.replace(/[.,;:!?]+$/, "");
+    for (const [open, close] of [
+      ["(", ")"],
+      ["[", "]"],
+      ["{", "}"],
+    ]) {
+      if (
+        value.endsWith(close) &&
+        value.split(close).length > value.split(open).length
+      )
+        value = value.slice(0, -1);
+    }
+  } while (value !== previous);
+  return value;
+}
 
 export function filterBrief(source, fields = {}, extra = []) {
   if (
@@ -24,7 +45,10 @@ export function filterBrief(source, fields = {}, extra = []) {
   const spans = [];
   const collect = (pattern, kind, group = 0) => {
     for (const match of source.matchAll(pattern)) {
-      const value = match[group];
+      // Keep punctuation outside the private span, so prose round-trips while
+      // a URL field restores only its destination (including balanced brackets).
+      const value =
+        kind === "url" ? trimProseFromUrl(match[group]) : match[group];
       const start = match.index + (group ? match[0].indexOf(value) : 0);
       spans.push({ start, end: start + value.length, value, kind });
     }

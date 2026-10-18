@@ -6,6 +6,64 @@ import {
   restoreBrief,
 } from "./brief-privacy.js";
 
+test("pin work instructions survive while explicitly labeled PIN credentials are excluded", () => {
+  const work =
+    "Pin the backdrop to the wall.\nPin location on the floor plan.\nMeasure the 4 mm pin.";
+  const value = filterBrief(
+    `${work}\nPIN: 1234\nPIN is 6789\nPIN # 2468\npin = 1357`,
+  );
+  assert(value.text.startsWith(work));
+  assert.equal(value.removedSecrets, 4);
+  assert.doesNotMatch(value.text, /1234|6789|2468|1357/);
+  assert.doesNotMatch(JSON.stringify(value.privacy), /1234|6789|2468|1357/);
+  validatePrivateBrief(value);
+});
+
+test("URL references exclude sentence punctuation and unmatched wrappers without losing that prose", () => {
+  for (const [source, target] of [
+    ["See https://example.test/spec.", "https://example.test/spec"],
+    [
+      "See https://example.test/spec, then measure the stage.",
+      "https://example.test/spec",
+    ],
+    ["See (https://example.test/spec).", "https://example.test/spec"],
+    [
+      "See [https://example.test/spec](https://example.test/spec).",
+      "https://example.test/spec",
+    ],
+    [
+      "See https://example.test/capture_(stage).",
+      "https://example.test/capture_(stage)",
+    ],
+    [
+      "See (https://example.test/capture_(stage)).",
+      "https://example.test/capture_(stage)",
+    ],
+    [
+      "See https://example.test/spec?label=a,b&token=abc%2C.",
+      "https://example.test/spec?label=a,b&token=abc%2C",
+    ],
+    ["See https://[2001:db8::1]/spec.", "https://[2001:db8::1]/spec"],
+  ]) {
+    const value = filterBrief(source);
+    assert.equal(value.privacy.entries.length, 1, source);
+    assert.equal(value.privacy.entries[0].value, target, source);
+    assert.equal(
+      restoreBrief(
+        { fields: { reference1Url: value.privacy.entries[0].token } },
+        value.privacy,
+      ).fields.reference1Url,
+      target,
+    );
+    assert.equal(
+      restoreBrief({ fields: { notes: value.text } }, value.privacy).fields
+        .notes,
+      source,
+    );
+    validatePrivateBrief(value);
+  }
+});
+
 test("a discovered name is hidden in every unlabeled repeat and cannot leak through a modified envelope", () => {
   const value = filterBrief(
     "Client: Avery Jones\nAvery Jones requests photos. Call AVERY JONES before arrival.",
