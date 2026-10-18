@@ -24,6 +24,7 @@ import {
   answerStep,
   editStep,
   newSetup,
+  newerSetup,
   readSetup,
   reopenSetup,
   setupProfile,
@@ -49,6 +50,7 @@ import { loadGoogleConfig } from "./google-config.js";
 import { fetchRead } from "./network.js";
 import { saveTheme } from "./theme.js";
 import { rememberProviderContact } from "./provider-contact.js";
+import { setupAPI } from "./setup-sync.js";
 import {
   connectGoogle,
   createWorkbook,
@@ -137,8 +139,11 @@ export default function SetupAssistant({
   convertLogo = prepareLogo,
   loadConfig = loadGoogleConfig,
   loadCredits = loadCreditConfig,
+  setupApi = setupAPI,
 }) {
   const [state, setState] = useState(initialSetup);
+  // A finished setup reopens on its review card with its answers kept.
+  const reopened = useRef(readSetup()?.status === "complete");
   const stateRef = useRef(state);
   const [editing, setEditing] = useState(""),
     [error, setError] = useState(""),
@@ -150,6 +155,7 @@ export default function SetupAssistant({
     [config, setConfig] = useState({ loading: true, value: null }),
     [configAttempt, setConfigAttempt] = useState(0),
     [credits, setCredits] = useState({ loading: false, value: null }),
+    [accountSaved, setAccountSaved] = useState(""),
     [, setGoogleTick] = useState(0);
   const feed = useRef(null),
     dock = useRef(null),
@@ -188,6 +194,7 @@ export default function SetupAssistant({
     bookId,
     siteCopy,
     locale: navigator.language,
+    reopened: reopened.current,
   };
   const walked = walk(state, ctx);
   const { answers, history, current } = walked;
@@ -217,11 +224,54 @@ export default function SetupAssistant({
     focusAnswer(dock.current);
   }, [current?.id, editing]);
 
-  function commit(next) {
+  function commit(next, { sync = true } = {}) {
     stateRef.current = next;
     setState(next);
     setStorageWarning(!writeSetup(next));
+    if (sync) queueAccountSave();
   }
+  // With Google connected, answers are also kept with the account so they
+  // follow the provider to other devices. This device's copy always saves first.
+  const accountTimer = useRef(null),
+    accountSubject = useRef("");
+  function queueAccountSave() {
+    if (!accountSubject.current) return;
+    clearTimeout(accountTimer.current);
+    accountTimer.current = setTimeout(async () => {
+      try {
+        await setupApi(stateRef.current, accountSubject.current);
+        setAccountSaved("Saved to your Google account");
+      } catch {
+        setAccountSaved(
+          "Saved on this device; your account copy will update later",
+        );
+      }
+    }, 600);
+  }
+  useEffect(() => () => clearTimeout(accountTimer.current), []);
+  useEffect(() => {
+    if (!live) return;
+    let active = true;
+    const opened = stateRef.current;
+    setupApi()
+      .then((remote) => {
+        if (!active || !remote.available) return;
+        accountSubject.current = remote.subject;
+        const newest = newerSetup(stateRef.current, remote.state);
+        // A newer copy from another device replaces an untouched one here.
+        if (newest === remote.state && stateRef.current === opened) {
+          commit(newest.status === "complete" ? reopenSetup(newest) : newest, {
+            sync: false,
+          });
+          setAccountSaved("Restored from your Google account");
+        } else if (newest !== remote.state) queueAccountSave();
+        else setAccountSaved("Saved to your Google account");
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [live]);
   function fail(e) {
     setError(e.message);
     setFieldErrors(e.fields || {});
@@ -810,6 +860,11 @@ export default function SetupAssistant({
           }
         }}
       >
+        {accountSaved && !busy && (
+          <p className="setup-saved" role="status">
+            {accountSaved}
+          </p>
+        )}
         {storageWarning && (
           <p className="setup-notice" role="status">
             This browser couldn’t save your answers. Finish setup in one go, or

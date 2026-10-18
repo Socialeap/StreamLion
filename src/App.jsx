@@ -36,6 +36,7 @@ import {
   setupProfile,
   setupStatus,
 } from "./setup-assistant.js";
+import { syncSetup } from "./setup-sync.js";
 import LicenseGate from "./LicenseGate.jsx";
 import InstallApp from "./InstallApp.jsx";
 import { googleSignInFailure } from "./google-signin-errors.js";
@@ -201,6 +202,13 @@ export default function App() {
         );
         return;
       }
+      // Setup answers follow the Google account to every device.
+      syncSetup()
+        .then((setup) => {
+          if (setup !== undefined && epoch === restoreEpoch.current)
+            setProfile(setupProfile());
+        })
+        .catch(() => {});
       // The backend's account-scoped selection is authoritative. Never use an
       // old device-wide workbook as the destination for a new Google account.
       setBookId(connection.bookId);
@@ -1514,7 +1522,7 @@ export default function App() {
                     onClick={() => openSetup("Account")}
                   >
                     {setupStatus() === "complete"
-                      ? "Rerun setup assistant"
+                      ? "Review or edit my setup"
                       : setupStatus() === "active"
                         ? "Resume setup assistant"
                         : "Start setup assistant"}
