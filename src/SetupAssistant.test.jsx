@@ -926,3 +926,32 @@ test("an account switch cancels the previous account debounce without discarding
   );
   assert.equal(archived.answers.name, "Avery");
 });
+
+test("legacy setup stays device-only when Google configuration cannot be loaded", async () => {
+  let accountChecks = 0;
+  const ui = await open(
+    <SetupAssistant
+      {...props({
+        google: fakeGoogle({ hasSession: () => true }),
+        loadConfig: async () => {
+          throw new Error("Configuration unavailable");
+        },
+        setupApi: async () => {
+          accountChecks++;
+          throw new Error("Legacy session has no server-side account");
+        },
+      })}
+    />,
+  );
+  const name = await ui.findByLabelText("What should I call you?");
+  assert.equal(name.disabled, false);
+  assert.equal(
+    accountChecks,
+    0,
+    "unknown persistent mode must not start account sync",
+  );
+  await say(ui, "What should I call you?", "Avery");
+  await ui.findByLabelText("Business or trade name");
+  assert.equal(readSetup().answers.name, "Avery");
+  assert.equal(accountChecks, 0);
+});

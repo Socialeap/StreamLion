@@ -188,7 +188,7 @@ export default function SetupAssistant({
 
   const live = connected || google.hasSession();
   const accountIdentity = account || google.account() || "";
-  const accountSyncEnabled = live && config.value?.persistentEnabled !== false;
+  const accountSyncEnabled = live && config.value?.persistentEnabled === true;
   const accountChecking =
     accountSyncEnabled && checkedAccount !== accountIdentity;
   const ctx = {
