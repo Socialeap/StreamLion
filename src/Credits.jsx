@@ -409,15 +409,16 @@ export default function Credits() {
                     <li key={pack.id}>
                       <strong>{money(pack.amount)}</strong>
                       <span>{creditLabel(pack.creditsMicros)}</span>
-                      {projectPrice !== null && (
-                        <span>
-                          {coverage(
-                            Math.floor(
-                              pack.creditsMicros / config.projectMicros,
-                            ),
-                          )}
-                        </span>
-                      )}
+                      {Number.isSafeInteger(config.projectMicros) &&
+                        config.projectMicros > 0 && (
+                          <span>
+                            {coverage(
+                              Math.floor(
+                                pack.creditsMicros / config.projectMicros,
+                              ),
+                            )}
+                          </span>
+                        )}
                     </li>
                   ))}
               </ul>
