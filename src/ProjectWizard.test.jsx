@@ -169,6 +169,9 @@ test("mocked in-app brief requires explicit review, preserves existing draft fie
     target: { value: "Capture 10 Example Street" },
   });
   fireEvent.click(
+    ui.getByRole("button", { name: "Preview what OpenAI will receive" }),
+  );
+  fireEvent.click(
     ui.getByRole("button", { name: "Prepare my project · 12 credits" }),
   );
   await waitFor(() =>

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import Credits from "./Credits.jsx";
 import "./app-navigation.css";
 import "./purchase.css";
+import "./brief-privacy-notice.css";
 import { preferredTheme, applyTheme } from "./theme.js";
 applyTheme(preferredTheme());
 createRoot(document.getElementById("root")).render(

@@ -4,6 +4,7 @@ import { PROJECT_FIELDS } from "./project-schema.js";
 import { readBrief } from "./read-brief.js";
 import { creditLabel } from "./managed-ai.js";
 import { BRIEF_LIMITS } from "./brief-import-contract.js";
+import { filterBrief } from "./brief-privacy.js";
 import {
   briefRequest,
   readPendingBrief,
@@ -50,6 +51,9 @@ export default function BriefImporter({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [privatePhrases, setPrivatePhrases] = useState([]);
+  const [phrase, setPhrase] = useState("");
   const working = busy || disabled;
   const locked = working || !!pending;
 
@@ -100,6 +104,8 @@ export default function BriefImporter({
       const value = await readFile(file);
       setText(value.text);
       setSourceName(value.sourceName);
+      setPreview(null);
+      setPrivatePhrases([]);
       setNotice(
         "PDF text loaded on this device. Review it before confirming preparation.",
       );
@@ -126,6 +132,7 @@ export default function BriefImporter({
         throw new Error(
           "Paste up to 6,000 characters, or choose a shorter PDF.",
         );
+      if (!preview) throw new Error("Review what OpenAI will receive first.");
       marker = { requestId: crypto.randomUUID(), scope: config.scope };
       // Persist recovery identity BEFORE sending a paid request. Source text stays in memory.
       keepPendingBrief(draftKey, marker);
@@ -136,8 +143,9 @@ export default function BriefImporter({
           ...marker,
           quoteKey: config.quoteKey,
           priceMicros: config.priceMicros,
-          text,
-          sourceName,
+          text: preview.text,
+          sourceName: preview.sourceName,
+          privacy: preview.privacy,
         }),
       );
     } catch (e) {
@@ -182,6 +190,8 @@ export default function BriefImporter({
       setPending(null);
       setResult(null);
       setText("");
+      setPreview(null);
+      setPrivatePhrases([]);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -269,6 +279,7 @@ export default function BriefImporter({
             onChange={(event) => {
               setText(event.target.value);
               setSourceName("Pasted text");
+              setPreview(null);
             }}
             aria-describedby="native-brief-privacy"
           />
@@ -276,14 +287,141 @@ export default function BriefImporter({
             {text.length.toLocaleString()} / 6,000 characters · {sourceName}
           </p>
           <p id="native-brief-privacy" className="hint">
-            Only this text is sent to OpenAI when you confirm preparation. The
-            original PDF stays on your device. Prepared results can be recovered
-            for 24 hours. Review{" "}
-            <a href="/api/privacy" target="_blank" rel="noreferrer">
+            Turn your messages into a clear project brief. StreamLion filters
+            detected names, contact details and addresses on your device, and
+            leaves out detected passwords and access codes. Review the preview
+            and hide anything else before sending text to OpenAI. Your original
+            PDF stays on your device. Review{" "}
+            <a
+              href="/api/privacy#brief-preparation"
+              target="_blank"
+              rel="noreferrer"
+            >
               data handling
             </a>{" "}
-            before sending confidential material.
+            for more information.
           </p>
+          <details>
+            <summary>How your information is handled</summary>
+            <p>
+              OpenAI organizes the filtered text and checks the prepared brief
+              against it. If problems are found, StreamLion requests one
+              correction and a final check. All steps are included in the
+              displayed price.
+            </p>
+            <p>
+              OpenAI does not use API content for training by default. It may
+              keep text and results for safety checks, normally for up to 30
+              days, with legal or safety exceptions. Filtering can miss details;
+              review the preview. You can enter project details yourself
+              instead.
+            </p>
+            <p>
+              StreamLion receives the replacement details separately to restore
+              names and contacts; that list is not sent to OpenAI. Removed
+              access codes are not restored. The restored result is encrypted
+              for 24-hour recovery and normally removed within 48 hours. Nothing
+              is saved to Google until you save the project.
+            </p>
+          </details>
+          {!pending && (
+            <div className="brief-privacy-preview">
+              <label htmlFor="native-private-phrase">
+                Hide another name or private phrase
+              </label>
+              <input
+                id="native-private-phrase"
+                value={phrase}
+                maxLength={500}
+                disabled={locked}
+                onChange={(e) => setPhrase(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={
+                  locked ||
+                  phrase.trim().length < 2 ||
+                  privatePhrases.length >= 30
+                }
+                onClick={() => {
+                  setPrivatePhrases([...privatePhrases, phrase.trim()]);
+                  setPhrase("");
+                  setPreview(null);
+                }}
+              >
+                Add to hidden details
+              </button>
+              {privatePhrases.length > 0 && (
+                <>
+                  <p>{privatePhrases.length} extra private phrases selected.</p>
+                  <button
+                    type="button"
+                    disabled={locked}
+                    onClick={() => {
+                      setPrivatePhrases([]);
+                      setPreview(null);
+                    }}
+                  >
+                    Clear extra hidden phrases
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                disabled={
+                  locked ||
+                  !text.trim() ||
+                  text.length > BRIEF_LIMITS.characters
+                }
+                onClick={() => {
+                  try {
+                    setPreview(filterBrief(text, fields, privatePhrases));
+                    setError("");
+                  } catch (e) {
+                    setPreview(null);
+                    setError(e.message);
+                  }
+                }}
+              >
+                Preview what OpenAI will receive
+              </button>
+              {preview && (
+                <>
+                  <label htmlFor="native-filtered-text">Text for OpenAI</label>
+                  <textarea
+                    id="native-filtered-text"
+                    rows={6}
+                    readOnly
+                    value={preview.text}
+                  />
+                  <p>
+                    {preview.privacy.entries.length} private details replaced
+                    with reference labels. Check for any names or details you
+                    still want to hide.
+                  </p>
+                  {preview.privacy.entries.length > 0 && (
+                    <details>
+                      <summary>Review hidden details</summary>
+                      <ul>
+                        {preview.privacy.entries.map((e) => (
+                          <li key={e.token}>
+                            {e.value} → {e.token}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  <p>
+                    Lines containing passwords or labeled entry codes are
+                    excluded from AI preparation. Move any work requirements on
+                    those lines to a separate line before preparing. Keep any
+                    needed entry details in the project’s access instructions
+                    yourself. Existing draft details are unchanged.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
           {config && !config.enabled && (
             <p role="status">
               {availability[config.reason] || availability.unavailable}
@@ -335,6 +473,7 @@ export default function BriefImporter({
                     !config?.enabled ||
                     !config.canPrepare ||
                     !text.trim() ||
+                    !preview ||
                     text.length > BRIEF_LIMITS.characters
                   }
                   onClick={prepare}
@@ -364,6 +503,14 @@ export default function BriefImporter({
               aria-label="Review prepared brief"
             >
               <h4>Review before adding to your draft</h4>
+              {result.workflowVersion === 2 && (
+                <p>
+                  The brief was prepared and checked against your filtered text,
+                  with one correction and recheck if needed. This is not a
+                  guarantee of accuracy. Missing or conflicting source details
+                  need your confirmation.
+                </p>
+              )}
               <p>
                 Check names, measurements, dates and payment terms against the
                 original. Existing details are kept; only empty fields will be

@@ -1,0 +1,26 @@
+.brief-privacy-notice {
+  margin: 14px 0;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.brief-privacy-notice > summary {
+  min-height: 44px;
+  display: list-item;
+  padding: 10px 0;
+  color: var(--text);
+  font-weight: 600;
+}
+.brief-privacy-notice p {
+  margin: 10px 0;
+}
+.brief-privacy-notice > p + p {
+  margin-top: 12px;
+}
+.request-screen .brief-privacy-notice {
+  margin: 0 0 16px;
+}

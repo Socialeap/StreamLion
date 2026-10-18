@@ -10,6 +10,7 @@ import {
 import { AppHeader, SectionNavigation } from "./AppNavigation.jsx";
 import { creditLabel } from "./managed-ai.js";
 import ProjectValue from "./ProjectValue.jsx";
+import BriefPrivacyNotice from "./BriefPrivacyNotice.jsx";
 import { priceLabels, projectCreditPrice } from "./project-credit-price.js";
 export async function creditRequest(path, { account, ...options } = {}) {
   const response = await fetch("/api/credits/" + path, {
@@ -276,7 +277,7 @@ export default function Credits() {
       free: "Use the free “Prepare my brief in (your own) ChatGPT” helper, or type the details yourself.",
       credit: {
         price: pill(config?.briefMicros, "per brief"),
-        text: "StreamLion uses ChatGPT to prepare a Project Brief from content you upload or paste (PDF, emails, messages) for easy reference.",
+        text: "StreamLion uses ChatGPT to organize PDF text, emails or messages into a Project Brief. It first filters detected personal details on your device; you review the text before sending it to OpenAI.",
       },
     },
     {
@@ -370,6 +371,7 @@ export default function Credits() {
                 ))}
               </tbody>
             </table>
+            <BriefPrivacyNotice />
             {config?.mode === "test" && (
               <p className="credits-availability">
                 Test mode · test credits have no cash value.

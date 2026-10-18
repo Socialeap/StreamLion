@@ -41,6 +41,7 @@ async function runtimeFixture({ replacement = false } = {}) {
               calls++;
               if (JSON.parse(init.body).input[0].content.includes('synthetic provider failure')) return new Response('', {status: 503});
               if (JSON.parse(init.body).input[0].content.includes('synthetic invalid project')) return Response.json({status:'completed', output:[{content:[{type:'output_text',text:${JSON.stringify(JSON.stringify({ ...project, fields: { ...project.fields, propertySizeSqFt: "9,200 sq ft" } }))}}]}]});
+              if (JSON.parse(init.body).text.format.name === 'streamlion_brief_review') return Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{\"issues\":[]}'}]}]});
               return Response.json({status: 'completed', output: [{type:'message', content:[{type:'output_text', text:${JSON.stringify(JSON.stringify(project))}}]}]});
             }
           });
@@ -175,15 +176,16 @@ test("owner brief preparation completes and refunds correctly with real D1 trigg
       quoteKey: config.quoteKey,
       priceMicros: config.priceMicros,
       text: "Photograph the stage and measure the entry door at the synthetic venue.",
-      sourceName: "Pasted text",
+      sourceName: "Project brief",
+      privacy: { version: 1, entries: [] },
     };
     const response = await call("prepare", input);
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal((await response.json()).state, "complete");
-    assert.equal(response.headers.get("X-Test-Provider-Calls"), "1");
+    assert.equal(response.headers.get("X-Test-Provider-Calls"), "2");
     const repeat = await call("prepare", input);
     assert.equal((await repeat.json()).state, "complete");
-    assert.equal(repeat.headers.get("X-Test-Provider-Calls"), "1");
+    assert.equal(repeat.headers.get("X-Test-Provider-Calls"), "2");
     const recovered = await call("result?id=" + input.requestId);
     assert.deepEqual((await recovered.json()).project, project);
     assert.equal(
@@ -202,7 +204,7 @@ test("owner brief preparation completes and refunds correctly with real D1 trigg
       text: "synthetic provider failure",
     });
     assert.equal((await failed.json()).state, "failed");
-    assert.equal(failed.headers.get("X-Test-Provider-Calls"), "2");
+    assert.equal(failed.headers.get("X-Test-Provider-Calls"), "3");
     assert.equal(
       (
         await db
@@ -230,7 +232,8 @@ test("real D1 retains a refunded invalid-result attempt and does not replay infe
       quoteKey: quote.quoteKey,
       priceMicros: quote.priceMicros,
       text: "synthetic invalid project",
-      sourceName: "Pasted text",
+      sourceName: "Project brief",
+      privacy: { version: 1, entries: [] },
     };
     const response = await call("prepare", input);
     const value = await response.json();
@@ -281,7 +284,8 @@ test("real D1 permits exactly one replacement under concurrent requests and pres
       scope: quote.scope,
       quoteKey: quote.quoteKey,
       priceMicros: quote.priceMicros,
-      sourceName: "Pasted text",
+      sourceName: "Project brief",
+      privacy: { version: 1, entries: [] },
       text: "Photograph the stage and measure the entry door.",
     };
     const second = {
@@ -295,7 +299,7 @@ test("real D1 permits exactly one replacement under concurrent requests and pres
     assert.deepEqual(responses.map((r) => r.status).sort(), [200, 429]);
     const winning = responses[0].status === 200 ? first : second;
     const recovered = await call("result?id=" + winning.requestId);
-    assert.equal(recovered.headers.get("X-Test-Provider-Calls"), "1");
+    assert.equal(recovered.headers.get("X-Test-Provider-Calls"), "2");
     assert.deepEqual((await recovered.json()).project, project);
     assert.equal(
       (await (await call("prepare", winning)).json()).state,
@@ -349,7 +353,8 @@ test("real D1 refunds the failed replacement once and retains exhausted history"
       scope: quote.scope,
       quoteKey: quote.quoteKey,
       priceMicros: quote.priceMicros,
-      sourceName: "Pasted text",
+      sourceName: "Project brief",
+      privacy: { version: 1, entries: [] },
       text: "synthetic provider failure",
     };
     const failed = await call("prepare", input);
