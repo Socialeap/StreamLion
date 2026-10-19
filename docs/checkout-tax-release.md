@@ -52,23 +52,50 @@ Confirm the Stripe Dashboard says **Sandbox** and every API object has
 from the committed SQL. Use synthetic identities and `example.com` addresses;
 no production D1, Google account/workbook, customer record or secret binding.
 
-Read-only preflight on October 18 found Stripe Tax **pending**, no sandbox
-head-office address and no active sandbox registrations. Actual tax-enabled
-Checkout acceptance is blocked on this missing sandbox configuration. No
-payment/refund, tax settings, registrations or catalog objects were created.
-Automatic approval review rejected the command that would have initialized
-simulated tax configuration; it was not retried or bypassed.
+The initial October 18 (New York time) read-only preflight found Stripe Tax
+pending with no sandbox head office or active registrations. Automatic approval
+review initially held setup. The owner subsequently explicitly authorized the
+simulated sandbox configuration and $0 tests; acceptance completed October 19
+UTC / October 18 New York time, against application code `f22e06d`.
 
-The next narrowly scoped sandbox approval, if the owner elects to give it, is:
+Executed scope: the existing private sandbox only, its empty head office filled
+with fictional QA data, one simulated NY state-sales-tax registration expiring
+after 24 hours, two tagged test products and five exclusive test prices.
+Existing sandbox defaults and objects were preserved. No real government
+registration, paid service, production migration/configuration/deployment,
+Google write, AI call or email was performed.
 
-> Approve simulated tax setup only in the existing Transcendence Media Stripe
-> sandbox (acct_1TMcTVIymyyYttjt): fill its currently empty head-office address
-> with fictional US/NY QA address data, add one simulated NY state-sales-tax
-> registration, and create StreamLion-tagged disposable test products/prices.
-> Run tax-aware Checkout with Stripe test cards, then partial/full test refunds
-> against local disposable app data. Preserve existing sandbox objects and
-> defaults, all live settings and records. No real government registration,
-> paid tax service, live payment, production deployment or spending.
+| Completed sandbox case | Subtotal |   Tax |  Total | Result                                                                     |
+| ---------------------- | -------: | ----: | -----: | -------------------------------------------------------------------------- |
+| Core launch, NYC       |   $29.96 | $2.66 | $32.62 | Purchase, confirmation, partial/full refunds and access revocation passed. |
+| Core standard, Buffalo |   $39.95 | $3.50 | $43.45 | Same checks passed; local rate differs from NYC.                           |
+| 800-credit pack, NYC   |   $10.00 | $0.89 | $10.89 | Exactly 800 credits, then proportional/full revocation.                    |
+| 2,000-credit pack, NYC |   $25.00 | $2.22 | $27.22 | Exactly 2,000 credits, then proportional/full revocation.                  |
+| 4,000-credit pack, NYC |   $50.00 | $4.44 | $54.44 | Exactly 4,000 credits, then proportional/full revocation.                  |
+
+Five distinct hosted sandbox Checkout payments and ten successful refunds were
+read back from Stripe. The local app database contains exactly two refunded
+Core orders and three refunded credit orders, with zero purchased-credit
+balance. Replayed and late completion events did not duplicate or reinstate
+entitlements. Starter-grant idempotency was checked separately, once per
+synthetic account. Stripe's actual sandbox tax ledger contains all five payments
+and ten reversals: gross and tax each net to zero.
+
+A California preview completed with zero tax and explicit
+`taxability_reason=not_collecting`, consistent with the sandbox's NY-only
+registration. This is not a customer exemption determination. An empty billing
+address prevented the first test submission; the missing/failed-calculation
+and malformed-total cases also pass the isolated mocked tests.
+
+Hosted Checkout, tax calculation, payment and refund evidence came from Stripe
+sandbox; confirmation/restoration and webhook reconciliation ran against the
+actual app handlers and disposable local SQLite. Signed envelopes were generated
+for that local fixture, with real sandbox API readback. No production or publicly
+exposed webhook delivery, real Google sign-in or production settlement is claimed.
+
+931 unit/integration tests and the required GitHub `verify` check passed for the
+application change. All live sales, AI/importer and deployment gates below remain
+closed. Receipt packet: workspace `artifacts/tax-checkout-2026-10-18/sandbox/`.
 
 Sandbox configuration is not an application for a real tax certificate. If any
 screen requests paid activation, a binding agreement or live registration,
