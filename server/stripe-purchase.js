@@ -380,6 +380,16 @@ async function createCheckout(env, stripe, identity, config) {
       throw new Error("purchase_busy");
     }
   }
+  // Recovery follows the saved order contract, even if current tax mode is off.
+  // Its price may no longer be offered by the currently configured catalog.
+  if (order.checkout_tax_mode === "stripe") {
+    const price =
+      [catalog.standard, catalog.launch].find(
+        (price) => price?.id === order.price_id,
+      ) ||
+      (await stripe.prices.retrieve(order.price_id, { expand: ["product"] }));
+    validateTaxPrice(price, order.checkout_tax_mode);
+  }
   const params = {
     ...taxCheckoutParams(order),
     mode: "payment",

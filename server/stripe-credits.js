@@ -221,7 +221,8 @@ async function catalog(env, stripe, mode) {
       )
         throw new Error("credit_configuration");
       validateTaxPrice(price, taxMode);
-      return { ...pack, priceId: price.id };
+      // Retain the fresh server-side price for the pending order's own tax check.
+      return { ...pack, priceId: price.id, stripePrice: price };
     }),
   );
 }
@@ -597,6 +598,7 @@ async function checkout(env, stripe, identity, config, packId, saveCard) {
     throw new Error("credit_pending");
   if (!order.checkout_session && (await topupOf(env, order.order_id)))
     return { pendingAmount: order.amount };
+  validateTaxPrice(pack.stripePrice, order.checkout_tax_mode);
   const save =
     order.checkout_tax_mode !== "stripe" &&
     saveCard === true &&

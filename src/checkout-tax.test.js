@@ -152,3 +152,61 @@ test("the additive tax migration preserves historical orders, grants and default
     db.close();
   }
 });
+
+test("tax preflight accepts entirely absent optional saved-card schema and rejects partial state", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { coordinationPreflight } =
+    await import("../scripts/preflight-coordination.mjs");
+  const db = new DatabaseSync(":memory:");
+  try {
+    for (const file of readdirSync(new URL("../migrations/", import.meta.url))
+      .filter(
+        (n) =>
+          n.endsWith(".sql") && !n.startsWith("0017") && !n.startsWith("0019"),
+      )
+      .sort())
+      db.exec(
+        readFileSync(new URL("../migrations/" + file, import.meta.url), "utf8"),
+      );
+    const state = () => {
+      const schema = db
+        .prepare(
+          "SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%' AND sql IS NOT NULL",
+        )
+        .all();
+      const stamps = Object.fromEntries(
+        schema
+          .filter((r) => r.name.includes("_schema_"))
+          .map((r) => [
+            r.name,
+            db.prepare("SELECT version FROM " + r.name).get().version,
+          ]),
+      );
+      return { schema, stamps };
+    };
+    assert.equal(
+      coordinationPreflight(state(), "0019_checkout_tax.sql").migration,
+      "pending",
+    );
+    db.exec(
+      readFileSync(
+        new URL("../migrations/0019_checkout_tax.sql", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.equal(
+      coordinationPreflight(state(), "0019_checkout_tax.sql").migration,
+      "already_applied",
+    );
+    db.exec(
+      "CREATE TABLE streamlion_credit_cards_schema_v1(version INTEGER PRIMARY KEY CHECK(version=1)); INSERT INTO streamlion_credit_cards_schema_v1 VALUES(1);",
+    );
+    assert.throws(
+      () => coordinationPreflight(state(), "0019_checkout_tax.sql"),
+      /Partial optional saved-card/,
+    );
+  } finally {
+    db.close();
+  }
+});

@@ -13,8 +13,32 @@ export function coordinationPreflight(
     throw new Error("Provide schema rows and verified version stamps.");
   const db = new DatabaseSync(":memory:");
   try {
+    // Saved cards are an optional, independent schema. Later migrations may be
+    // applied while that feature remains entirely absent, but never partially.
+    const optionalCards = [
+      "streamlion_credit_cards_v1",
+      "streamlion_credit_topups_v1",
+      "streamlion_credit_cards_schema_v1",
+    ];
+    const cardsPresent = optionalCards.filter((name) =>
+      input.schema.some((row) => row.name === name),
+    ).length;
+    if (
+      target > "0017" &&
+      ((cardsPresent > 0 && cardsPresent < optionalCards.length) ||
+        (!cardsPresent &&
+          input.stamps.streamlion_credit_cards_schema_v1 !== undefined))
+    )
+      throw new Error(
+        "Partial optional saved-card migration state. Stop for review.",
+      );
     for (const f of readdirSync(migrations)
-      .filter((f) => f.endsWith(".sql") && f < target.slice(0, 4))
+      .filter(
+        (f) =>
+          f.endsWith(".sql") &&
+          f < target.slice(0, 4) &&
+          !(f === "0017_streamlion_saved_cards.sql" && !cardsPresent),
+      )
       .sort())
       db.exec(readFileSync(new URL(f, migrations), "utf8"));
     const rows = () =>

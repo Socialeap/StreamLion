@@ -1892,3 +1892,48 @@ test("tax configuration errors never stop signed reconciliation of an existing t
     10000000,
   );
 });
+
+test("persisted taxed credit retries recheck classification and exclusive behavior with global tax off", async (t) => {
+  for (const invalid of ["missing-code", "inclusive"])
+    await t.test(invalid, async (t) => {
+      const f = fixture(t, { tax: true }),
+        cookie = await f.login();
+      f.license();
+      const buy = () =>
+        f.request("checkout", {
+          method: "POST",
+          cookie,
+          body: { packId: "small" },
+        });
+      assert.equal((await buy()).status, 200);
+      const order = f.sql
+        .prepare("SELECT * FROM streamlion_credit_orders_v1")
+        .get();
+      f.sql
+        .prepare(
+          "UPDATE streamlion_credit_orders_v1 SET checkout_session=NULL,checkout_url=NULL WHERE order_id=?",
+        )
+        .run(order.order_id);
+      f.env.STREAMLION_CHECKOUT_TAX_MODE = "off";
+      if (invalid === "missing-code")
+        delete f.prices.price_small.product.tax_code;
+      else f.prices.price_small.tax_behavior = "inclusive";
+      assert.equal((await buy()).status, 503);
+      assert.equal(
+        f.created.length,
+        1,
+        "no fallback-classified tax Checkout may be created",
+      );
+      assert.equal(
+        f.sql
+          .prepare("SELECT COUNT(*) n FROM streamlion_credit_orders_v1")
+          .get().n,
+        1,
+      );
+      f.prices.price_small.product.tax_code = "txcd_10103101";
+      f.prices.price_small.tax_behavior = "exclusive";
+      assert.equal((await buy()).status, 200);
+      assert.equal(f.created.at(-1).get("automatic_tax[enabled]"), "true");
+      assert.equal(f.creates(), 1);
+    });
+});

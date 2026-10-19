@@ -18,7 +18,9 @@ configuration change, deployment, real tax registration, paid service or sale.
   PR does not implement tax collection at redemption.
 - Each new taxed order persists `checkout_tax_mode=stripe`. Existing orders
   default to `off`. Retries keep the original parameters and idempotency key,
-  even if current tax configuration changes. The additive migration preserves
+  even if current tax configuration changes. Before retry Session creation, the
+  exact order price is revalidated against its saved tax mode, including when
+  that price is no longer in the current catalog. The additive migration preserves
   order, wallet, grant, event, identity, project and draft history.
 - New taxed Checkout collects a billing address and enables Stripe automatic
   tax. Stripe displays tax and the final total. No tax rate is hardcoded.
@@ -153,7 +155,9 @@ Export only SQLite schema definitions and version stamps (no project or credenti
 When all are absent and prior purchase/credit schemas are present, apply the
 committed migration byte-for-byte through D1's migration process. When all are
 present with the expected default `off` and constraint `off`/`stripe`, verify and
-skip. Stop on any partial/mismatched state; do not replay the ALTERs, improvise
+skip. Entirely absent optional saved-card schema (0017) is accepted; a partial
+optional schema stops preflight. Do not apply 0017 to release this tax migration.
+Stop on any partial/mismatched state; do not replay the ALTERs, improvise
 SQL or regenerate a migration. Take the existing recovery bookmark/receipt and
 read back protected record counts and financial histories. No production
 migration has been applied during this task.

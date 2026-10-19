@@ -1184,3 +1184,47 @@ test("enabling tax before its migration fails closed without an order", async (t
     0,
   );
 });
+
+test("persisted taxed Core retries reject missing classification or inclusive prices after tax is switched off", async (t) => {
+  for (const invalid of ["missing-code", "inclusive"])
+    await t.test(invalid, async (t) => {
+      const f = fixture(t, { tax: true });
+      const { cookie, order } = await f.checkout();
+      f.sql
+        .prepare(
+          "UPDATE streamlion_purchases_v1 SET checkout_session=NULL,checkout_url=NULL WHERE order_id=?",
+        )
+        .run(order.order_id);
+      f.env.STREAMLION_CHECKOUT_TAX_MODE = "off";
+      // A retry can also refer to a price no longer offered in the current catalog.
+      delete f.env.STRIPE_LAUNCH_PRICE_ID;
+      if (invalid === "missing-code")
+        delete f.catalog.price_launch.product.tax_code;
+      else f.catalog.price_launch.tax_behavior = "inclusive";
+      assert.equal(
+        (await f.request("checkout", { method: "POST", cookie })).status,
+        503,
+      );
+      assert.equal(
+        f.created.length,
+        1,
+        "must not call Stripe Session create with a fallback tax classification",
+      );
+      assert.equal(
+        f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+        1,
+      );
+      f.catalog.price_launch.product.tax_code = "txcd_10103101";
+      f.catalog.price_launch.tax_behavior = "exclusive";
+      assert.equal(
+        (await f.request("checkout", { method: "POST", cookie })).status,
+        200,
+      );
+      assert.equal(f.created.at(-1).get("automatic_tax[enabled]"), "true");
+      assert.equal(
+        f.creates,
+        1,
+        "the original idempotency contract must recover the same Session",
+      );
+    });
+});
