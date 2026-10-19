@@ -49,6 +49,26 @@ export function coordinationPreflight(
       );
       for (const r of rows()) expected.set(r.name, r);
     }
+    // Later tax support adds columns to existing purchase/credit tables. Accept
+    // only its exact complete shape and stamp, never arbitrary additive columns.
+    if (
+      target < "0019" &&
+      input.stamps.streamlion_checkout_tax_schema_v1 === 1
+    ) {
+      db.exec(
+        readFileSync(new URL("0019_checkout_tax.sql", migrations), "utf8"),
+      );
+      for (const r of rows()) {
+        if (
+          [
+            "streamlion_purchases_v1",
+            "streamlion_credit_orders_v1",
+            "streamlion_checkout_tax_schema_v1",
+          ].includes(r.name)
+        )
+          expected.set(r.name, r);
+      }
+    }
     for (const [name, row] of expected) {
       const found = actual.get(name);
       if (

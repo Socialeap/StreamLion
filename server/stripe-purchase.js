@@ -1,4 +1,11 @@
 import Stripe from "stripe";
+import {
+  checkoutTaxMode,
+  taxSchemaReady,
+  validateTaxPrice,
+  taxCheckoutParams,
+  validateTaxCheckout,
+} from "./checkout-tax.js";
 import { getSession, hash, googleConfigurationReady } from "./google-auth.js";
 import {
   checkoutAccess,
@@ -93,6 +100,8 @@ export async function preflight(env, stripe) {
   accountChecks.set(cacheKey, Date.now() + 60000);
 }
 async function prices(env, stripe, mode) {
+  const taxMode = checkoutTaxMode(env);
+  await taxSchemaReady(env, taxMode);
   const load = async (id) => {
     const p = await stripe.prices.retrieve(id, { expand: ["product"] });
     if (
@@ -107,6 +116,7 @@ async function prices(env, stripe, mode) {
       p.product.metadata?.app !== "streamlion"
     )
       throw new Error("purchase_configuration");
+    validateTaxPrice(p, taxMode);
     return p;
   };
   const standard = await load(env.STRIPE_PRICE_ID);
@@ -129,6 +139,7 @@ async function quotePrices(env, stripe, mode) {
     env.STRIPE_PRICE_ID,
     env.STRIPE_LAUNCH_PRICE_ID,
     mode,
+    checkoutTaxMode(env),
   ]);
   const cached = quoteCatalogs.get(key);
   if (cached && cached.expires > Date.now()) return cached.promise;
@@ -188,6 +199,7 @@ export async function limited(env, subject, maximum = 10) {
   if (result.count > maximum) throw new Error("purchase_limit");
 }
 export function validateCheckout(session, order) {
+  validateTaxCheckout(session, order);
   const lines = session.line_items?.data;
   if (
     session.mode !== "payment" ||
@@ -243,7 +255,9 @@ export async function reconcile(env, stripe, orderId, sessionId) {
         !charge.paid ||
         !charge.captured ||
         charge.currency !== order.currency ||
-        charge.amount < order.amount
+        charge.amount < order.amount ||
+        (order.checkout_tax_mode === "stripe" &&
+          charge.amount !== session.amount_total)
       )
         throw new Error("purchase_mismatch");
       refunded = charge.amount_refunded || 0;
@@ -282,6 +296,8 @@ export async function reconcile(env, stripe, orderId, sessionId) {
   throw new Error("purchase_busy");
 }
 async function createCheckout(env, stripe, identity, config) {
+  const taxMode = checkoutTaxMode(env);
+  await taxSchemaReady(env, taxMode);
   if (await hasPurchase(env, identity.google_subject))
     return { purchased: true };
   await limited(env, identity.google_subject);
@@ -328,10 +344,10 @@ async function createCheckout(env, stripe, identity, config) {
       candidate AS (SELECT MIN(n) AS slot FROM slots WHERE NOT EXISTS
         (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND promo_slot=n))
       INSERT OR IGNORE INTO streamlion_purchases_v1
-        (order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,status,created_at,expires_at,updated_at)
+        (order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,status,created_at,expires_at,updated_at${taxMode === "stripe" ? ",checkout_tax_mode" : ""})
       SELECT ?,?,?,?,CASE WHEN ? AND slot IS NOT NULL THEN ? ELSE ? END,?,
         CASE WHEN ? AND slot IS NOT NULL THEN ? ELSE ? END,'usd',
-        CASE WHEN ? THEN slot ELSE NULL END,'pending',?,?,? FROM candidate WHERE NOT EXISTS (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND google_subject=? AND status='paid')`,
+        CASE WHEN ? THEN slot ELSE NULL END,'pending',?,?,?${taxMode === "stripe" ? ",'stripe'" : ""} FROM candidate WHERE NOT EXISTS (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND google_subject=? AND status='paid')`,
       config.mode,
       orderId,
       config.mode,
@@ -365,6 +381,7 @@ async function createCheckout(env, stripe, identity, config) {
     }
   }
   const params = {
+    ...taxCheckoutParams(order),
     mode: "payment",
     client_reference_id: order.order_id,
     customer_email: order.checkout_email,
@@ -621,6 +638,7 @@ export async function handlePurchase({ request, env, params }) {
         required,
         mode,
         currency: "usd",
+        taxMode: checkoutTaxMode(env),
         amount: launch
           ? catalog.launch.unit_amount
           : catalog.standard.unit_amount,
