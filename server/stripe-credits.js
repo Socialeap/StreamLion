@@ -1,5 +1,11 @@
 import Stripe from "stripe";
 import {
+  checkoutTaxMode,
+  taxSchemaReady,
+  validateTaxPrice,
+  taxCheckoutParams,
+} from "./checkout-tax.js";
+import {
   configuration,
   client,
   preflight,
@@ -195,6 +201,8 @@ async function rememberCard(env, order, intent) {
   }
 }
 async function catalog(env, stripe, mode) {
+  const taxMode = checkoutTaxMode(env, true);
+  await taxSchemaReady(env, taxMode);
   return Promise.all(
     CREDIT_PACKS.map(async (pack) => {
       const price = await stripe.prices.retrieve(env[pack.priceSetting], {
@@ -212,7 +220,9 @@ async function catalog(env, stripe, mode) {
         price.product.metadata?.kind !== "ai_credits"
       )
         throw new Error("credit_configuration");
-      return { ...pack, priceId: price.id };
+      validateTaxPrice(price, taxMode);
+      // Retain the fresh server-side price for the pending order's own tax check.
+      return { ...pack, priceId: price.id, stripePrice: price };
     }),
   );
 }
@@ -525,10 +535,12 @@ async function expireOrders(env, mode) {
   );
 }
 async function createOrder(env, config, identity, pack) {
+  const taxMode = checkoutTaxMode(env, true);
+  await taxSchemaReady(env, taxMode);
   const now = Date.now();
   await run(
     env,
-    `INSERT OR IGNORE INTO streamlion_credit_orders_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,credits_micros,created_at,expires_at,updated_at) VALUES(?,?,?,?,?,?,?,'usd',?,?,?,?)`,
+    `INSERT OR IGNORE INTO streamlion_credit_orders_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,credits_micros,created_at,expires_at,updated_at${taxMode === "stripe" ? ",checkout_tax_mode" : ""}) VALUES(?,?,?,?,?,?,?,'usd',?,?,?,?${taxMode === "stripe" ? ",'stripe'" : ""})`,
     crypto.randomUUID(),
     config.mode,
     identity.google_subject,
@@ -586,7 +598,11 @@ async function checkout(env, stripe, identity, config, packId, saveCard) {
     throw new Error("credit_pending");
   if (!order.checkout_session && (await topupOf(env, order.order_id)))
     return { pendingAmount: order.amount };
-  const save = saveCard === true && (await cardsReady(env));
+  validateTaxPrice(pack.stripePrice, order.checkout_tax_mode);
+  const save =
+    order.checkout_tax_mode !== "stripe" &&
+    saveCard === true &&
+    (await cardsReady(env));
   const customer = save
     ? await walletCustomer(env, stripe, config.mode, identity)
     : null;
@@ -598,6 +614,7 @@ async function checkout(env, stripe, identity, config, packId, saveCard) {
   };
   const session = await stripe.checkout.sessions.create(
     {
+      ...taxCheckoutParams(order),
       mode: "payment",
       client_reference_id: order.order_id,
       ...(save ? { customer } : { customer_email: order.checkout_email }),
@@ -661,6 +678,8 @@ async function checkout(env, stripe, identity, config, packId, saveCard) {
 // A bank that asks for confirmation fails the attempt at once; the Credits
 // page then offers Stripe Checkout for the same pack.
 async function topup(env, stripe, identity, config, packId) {
+  // This direct PaymentIntent path has no tax calculation/address step.
+  if (checkoutTaxMode(env, true) === "stripe") throw new Error("credit_closed");
   if (!(await cardsReady(env))) throw new Error("bad_request");
   if (!(await salesReady(env, config.mode))) throw new Error("credit_closed");
   if (!(await hasPurchase(env, identity.google_subject)))
@@ -920,7 +939,11 @@ export async function handleCredits({ request, env, params }) {
       const enabled = access.allowed && (await salesReady(env, mode));
       return json({
         enabled,
-        savedCards: enabled && (await cardsReady(env)),
+        savedCards:
+          enabled &&
+          checkoutTaxMode(env, true) === "off" &&
+          (await cardsReady(env)),
+        taxMode: checkoutTaxMode(env, true),
         checkoutMode: access.mode,
         mode,
         markupPercent: 30,

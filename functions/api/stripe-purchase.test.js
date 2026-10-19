@@ -6,7 +6,7 @@ import { createHmac } from "node:crypto";
 import { handlePurchase, reconcile } from "../../server/stripe-purchase.js";
 import { hash, handleGoogle } from "../../server/google-auth.js";
 import { hasPurchase } from "../../server/purchase-access.js";
-function fixture(t, { launch = true, mode = "test" } = {}) {
+function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
   const sql = new DatabaseSync(":memory:");
   t.after(() => sql.close());
   for (const name of [
@@ -22,6 +22,19 @@ function fixture(t, { launch = true, mode = "test" } = {}) {
         "utf8",
       ),
     );
+  if (tax) {
+    for (const name of [
+      "0007_streamlion_ai_pilot",
+      "0008_streamlion_ai_credits",
+      "0019_checkout_tax",
+    ])
+      sql.exec(
+        readFileSync(
+          new URL(`../../migrations/${name}.sql`, import.meta.url),
+          "utf8",
+        ),
+      );
+  }
   const wrap = (query, values = []) => ({
     bind: (...v) => wrap(query, v),
     first: async () => sql.prepare(query).get(...values) || null,
@@ -30,6 +43,7 @@ function fixture(t, { launch = true, mode = "test" } = {}) {
     }),
   });
   const env = {
+    ...(tax ? { STREAMLION_CHECKOUT_TAX_MODE: "stripe" } : {}),
     GOOGLE_SESSIONS: { prepare: wrap },
     GOOGLE_AUTH_ORIGIN: "https://app.example",
     ENABLE_PERSISTENT_GOOGLE: "true",
@@ -51,6 +65,7 @@ function fixture(t, { launch = true, mode = "test" } = {}) {
     id: "prod_streamlion",
     active: true,
     metadata: { app: "streamlion" },
+    ...(tax ? { tax_code: "txcd_10103101" } : {}),
   };
   const catalog = {
     price_standard: { id: "price_standard", unit_amount: 3995 },
@@ -63,9 +78,11 @@ function fixture(t, { launch = true, mode = "test" } = {}) {
       livemode: mode === "live",
       currency: "usd",
       product,
+      ...(tax ? { tax_behavior: "exclusive" } : {}),
     });
   const sessions = new Map(),
     intents = new Map();
+  const created = [];
   let creates = 0;
   const response = (value) =>
     new Response(JSON.stringify(value), {
@@ -84,6 +101,7 @@ function fixture(t, { launch = true, mode = "test" } = {}) {
       return response(catalog[path.split("/").at(-1)]);
     if (path === "/v1/checkout/sessions" && options.method === "POST") {
       const params = new URLSearchParams(options.body);
+      created.push(params);
       assert.ok(
         params
           .get("custom_text[submit][message]")
@@ -109,7 +127,16 @@ function fixture(t, { launch = true, mode = "test" } = {}) {
         metadata: { app: "streamlion", order_id: orderId },
         currency: "usd",
         amount_subtotal: price.unit_amount,
-        total_details: { amount_discount: 0 },
+        total_details: {
+          amount_discount: 0,
+          ...(tax ? { amount_tax: 266 } : {}),
+        },
+        ...(tax
+          ? {
+              automatic_tax: { enabled: true, status: "complete" },
+              amount_total: price.unit_amount + 266,
+            }
+          : {}),
         line_items: {
           has_more: false,
           data: [{ quantity: 1, price: { id: price.id, product: product.id } }],
@@ -199,7 +226,7 @@ function fixture(t, { launch = true, mode = "test" } = {}) {
           paid: true,
           captured: true,
           currency: "usd",
-          amount: order.amount,
+          amount: session.amount_total || order.amount,
           amount_refunded: refund,
           disputed: dispute,
         },
@@ -238,6 +265,7 @@ function fixture(t, { launch = true, mode = "test" } = {}) {
     env,
     sessions,
     catalog,
+    created,
     login,
     request,
     checkout,
@@ -461,10 +489,25 @@ for (const mode of ["test", "live"])
     assert.equal(await hasPurchase(f.env, "account-a"), false);
     assert.equal(f.creates, 1);
   });
-test('the app purchase endpoint ignores AI top-up completions rather than retrying a foreign order',async t=>{
-  const f=fixture(t);
-  assert.equal((await f.event('checkout.session.completed',{id:'cs_test_credit',metadata:{app:'streamlion',kind:'ai_credits',order_id:'credit-only'}})).status,200);
-  assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM streamlion_purchases_v1').get().n,0);
+test("the app purchase endpoint ignores AI top-up completions rather than retrying a foreign order", async (t) => {
+  const f = fixture(t);
+  assert.equal(
+    (
+      await f.event("checkout.session.completed", {
+        id: "cs_test_credit",
+        metadata: {
+          app: "streamlion",
+          kind: "ai_credits",
+          order_id: "credit-only",
+        },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    0,
+  );
 });
 test("the 200-place migration preserves financial state and uniqueness safeguards", () => {
   const sql = new DatabaseSync(":memory:");
@@ -1035,4 +1078,153 @@ test("concurrent stale completion read cannot overwrite a refund due to compare-
   release();
   await old;
   assert.equal(await hasPurchase(f.env, "account-a"), false);
+});
+
+// All provider I/O below is intercepted; each fixture owns only in-memory SQLite.
+test("tax-aware Core checkout preserves subtotal, signed recovery and full/partial refunds", async (t) => {
+  const f = fixture(t, { tax: true });
+  const { cookie, order } = await f.checkout();
+  const params = f.created[0];
+  assert.equal(params.get("automatic_tax[enabled]"), "true");
+  assert.equal(params.get("billing_address_collection"), "required");
+  assert.equal(order.checkout_tax_mode, "stripe");
+  const s = f.paid(order);
+  assert.equal((await f.event("checkout.session.completed", s)).status, 200);
+  assert.equal((await f.event("checkout.session.completed", s)).status, 200);
+  assert.equal(await hasPurchase(f.env, "account-a"), true);
+  s.payment_intent.latest_charge.amount_refunded = 100;
+  assert.equal(
+    (await f.event("charge.refunded", { payment_intent: s.payment_intent.id }))
+      .status,
+    200,
+  );
+  assert.equal(await hasPurchase(f.env, "account-a"), true);
+  s.payment_intent.latest_charge.amount_refunded = s.amount_total;
+  assert.equal(
+    (await f.event("charge.refunded", { payment_intent: s.payment_intent.id }))
+      .status,
+    200,
+  );
+  assert.equal(await hasPurchase(f.env, "account-a"), false);
+  assert.equal((await f.event("checkout.session.completed", s)).status, 200);
+  assert.equal(await hasPurchase(f.env, "account-a"), false);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    1,
+  );
+  assert.equal((await f.request("status", { cookie })).status, 200);
+});
+test("tax checkout rejects incomplete calculations and inconsistent totals before granting", async (t) => {
+  const f = fixture(t, { tax: true });
+  const { order } = await f.checkout();
+  const s = f.paid(order);
+  s.automatic_tax.status = "requires_location_inputs";
+  await assert.rejects(
+    reconcile(
+      f.env,
+      { checkout: { sessions: { retrieve: async () => s } } },
+      order.order_id,
+    ),
+    /purchase_mismatch/,
+  );
+  s.automatic_tax.status = "complete";
+  s.amount_total++;
+  await assert.rejects(
+    reconcile(
+      f.env,
+      { checkout: { sessions: { retrieve: async () => s } } },
+      order.order_id,
+    ),
+    /purchase_mismatch/,
+  );
+  assert.equal(await hasPurchase(f.env, "account-a"), false);
+});
+test("tax catalog requires explicit exclusive behavior and a product tax code", async (t) => {
+  const f = fixture(t, { tax: true });
+  f.catalog.price_standard.tax_behavior = "inclusive";
+  const cookie = await f.login();
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie })).status,
+    503,
+  );
+  assert.equal(f.creates, 0);
+});
+
+test("lost tax Checkout response retries the persisted contract after tax configuration changes", async (t) => {
+  const f = fixture(t, { tax: true });
+  const { cookie, order } = await f.checkout();
+  f.sql
+    .prepare(
+      "UPDATE streamlion_purchases_v1 SET checkout_session=NULL,checkout_url=NULL WHERE order_id=?",
+    )
+    .run(order.order_id);
+  f.env.STREAMLION_CHECKOUT_TAX_MODE = "off";
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie })).status,
+    200,
+  );
+  assert.equal(f.created.at(-1).get("automatic_tax[enabled]"), "true");
+  assert.equal(f.creates, 1);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    1,
+  );
+});
+test("enabling tax before its migration fails closed without an order", async (t) => {
+  const f = fixture(t);
+  f.env.STREAMLION_CHECKOUT_TAX_MODE = "stripe";
+  const cookie = await f.login();
+  assert.equal(
+    (await f.request("checkout", { method: "POST", cookie })).status,
+    503,
+  );
+  assert.equal(f.creates, 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    0,
+  );
+});
+
+test("persisted taxed Core retries reject missing classification or inclusive prices after tax is switched off", async (t) => {
+  for (const invalid of ["missing-code", "inclusive"])
+    await t.test(invalid, async (t) => {
+      const f = fixture(t, { tax: true });
+      const { cookie, order } = await f.checkout();
+      f.sql
+        .prepare(
+          "UPDATE streamlion_purchases_v1 SET checkout_session=NULL,checkout_url=NULL WHERE order_id=?",
+        )
+        .run(order.order_id);
+      f.env.STREAMLION_CHECKOUT_TAX_MODE = "off";
+      // A retry can also refer to a price no longer offered in the current catalog.
+      delete f.env.STRIPE_LAUNCH_PRICE_ID;
+      if (invalid === "missing-code")
+        delete f.catalog.price_launch.product.tax_code;
+      else f.catalog.price_launch.tax_behavior = "inclusive";
+      assert.equal(
+        (await f.request("checkout", { method: "POST", cookie })).status,
+        503,
+      );
+      assert.equal(
+        f.created.length,
+        1,
+        "must not call Stripe Session create with a fallback tax classification",
+      );
+      assert.equal(
+        f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+        1,
+      );
+      f.catalog.price_launch.product.tax_code = "txcd_10103101";
+      f.catalog.price_launch.tax_behavior = "exclusive";
+      assert.equal(
+        (await f.request("checkout", { method: "POST", cookie })).status,
+        200,
+      );
+      assert.equal(f.created.at(-1).get("automatic_tax[enabled]"), "true");
+      assert.equal(
+        f.creates,
+        1,
+        "the original idempotency contract must recover the same Session",
+      );
+    });
 });

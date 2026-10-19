@@ -19,7 +19,7 @@ import {
 import { handleAI } from "../../server/ai-pilot.js";
 import { hash } from "../../server/google-auth.js";
 import { reserveProject, finishProject } from "../../server/shared-credits.js";
-function fixture(t) {
+function fixture(t, { tax = false } = {}) {
   const sql = new DatabaseSync(":memory:");
   for (const name of [
     "0001_google_sessions",
@@ -30,6 +30,7 @@ function fixture(t) {
     "0007_streamlion_ai_pilot",
     "0008_streamlion_ai_credits",
     "0017_streamlion_saved_cards",
+    ...(tax ? ["0019_checkout_tax"] : []),
   ])
     sql.exec(
       readFileSync(
@@ -47,6 +48,12 @@ function fixture(t) {
   });
   const db = { prepare: wrap };
   const env = {
+    ...(tax
+      ? {
+          STREAMLION_CHECKOUT_TAX_MODE: "stripe",
+          STREAMLION_CREDIT_TAX_TREATMENT: "tax_on_purchase",
+        }
+      : {}),
     GOOGLE_SESSIONS: db,
     GOOGLE_AUTH_ORIGIN: "https://app.example",
     ENABLE_PERSISTENT_GOOGLE: "true",
@@ -69,6 +76,7 @@ function fixture(t) {
     id: "prod_credits",
     active: true,
     metadata: { app: "streamlion", kind: "ai_credits" },
+    ...(tax ? { tax_code: "txcd_10103101" } : {}),
   };
   const prices = Object.fromEntries(
     CREDIT_PACKS.map((p) => [
@@ -81,6 +89,7 @@ function fixture(t) {
         livemode: false,
         unit_amount: p.amount,
         product,
+        ...(tax ? { tax_behavior: "exclusive" } : {}),
       },
     ]),
   );
@@ -261,8 +270,14 @@ function fixture(t) {
         client_reference_id: orderId,
         currency: "usd",
         amount_subtotal: price.unit_amount,
-        amount_total: price.unit_amount,
-        total_details: { amount_discount: 0 },
+        amount_total: price.unit_amount + (tax ? 200 : 0),
+        total_details: {
+          amount_discount: 0,
+          ...(tax ? { amount_tax: 200 } : {}),
+        },
+        ...(tax
+          ? { automatic_tax: { enabled: true, status: "complete" } }
+          : {}),
         line_items: {
           has_more: false,
           data: [{ quantity: 1, price: { id: price.id, product: product.id } }],
@@ -1695,4 +1710,230 @@ test("an unresolved top-up never expires into a second charge; a consistent Stri
       .get().n,
     0,
   );
+});
+
+test("taxed packs grant only fixed credits, reconcile signed replays and proportionate gross refunds", async (t) => {
+  const f = fixture(t, { tax: true });
+  const cookie = await f.login();
+  f.license();
+  for (const pack of CREDIT_PACKS) {
+    const response = await f.request("checkout", {
+      method: "POST",
+      cookie,
+      body: { packId: pack.id },
+    });
+    assert.equal(response.status, 200, await response.clone().text());
+    const p = f.created.at(-1);
+    assert.equal(p.get("automatic_tax[enabled]"), "true");
+    assert.equal(p.get("billing_address_collection"), "required");
+    const order = f.sql
+      .prepare(
+        "SELECT * FROM streamlion_credit_orders_v1 ORDER BY rowid DESC LIMIT 1",
+      )
+      .get();
+    assert.equal(order.checkout_tax_mode, "stripe");
+    const intent = f.pay(order.checkout_session);
+    const event = {
+      id: "evt_tax_" + pack.id,
+      type: "checkout.session.completed",
+      livemode: false,
+      data: { object: f.sessions.get(order.checkout_session) },
+    };
+    assert.equal((await signedCreditEvent(f, event)).status, 200);
+    assert.equal((await signedCreditEvent(f, event)).status, 200);
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT credited_micros FROM streamlion_credit_orders_v1 WHERE order_id=?",
+        )
+        .get(order.order_id).credited_micros,
+      pack.creditsMicros,
+    );
+    intent.latest_charge.amount_refunded = (pack.amount + 200) / 2;
+    assert.equal(
+      (
+        await signedCreditEvent(f, {
+          ...event,
+          id: event.id + "partial",
+          type: "charge.refunded",
+          data: { object: { payment_intent: intent.id } },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT credited_micros FROM streamlion_credit_orders_v1 WHERE order_id=?",
+        )
+        .get(order.order_id).credited_micros,
+      pack.creditsMicros / 2,
+    );
+    intent.latest_charge.amount_refunded = pack.amount + 200;
+    assert.equal(
+      (
+        await signedCreditEvent(f, {
+          ...event,
+          id: event.id + "full",
+          type: "charge.refunded",
+          data: { object: { payment_intent: intent.id } },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await signedCreditEvent(f, { ...event, id: event.id + "late" })).status,
+      200,
+    );
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT credited_micros FROM streamlion_credit_orders_v1 WHERE order_id=?",
+        )
+        .get(order.order_id).credited_micros,
+      0,
+    );
+  }
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_credit_orders_v1").get().n,
+    3,
+  );
+});
+test("unconfirmed credit tax treatment and direct saved-card top-ups fail closed", async (t) => {
+  const f = fixture(t, { tax: true });
+  const cookie = await f.login();
+  f.license();
+  delete f.env.STREAMLION_CREDIT_TAX_TREATMENT;
+  assert.equal(
+    (
+      await f.request("checkout", {
+        method: "POST",
+        cookie,
+        body: { packId: "small" },
+      })
+    ).status,
+    503,
+  );
+  f.env.STREAMLION_CREDIT_TAX_TREATMENT = "tax_on_purchase";
+  f.env.STREAMLION_SAVED_CARDS_ENABLED = "true";
+  assert.equal(
+    (
+      await f.request("topup", {
+        method: "POST",
+        cookie,
+        body: { packId: "small" },
+      })
+    ).status,
+    503,
+  );
+  assert.equal(f.topups.length, 0);
+  assert.equal(f.created.length, 0);
+});
+
+test("taxed Checkout ignores save-card requests and preserves retry parameters after configuration changes", async (t) => {
+  const f = fixture(t, { tax: true });
+  const cookie = await f.login();
+  f.license();
+  f.env.STREAMLION_SAVED_CARDS_ENABLED = "true";
+  const buy = () =>
+    f.request("checkout", {
+      method: "POST",
+      cookie,
+      body: { packId: "small", saveCard: true },
+    });
+  assert.equal((await buy()).status, 200);
+  assert.equal(f.created[0].get("customer"), null);
+  assert.equal(
+    f.created[0].get("payment_intent_data[setup_future_usage]"),
+    null,
+  );
+  const order = f.sql
+    .prepare("SELECT * FROM streamlion_credit_orders_v1")
+    .get();
+  f.sql
+    .prepare(
+      "UPDATE streamlion_credit_orders_v1 SET checkout_session=NULL,checkout_url=NULL WHERE order_id=?",
+    )
+    .run(order.order_id);
+  f.env.STREAMLION_CHECKOUT_TAX_MODE = "off";
+  assert.equal((await buy()).status, 200);
+  assert.equal(f.created.at(-1).get("automatic_tax[enabled]"), "true");
+  assert.equal(f.created.at(-1).get("customer"), null);
+  assert.equal(f.creates(), 1);
+});
+test("tax configuration errors never stop signed reconciliation of an existing taxed payment", async (t) => {
+  const f = fixture(t, { tax: true });
+  const cookie = await f.login();
+  f.license();
+  await f.request("checkout", {
+    method: "POST",
+    cookie,
+    body: { packId: "small" },
+  });
+  const s = [...f.sessions.values()][0];
+  f.pay(s.id);
+  f.env.STREAMLION_CHECKOUT_TAX_MODE = "invalid";
+  delete f.env.STREAMLION_CREDIT_TAX_TREATMENT;
+  assert.equal(
+    (
+      await signedCreditEvent(f, {
+        id: "evt_tax_config_bad",
+        type: "checkout.session.completed",
+        livemode: false,
+        data: { object: s },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    f.sql
+      .prepare("SELECT credited_micros FROM streamlion_credit_orders_v1")
+      .get().credited_micros,
+    10000000,
+  );
+});
+
+test("persisted taxed credit retries recheck classification and exclusive behavior with global tax off", async (t) => {
+  for (const invalid of ["missing-code", "inclusive"])
+    await t.test(invalid, async (t) => {
+      const f = fixture(t, { tax: true }),
+        cookie = await f.login();
+      f.license();
+      const buy = () =>
+        f.request("checkout", {
+          method: "POST",
+          cookie,
+          body: { packId: "small" },
+        });
+      assert.equal((await buy()).status, 200);
+      const order = f.sql
+        .prepare("SELECT * FROM streamlion_credit_orders_v1")
+        .get();
+      f.sql
+        .prepare(
+          "UPDATE streamlion_credit_orders_v1 SET checkout_session=NULL,checkout_url=NULL WHERE order_id=?",
+        )
+        .run(order.order_id);
+      f.env.STREAMLION_CHECKOUT_TAX_MODE = "off";
+      if (invalid === "missing-code")
+        delete f.prices.price_small.product.tax_code;
+      else f.prices.price_small.tax_behavior = "inclusive";
+      assert.equal((await buy()).status, 503);
+      assert.equal(
+        f.created.length,
+        1,
+        "no fallback-classified tax Checkout may be created",
+      );
+      assert.equal(
+        f.sql
+          .prepare("SELECT COUNT(*) n FROM streamlion_credit_orders_v1")
+          .get().n,
+        1,
+      );
+      f.prices.price_small.product.tax_code = "txcd_10103101";
+      f.prices.price_small.tax_behavior = "exclusive";
+      assert.equal((await buy()).status, 200);
+      assert.equal(f.created.at(-1).get("automatic_tax[enabled]"), "true");
+      assert.equal(f.creates(), 1);
+    });
 });

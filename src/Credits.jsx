@@ -445,6 +445,13 @@ export default function Credits() {
           </section>
           <section id="credits-payment" aria-labelledby="credits-payment-title">
             <h2 id="credits-payment-title">Payment</h2>
+            {config?.taxMode === "stripe" && (
+              <p>
+                Pack prices are before sales tax. Stripe Checkout shows
+                applicable tax and the final total before you pay. Tax does not
+                change the number of credits you receive.
+              </p>
+            )}
             <p>
               Pay by card in Stripe Checkout. Credits are added to the Google
               account you are signed in with and work on all your devices.

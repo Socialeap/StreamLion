@@ -13,8 +13,32 @@ export function coordinationPreflight(
     throw new Error("Provide schema rows and verified version stamps.");
   const db = new DatabaseSync(":memory:");
   try {
+    // Saved cards are an optional, independent schema. Later migrations may be
+    // applied while that feature remains entirely absent, but never partially.
+    const optionalCards = [
+      "streamlion_credit_cards_v1",
+      "streamlion_credit_topups_v1",
+      "streamlion_credit_cards_schema_v1",
+    ];
+    const cardsPresent = optionalCards.filter((name) =>
+      input.schema.some((row) => row.name === name),
+    ).length;
+    if (
+      target > "0017" &&
+      ((cardsPresent > 0 && cardsPresent < optionalCards.length) ||
+        (!cardsPresent &&
+          input.stamps.streamlion_credit_cards_schema_v1 !== undefined))
+    )
+      throw new Error(
+        "Partial optional saved-card migration state. Stop for review.",
+      );
     for (const f of readdirSync(migrations)
-      .filter((f) => f.endsWith(".sql") && f < target.slice(0, 4))
+      .filter(
+        (f) =>
+          f.endsWith(".sql") &&
+          f < target.slice(0, 4) &&
+          !(f === "0017_streamlion_saved_cards.sql" && !cardsPresent),
+      )
       .sort())
       db.exec(readFileSync(new URL(f, migrations), "utf8"));
     const rows = () =>
@@ -48,6 +72,26 @@ export function coordinationPreflight(
         ),
       );
       for (const r of rows()) expected.set(r.name, r);
+    }
+    // Later tax support adds columns to existing purchase/credit tables. Accept
+    // only its exact complete shape and stamp, never arbitrary additive columns.
+    if (
+      target < "0019" &&
+      input.stamps.streamlion_checkout_tax_schema_v1 === 1
+    ) {
+      db.exec(
+        readFileSync(new URL("0019_checkout_tax.sql", migrations), "utf8"),
+      );
+      for (const r of rows()) {
+        if (
+          [
+            "streamlion_purchases_v1",
+            "streamlion_credit_orders_v1",
+            "streamlion_checkout_tax_schema_v1",
+          ].includes(r.name)
+        )
+          expected.set(r.name, r);
+      }
     }
     for (const [name, row] of expected) {
       const found = actual.get(name);

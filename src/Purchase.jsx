@@ -213,6 +213,13 @@ export default function Purchase({ onPurchased }) {
                   <p className="purchase-price">
                     {amount} <small>USD · one-time purchase</small>
                   </p>
+                  {config.taxMode === "stripe" && (
+                    <p>
+                      Plus applicable sales tax. Enter your billing address in
+                      Stripe Checkout to see the tax and final total before
+                      paying.
+                    </p>
+                  )}
                   {config.launchRemaining > 0 && (
                     <p>
                       First 200 Only Launch Offer. Places are reserved when
