@@ -1295,3 +1295,8 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
 .app.app-ask > main { width:100%; padding-bottom:calc(90px + env(safe-area-inset-bottom)); }
 .app.app-ask .ask-read-aloud-slot { align-self:flex-end; margin-bottom:8px; }
 @media(max-width:640px) { .app > main { padding-top:20px; } }
+
+.voice-options { display: grid; gap: .75rem; min-width: 0; padding-block: .75rem; }
+.voice-options audio, .voice-options select, .voice-options input[type="range"] { width: 100%; max-width: 100%; min-width: 0; }
+.voice-options label { display: grid; gap: .4rem; }
+.voice-options .note-text { white-space: pre-wrap; overflow-wrap: anywhere; }

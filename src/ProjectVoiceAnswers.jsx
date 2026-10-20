@@ -1,3 +1,5 @@
+import { useDeviceVoice } from "./device-voice.js";
+import VoiceControls from "./VoiceControls.jsx";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { Mic, Square, Volume2 } from "lucide-react";
 import SectionHeading from "./SectionHeading.jsx";
@@ -42,6 +44,9 @@ function VoiceAnswers({
   contextPanel,
   toolsPanel,
 }) {
+  const deviceVoice = useDeviceVoice();
+  const hostedSpeech = useRef(null);
+  const [voiceOptionsOpen, setVoiceOptionsOpen] = useState(false);
   const inputId = useId();
   const inputRef = useRef(null);
   const answerRef = useRef(null);
@@ -93,7 +98,8 @@ function VoiceAnswers({
   const aiRef = useRef(ai);
   aiRef.current = ai;
 
-  function cancelMedia() {
+  function cancelMedia(skipHosted = false) {
+    if (!skipHosted) hostedSpeech.current?.stop();
     aiRef.current?.cancel();
     clearTimeout(timer.current);
     const previous = session.current;
@@ -170,7 +176,7 @@ function VoiceAnswers({
     const spoken = new window.SpeechSynthesisUtterance(
       `${project.title}. ${source === "copy" ? "From a saved Google copy. " : ""}${text}`,
     );
-    spoken.lang = "en-US";
+    deviceVoice.apply(spoken);
     utterance.current = spoken;
     const end = (failed) => {
       if (utterance.current !== spoken) return;
@@ -217,6 +223,11 @@ function VoiceAnswers({
     prepareAnswer();
     const answer = {
       ...answerProjectQuestion(project, text, topicId),
+      speechRequest: {
+        projectId: project.id,
+        question: text,
+        ...(topicId ? { topicId } : {}),
+      },
       sourceLabel: answerSourceLabel(source, asOf),
     };
     if (layout === "workspace" && answer.kind === "unsupported") {
@@ -389,6 +400,26 @@ function VoiceAnswers({
     setStage("ask");
     ai.setActive(value);
   }
+  const voiceControls = (
+    <VoiceControls
+      device={deviceVoice}
+      canSpeak={canSpeak}
+      source={source}
+      request={result?.kind === "answer" ? result.speechRequest : null}
+      controllerRef={hostedSpeech}
+      onBeforePlay={() => cancelMedia(true)}
+      onTestDevice={() =>
+        speak({
+          kind: "answer",
+          answers: [
+            {
+              text: "This is your selected device voice. You can change its voice and speed here.",
+            },
+          ],
+        })
+      }
+    />
+  );
   if (layout === "workspace")
     return (
       <FocusedAsk
@@ -396,6 +427,7 @@ function VoiceAnswers({
         projectPanel={projectPanel}
         contextPanel={contextPanel}
         toolsPanel={toolsPanel}
+        voiceControls={voiceControls}
         stage={stage}
         onStageChange={setStage}
         inputId={inputId}
@@ -432,6 +464,12 @@ function VoiceAnswers({
       className="project-voice"
       aria-label={`Quick answers for ${project.title}`}
     >
+      <details
+        onToggle={(event) => setVoiceOptionsOpen(event.currentTarget.open)}
+      >
+        <summary>Voice options</summary>
+        {voiceOptionsOpen && voiceControls}
+      </details>
       {!ai.demo && (
         <div className="fact-answer">
           <strong>
