@@ -183,7 +183,7 @@ test("a restored account's saved workbook completes the Google step without crea
     }),
   );
   await ui.findByText("Use my saved workbook");
-  await ui.findByText(/How would you like to use it/);
+  await ui.findByText(/Which optional StreamLion AI features/);
 });
 
 test("a cancelled Google consent during setup is explained in the assistant", async () => {

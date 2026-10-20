@@ -478,7 +478,7 @@ test("progress, locale currency and profile defaults stay small and predictable"
   assert.equal(brandingSuggestion(null), null);
 });
 
-test("ChatGPT questions branch: credits only for built-in AI, read-aloud only for project questions", () => {
+test("AI questions branch: credits only for built-in AI, read-aloud only for project questions", () => {
   const lead = [
     ...identity,
     ["focus", ["briefs"]],
@@ -486,16 +486,16 @@ test("ChatGPT questions branch: credits only for built-in AI, read-aloud only fo
     ["deliverables", []],
     ["storage", "device"],
   ];
-  const helperOnly = run([...lead, ["aiUses", ["helper"]]]);
-  assert.equal(walk(helperOnly, online).current.id, "theme");
-  assert.deepEqual(setupProfile(helperOnly).ai, {
-    uses: ["Briefing Helper in my own ChatGPT"],
+  const manualOnly = run([...lead, ["aiUses", []]]);
+  assert.equal(walk(manualOnly, online).current.id, "theme");
+  assert.deepEqual(setupProfile(manualOnly).ai, {
+    uses: [],
     readAloud: null,
     credits: "",
   });
   const asking = run([
     ...lead,
-    ["aiUses", ["ask", "helper"]],
+    ["aiUses", ["ask"]],
     ["aiVoice", "aloud"],
     ["aiCredits", "later"],
   ]);
@@ -510,7 +510,7 @@ test("ChatGPT questions branch: credits only for built-in AI, read-aloud only fo
   );
   // Dropping built-in AI no longer asks about credits or read-aloud.
   let edited = editStep(asking, "aiUses");
-  edited = answerStep(edited, "aiUses", ["helper"], online);
+  edited = answerStep(edited, "aiUses", [], online);
   assert.equal(walk(edited, online).current.id, "theme");
   assert.equal(setupProfile(edited).ai.credits, "");
 });

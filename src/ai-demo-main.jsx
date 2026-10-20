@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import ChatGPTPanel from "./ChatGPTPanel.jsx";
+import ProjectAnswers from "./ProjectAnswers.jsx";
 import {
   FileText,
   NotebookPen,
@@ -53,7 +53,7 @@ if (import.meta.env.DEV) {
         </nav>
       </aside>
       <main>
-        <ChatGPTPanel
+        <ProjectAnswers
           compact
           project={project}
           source="device"

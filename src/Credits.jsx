@@ -293,10 +293,10 @@ export default function Credits() {
     },
     {
       title: "4. Prepare the Project Brief",
-      free: "Use the free “Prepare my brief in (your own) ChatGPT” helper, or type the details yourself.",
+      free: "Enter project details yourself, or import a saved StreamLion project file.",
       credit: {
         price: pill(config?.briefMicros, "per brief"),
-        text: "StreamLion uses ChatGPT to organize PDF text, emails or messages into a Project Brief. It first filters detected personal details on your device; you review the text before sending it to OpenAI.",
+        text: "StreamLion uses OpenAI to organize PDF text, emails or messages into a Project Brief. It first filters detected personal details on your device; you review the text before sending it to OpenAI.",
       },
     },
     {

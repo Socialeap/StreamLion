@@ -80,7 +80,7 @@ export default function Jobs({
           <p>
             {query
               ? "Try fewer words or clear the search."
-              : "Upload your brief in ChatGPT, or start with a manual project."}
+              : "Enter the project details yourself, or import a saved project file."}
           </p>
           {!query && (
             <button className="primary" onClick={onCreate}>

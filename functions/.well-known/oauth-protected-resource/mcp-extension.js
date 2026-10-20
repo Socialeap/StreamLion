@@ -1,3 +1,2 @@
-import { extensionMetadata } from "../../../server/extension-auth.js";
-export const onRequest = ({ request, env }) =>
-  extensionMetadata(request, env, "resource");
+import { retiredChatGPTResponse } from "../../../server/retired-chatgpt.js";
+export const onRequest = ({ request }) => retiredChatGPTResponse(request);

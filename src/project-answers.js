@@ -136,7 +136,7 @@ function unsupported() {
     kind: "unsupported",
     answers: [],
     message:
-      "Question received. Saved-detail lookup cannot answer this question. It can read address, site contact, access, visit, requested work, deliverables and payment fields. For broader questions, enable the AI pilot on an eligible Google project, or use the ChatGPT handoff on Ask.",
+      "Question received. Saved-detail lookup cannot answer this question. It can read address, site contact, access, visit, requested work, deliverables and payment fields. Managed AI answers use credits when enabled for an eligible Google project.",
   };
 }
 

@@ -23,7 +23,6 @@ Object.defineProperty(globalThis, "navigator", {
 const { render, fireEvent, act, cleanup, within, waitFor } =
   await import("@testing-library/react");
 const { default: ProjectEditor } = await import("./ProjectEditor.jsx");
-const { chatUrl } = await import("./ChatGPTPanel.jsx");
 const { FIELD_HELP } = await import("./FieldHelp.jsx");
 const { PROJECT_FIELDS, intakeFor } = await import("./project-schema.js");
 const { readDraft, projectDraftKey } = await import("./drafts.js");
@@ -193,7 +192,7 @@ test("mocked in-app brief requires explicit review, preserves existing draft fie
   await waitFor(() => assert.equal(saves, 1));
 });
 
-test("ChatGPT preparation and return stay together, with file first and a paste alternative", async (t) => {
+test("saved project import keeps file first and a paste alternative", async (t) => {
   t.after(cleanup);
   localStorage.clear();
   let saves = 0;
@@ -207,18 +206,11 @@ test("ChatGPT preparation and return stay together, with file first and a paste 
     />,
   );
   const card = within(
-    ui.getByRole("region", { name: "Prepare my project brief with ChatGPT" }),
+    ui.getByRole("region", { name: "Import a project file" }),
   );
-  const prepare = card.getByRole("link", {
-    name: "1. Prepare my brief in ChatGPT",
-  });
   const bringBack = card.getByRole("button", {
-    name: "2. Bring back the ChatGPT project file",
+    name: "Import saved project details",
   });
-  assert(
-    prepare.compareDocumentPosition(bringBack) &
-      window.Node.DOCUMENT_POSITION_FOLLOWING,
-  );
   assert.equal(bringBack.getAttribute("aria-expanded"), "false");
   fireEvent.click(bringBack);
   const file = card.getByLabelText("Choose project file (.json)"),
@@ -247,7 +239,7 @@ test("ChatGPT preparation and return stay together, with file first and a paste 
   assert.equal(saves, 0);
 });
 
-test("a ChatGPT project file fills review steps without saving the project", async (t) => {
+test("a saved project file fills review steps without saving the project", async (t) => {
   t.after(cleanup);
   localStorage.clear();
   let saves = 0;
@@ -261,7 +253,7 @@ test("a ChatGPT project file fills review steps without saving the project", asy
     />,
   );
   fireEvent.click(
-    ui.getByRole("button", { name: "2. Bring back the ChatGPT project file" }),
+    ui.getByRole("button", { name: "Import saved project details" }),
   );
   const file = {
     size: 200,
@@ -304,7 +296,7 @@ test("invalid, oversized and unreadable imports preserve the existing draft and 
     ui.getByRole("button", { name: "Step 1: Start with your project brief" }),
   );
   fireEvent.click(
-    ui.getByRole("button", { name: "2. Bring back the ChatGPT project file" }),
+    ui.getByRole("button", { name: "Import saved project details" }),
   );
   fireEvent.change(ui.getByLabelText("Or, paste the project details here:"), {
     target: { value: "Keep this paste draft" },
@@ -347,7 +339,7 @@ test("invalid, oversized and unreadable imports preserve the existing draft and 
   }
 });
 
-test("project wizard starts with the ChatGPT action and reveals one field group at a time", () => {
+test("project wizard preserves manual entry and reveals one field group at a time", () => {
   localStorage.clear();
   const ui = render(
     <ProjectEditor
@@ -357,9 +349,7 @@ test("project wizard starts with the ChatGPT action and reveals one field group 
       draftScope="wizard-test"
     />,
   );
-  const launch = ui.getByRole("link", { name: /Prepare my brief in ChatGPT/ });
-  assert.equal(new URL(launch.href).pathname, "/");
-  assert.equal(new URL(launch.href).searchParams.get("hints"), null);
+  assert.equal(ui.queryByRole("link", { name: /ChatGPT/ }), null);
   assert.equal(ui.queryByLabelText("Project name"), null);
 
   fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
@@ -623,26 +613,6 @@ test("Projects shows a named unfinished draft, its count and edit/delete control
   assert.equal(edited, true);
   assert.equal(deleted, true);
   cleanup();
-});
-
-test("ChatGPT handoff uses ordinary chat without private plugin or customer data in the URL", () => {
-  const url = new URL(chatUrl({ mode: "create", bookId: "workbook123" }));
-  assert.equal(url.origin, "https://chatgpt.com");
-  assert.equal(url.pathname, "/");
-  assert.equal(url.searchParams.get("surface"), null);
-  assert.equal(url.searchParams.get("hints"), null);
-  assert.match(url.searchParams.get("prompt"), /brief I will upload/);
-  assert.match(
-    url.searchParams.get("prompt"),
-    /Do not add keys or save anything to Google/,
-  );
-  const projectUrl = chatUrl({
-    project: { id: "opaque-123", title: "Private Customer Name" },
-    bookId: "workbook123",
-  });
-  assert.ok(!projectUrl.includes("opaque-123"));
-  assert.ok(!projectUrl.includes("Private+Customer+Name"));
-  assert.ok(!projectUrl.includes("workbook123"));
 });
 
 test("each project field has a help explanation", () => {

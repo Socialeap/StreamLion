@@ -14,7 +14,7 @@ import {
 
 const availability = {
   not_open:
-    "In-app brief preparation is not open yet. You can still use your own ChatGPT account or enter details yourself.",
+    "In-app brief preparation is not open yet. You can still enter details yourself or import a saved project file.",
   sign_in: "Sign in to Google before preparing a brief with credits.",
   license_required:
     "A StreamLion license is required to prepare briefs with credits.",
@@ -241,8 +241,8 @@ export default function BriefImporter({
           </label>
           <p className="hint">
             Up to 5 MB, 20 pages and 6,000 characters of readable text. Scanned
-            or image-only pages are not supported here; paste their text or use
-            your own ChatGPT account.
+            or image-only pages are not supported here; paste their text or
+            enter the project details yourself.
           </p>
           <details className="brief-pdf-tips">
             <summary>Easy ways to turn emails or messages into a PDF</summary>

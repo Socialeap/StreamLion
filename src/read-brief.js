@@ -61,7 +61,7 @@ export async function readBrief(file) {
       text = pages.join("\n\n");
       if (!text.replace(/\[Page \d+\]/g, "").trim())
         throw new Error(
-          "This PDF has no readable text. Copy the work requests from the original, or use ChatGPT to read it first.",
+          "This PDF has no readable text. Copy the work requests from the original, or enter the project details yourself.",
         );
     } catch (error) {
       if (error.name === "PasswordException")

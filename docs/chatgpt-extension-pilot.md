@@ -1,3 +1,5 @@
+> Historical document: customer ChatGPT handoffs and plugin/extension routes are retired. Do not follow activation or packaging instructions below. See [current retirement and release gates](chatgpt-retirement-release.md).
+
 # StreamLion ChatGPT extension pilot
 
 ## Release boundary

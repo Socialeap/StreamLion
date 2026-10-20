@@ -157,21 +157,12 @@ test("annotation source wording remains distinct from corrected text", () => {
   assert.throws(() => validateNote({ projectId: "a", area: "", text: "x" }));
 });
 
-test("plugin and documentation share the executable field contract", async () => {
+test("documentation shares the executable field contract", async () => {
   const { readFile } = await import("node:fs/promises");
   const { PROJECT_FIELDS } = await import("./project-schema.js");
   const a = JSON.parse(
     await readFile(new URL("../docs/field-map.json", import.meta.url)),
   );
-  const b = JSON.parse(
-    await readFile(
-      new URL(
-        "../plugin/skills/instructions/references/field-map.json",
-        import.meta.url,
-      ),
-    ),
-  );
-  assert.deepEqual(a, b);
   assert.deepEqual(a.fields, PROJECT_FIELDS);
   assert.deepEqual(a.workbook.Projects, PROJECT_HEADERS);
   assert.deepEqual(a.workbook.Observations, NOTE_HEADERS);

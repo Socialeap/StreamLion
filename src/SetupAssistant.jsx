@@ -927,12 +927,6 @@ export default function SetupAssistant({
               text={`You’re all set, ${answers.name}! Your StreamLion workspace is ready to turn client requests into completed, professional handovers.`}
               hint="When saved to your StreamLion account, your setup can be restored on another device using the same Google sign-in. Reopen or edit it any time from Account."
             >
-              {answers.aiUses?.includes("helper") && (
-                <p className="setup-hint">
-                  Briefing Helper: create a project and choose “Prepare my brief
-                  in ChatGPT”, then bring its project file back.
-                </p>
-              )}
               {results?.length > 0 && (
                 <ul className="setup-results">
                   {results.map((item) => (

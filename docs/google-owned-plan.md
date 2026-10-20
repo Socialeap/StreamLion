@@ -1,3 +1,5 @@
+> Historical document: customer ChatGPT handoffs and plugin/extension routes are retired. Do not follow activation or packaging instructions below. See [current retirement and release gates](chatgpt-retirement-release.md).
+
 # StreamLion Google-owned workflow — v0.2
 
 Supersedes the older streamlion-app plan's requirement for a hosted project journal. Google Sheets/Drive are the authoritative project record. Cloudflare stores encrypted authorization, counters and purchase state; the optional extension also holds encrypted review drafts with a 24-hour access expiry; expired copies are removed by opportunistic and daily cleanup. No model API key is required for ChatGPT-hosted extraction or queries.

@@ -23,7 +23,7 @@ export const STAGES = [
   "Your work",
   "Storage",
   "Pricing & units",
-  "ChatGPT & AI",
+  "Optional AI",
   "Finish",
 ];
 
@@ -129,11 +129,6 @@ export const AI_USES = [
     id: "ask",
     label: "Ask about my projects",
     detail: "Active or past projects · AI credits",
-  },
-  {
-    id: "helper",
-    label: "Briefing Helper in my own ChatGPT",
-    detail: "Free · prepare briefs in ChatGPT, then import",
   },
 ];
 // Built-in AI features are paid with prepaid StreamLion credits.
@@ -720,18 +715,18 @@ export const STEPS = [
   },
   {
     id: "aiUses",
-    title: "ChatGPT uses",
+    title: "AI uses",
     stage: 5,
     kind: "multi",
     optional: "Not now",
     prompt: () => ({
-      text: "StreamLion works with ChatGPT. How would you like to use it?",
-      hint: "Your own ChatGPT is free. Built-in AI uses prepaid StreamLion credits: the price is shown before each use, with no subscription or automatic recharge.",
+      text: "Which optional StreamLion AI features would you like to use?",
+      hint: "Built-in AI uses prepaid StreamLion credits: the price is shown before each use, with no subscription or automatic recharge.",
       link: { href: "/api/credits", label: "How AI credits work" },
     }),
     options: () => AI_USES,
     validate: (value) =>
-      pick(AI_USES, value, "Choose from the listed ChatGPT uses.", { min: 0 }),
+      pick(AI_USES, value, "Choose from the listed AI uses.", { min: 0 }),
     summary: (value) => labels(AI_USES, value).join(", ") || "Not now",
     dependents: ["aiVoice", "aiCredits"],
   },
