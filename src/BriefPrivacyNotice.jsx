@@ -30,8 +30,8 @@ export default function BriefPrivacyNotice({ client = false }) {
         answer text.
       </p>
       <p>
-        Sharing with your own ChatGPT or its connected tools does not use these
-        filters. Manual brief entry is also available. Read the{" "}
+        Manual brief entry is also available. Exports and backups retain your
+        saved details; review them before sharing outside StreamLion. Read the{" "}
         <a href="/api/privacy#brief-preparation">brief data-handling details</a>
         .
       </p>

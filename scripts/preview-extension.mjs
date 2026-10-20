@@ -29,7 +29,7 @@ const routes = {
   },
   "/extension.html": {
     type: "text/html; charset=utf-8",
-    text: await readFile(root + "dist/extension.html"),
+    text: await readFile(root + "server/generated/extension.html"),
   },
 };
 const server = createServer((request, response) => {

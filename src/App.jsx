@@ -44,7 +44,7 @@ import Notes from "./Notes";
 import Measurements from "./MeasurementCapture.jsx";
 import ProjectEditor from "./ProjectEditor";
 import Connections from "./Connections";
-import ChatGPTPanel from "./ChatGPTPanel";
+import ProjectAnswers from "./ProjectAnswers";
 import ProjectHome from "./ProjectHome";
 import {
   WORKFLOW_AREA,
@@ -1428,7 +1428,7 @@ export default function App() {
           </>
         ) : page === "Ask" ? (
           <>
-            <ChatGPTPanel
+            <ProjectAnswers
               compact
               refreshProject={
                 bookId && (

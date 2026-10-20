@@ -133,7 +133,7 @@ export async function handleBriefImport(
       : reply(
           {
             error:
-              "Brief preparation is not open. Use manual entry or your ChatGPT account.",
+              "Brief preparation is not open. Use manual entry or import a saved project file.",
           },
           503,
         );

@@ -1,4 +1,4 @@
-// One contract shared by the editor, ChatGPT, and the Google workbook.
+// One contract shared by the editor, project exports, and the Google workbook.
 export const SCHEMA_VERSION = 1;
 const field = (key, label, group, type = "text", legacy = "") => ({
   key,
@@ -334,7 +334,7 @@ export function parseIntake(text) {
     data = JSON.parse(text);
   } catch {
     throw new Error(
-      "Paste the complete project JSON from ChatGPT, or choose its downloaded .json file.",
+      "Paste the complete project JSON from a StreamLion export, or choose its .json file.",
     );
   }
   if (

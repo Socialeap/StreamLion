@@ -431,7 +431,7 @@ test("offline providers keep going on this device, and Google can be swapped for
   await ui.findByRole("link", { name: "Continue with Google" });
   fireEvent.click(ui.getByRole("button", { name: "Use this device instead" }));
   await ui.findByText("Start on this device");
-  await ui.findByText(/How would you like to use it/);
+  await ui.findByText(/Which optional StreamLion AI features/);
   assert.equal(readSetup().answers.storage, "device");
 });
 
@@ -551,7 +551,7 @@ test("saving publishes phone and service area with branding and keeps them for h
   });
 });
 
-test("ChatGPT questions explain credits, set read-aloud and send built-in AI users to credits only when purchases are open", async () => {
+test("AI questions explain credits, set read-aloud and send built-in AI users to credits only when purchases are open", async () => {
   const seed = (storage) => {
     let state = newSetup();
     for (const [id, value] of [
@@ -612,7 +612,7 @@ test("ChatGPT questions explain credits, set read-aloud and send built-in AI use
       {...connected}
     />,
   );
-  await tags(closed, [/^Smart project briefs/, /^Briefing Helper/]);
+  await tags(closed, [/^Smart project briefs/]);
   await closed.findByText(/Credit purchases aren’t open yet/);
   assert.equal(closed.queryByRole("link", { name: /Add credits now/ }), null);
   cleanup();
@@ -622,7 +622,7 @@ test("ChatGPT questions explain credits, set read-aloud and send built-in AI use
   const ui = await open(
     <SetupAssistant {...props({ loadCredits })} {...connected} />,
   );
-  await tags(ui, [/^Smart project briefs/, /^Briefing Helper/]);
+  await tags(ui, [/^Smart project briefs/]);
   await ui.findByText(/Packs: \$10 · \$25/);
   const add = ui.getByRole("link", { name: /Add credits now/ });
   assert.equal(add.getAttribute("href"), "/api/credits");
@@ -631,7 +631,7 @@ test("ChatGPT questions explain credits, set read-aloud and send built-in AI use
   await ui.findByText("Opened credits & payment");
   await choose(ui, "Light");
   await choose(ui, "Save & finish");
-  await ui.findByText(/Briefing Helper: create a project/);
+  assert.doesNotMatch(ui.container.textContent, /ChatGPT|Briefing Helper/);
 });
 
 test("a setup saved to the StreamLion account is restored on another device and saves back after each answer", async () => {

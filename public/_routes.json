@@ -5,10 +5,12 @@
     "/api",
     "/api/*",
     "/mcp",
-    "/mcp/",
     "/mcp-extension",
-    "/mcp-extension/",
-    "/.well-known/*"
+    "/.well-known/*",
+    "/mcp/*",
+    "/mcp-extension/*",
+    "/extension.html",
+    "/extension.html/"
   ],
   "exclude": [
     "/api/welcome",

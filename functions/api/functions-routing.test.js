@@ -46,7 +46,6 @@ test("public assets and application shells bypass Pages Functions", () => {
     "/privacy.html",
     "/client/",
     "/coordination/",
-    "/extension.html",
     ...staticApiShells.flatMap((path) => [path, path + "/", path + ".html"]),
   ])
     assert.equal(invokes(config, path), false, path);
@@ -73,6 +72,9 @@ test("every dynamic server entry point retains Functions routing including trail
   assert.equal(invokes(config, "/api/new-endpoint"), true);
   for (const path of [
     "/api/purchase/status",
+    "/extension.html",
+    "/mcp/tools/list",
+    "/mcp-extension/resources/read",
     "/api/purchase/checkout",
     "/api/purchase/webhook",
     "/api/credits/status",

@@ -1,3 +1,8 @@
+import {
+  isRetiredChatGPTRoute,
+  retiredChatGPTResponse,
+} from "../server/retired-chatgpt.js";
+
 let windowStart = 0,
   failuresLogged = 0;
 function routeClass(request) {
@@ -41,7 +46,9 @@ export async function onRequest(context) {
     started = Date.now();
   let response;
   try {
-    response = await context.next();
+    response = isRetiredChatGPTRoute(new URL(context.request.url).pathname)
+      ? retiredChatGPTResponse(context.request)
+      : await context.next();
   } catch {
     response = new Response(
       JSON.stringify({

@@ -1,3 +1,5 @@
+> Historical document: customer ChatGPT handoffs and plugin/extension routes are retired. Do not follow activation or packaging instructions below. See [current retirement and release gates](chatgpt-retirement-release.md).
+
 # StreamLion in ChatGPT: first prototype
 
 This prototype adds a Cloudflare Pages Function at `/mcp` and a bundled MCP server entry in `plugin/mcp.json`. The server offers two read-only tools:

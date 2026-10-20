@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ArrowRight,
   FileText,
-  MessageCircle,
   Upload,
   MapPin,
   Users,
@@ -23,7 +22,6 @@ import {
 } from "./project-schema";
 import { readDraft, writeDraft, clearDraft, projectDraftKey } from "./drafts";
 import { download } from "./storage";
-import { ChatGPTLaunch } from "./ChatGPTPanel";
 import { reusableFields } from "./workflow";
 import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
 import BriefImporter from "./BriefImporter.jsx";
@@ -402,37 +400,31 @@ export default function ProjectEditor({
                   onUse={usePreparedBrief}
                   disabled={busy}
                 />
-                <section aria-label="Prepare my project brief with ChatGPT">
-                  <MessageCircle size={28} aria-hidden="true" />
-                  <h3>Prepare my project brief with ChatGPT</h3>
+                <section aria-label="Import a project file">
+                  <Upload size={28} aria-hidden="true" />
+                  <h3>Import a project file</h3>
                   <p>
-                    Upload the project's PDF, email thread or messages to
-                    ChatGPT with the prepared instructions. ChatGPT will create
-                    a single project file. Download it to your device, then
-                    upload it here.
+                    Restore a StreamLion project export, then review its details
+                    before saving.
                   </p>
                   <div className="brief-actions">
-                    <ChatGPTLaunch
-                      mode="create"
-                      label="1. Prepare my brief in ChatGPT"
-                    />
                     <button
                       type="button"
                       disabled={busy}
                       aria-expanded={importOpen}
-                      aria-controls="chatgpt-project-import"
+                      aria-controls="saved-project-import"
                       onClick={() => setImportOpen((open) => !open)}
                     >
                       <Upload size={16} aria-hidden="true" />
-                      2. Bring back the ChatGPT project file
+                      Import saved project details
                     </button>
                   </div>
                   {importOpen && (
-                    <div id="chatgpt-project-import" className="brief-import">
+                    <div id="saved-project-import" className="brief-import">
                       <p>
-                        Choose the .json project file you downloaded from
-                        ChatGPT. StreamLion will fill in the project steps for
-                        you to review before saving the project.
+                        Choose a StreamLion .json project export. StreamLion
+                        will fill in the project steps for you to review before
+                        saving the project.
                       </p>
                       <label className="file-label">
                         Choose project file (.json)
@@ -448,9 +440,8 @@ export default function ProjectEditor({
                         Or, paste the project details here:
                       </label>
                       <p id="project-paste-help" className="hint">
-                        If ChatGPT shows the project JSON instead of a download,
-                        copy the entire JSON and paste it below. Do not paste
-                        the original PDF text or email thread here.
+                        Paste the complete JSON from your project export. Do not
+                        paste the original PDF text or email thread here.
                       </p>
                       <textarea
                         id="project-import"
