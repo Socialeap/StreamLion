@@ -1,3 +1,9 @@
+import {
+  requireBusinessSchema,
+  requireBusinessConsent,
+  businessCheckoutParams,
+  businessReview,
+} from "./checkout-business.js";
 import Stripe from "stripe";
 import {
   checkoutTaxMode,
@@ -275,6 +281,9 @@ export async function reconcile(env, stripe, orderId, sessionId) {
           status = "disputed";
       }
     }
+    const review =
+      status === "paid" ? await businessReview(stripe, session, order) : null;
+    if (review) status = "processing";
     const saved = await run(
       env,
       `UPDATE streamlion_purchases_v1 SET checkout_session=?, payment_intent=?,
@@ -291,11 +300,16 @@ export async function reconcile(env, stripe, orderId, sessionId) {
       order.revision,
     );
     if (saved.meta.changes)
-      return { ...order, status, amount_refunded: refunded };
+      return {
+        ...order,
+        status,
+        amount_refunded: refunded,
+        businessReview: review,
+      };
   }
   throw new Error("purchase_busy");
 }
-async function createCheckout(env, stripe, identity, config) {
+async function createCheckout(env, stripe, identity, config, body) {
   const taxMode = checkoutTaxMode(env);
   await taxSchemaReady(env, taxMode);
   if (await hasPurchase(env, identity.google_subject))
@@ -323,7 +337,12 @@ async function createCheckout(env, stripe, identity, config) {
       order.checkout_session,
     );
     if (order.status === "paid") return { purchased: true };
-    if (order.status === "processing") return { processing: true };
+    if (order.status === "processing")
+      return {
+        processing: true,
+        businessReview: order.businessReview,
+        ...(order.businessReview ? { sessionId: order.checkout_session } : {}),
+      };
     if (order.status === "pending") {
       const saved = await first(
         env,
@@ -334,6 +353,8 @@ async function createCheckout(env, stripe, identity, config) {
     } else order = null;
   }
   if (!order) {
+    requireBusinessConsent(body);
+    await requireBusinessSchema(env);
     const now = Date.now(),
       orderId = crypto.randomUUID();
     // Reserve at most 200 launch slots in the same atomic INSERT. Pending and
@@ -344,10 +365,10 @@ async function createCheckout(env, stripe, identity, config) {
       candidate AS (SELECT MIN(n) AS slot FROM slots WHERE NOT EXISTS
         (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND promo_slot=n))
       INSERT OR IGNORE INTO streamlion_purchases_v1
-        (order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,status,created_at,expires_at,updated_at${taxMode === "stripe" ? ",checkout_tax_mode" : ""})
+        (order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,status,created_at,expires_at,updated_at,checkout_business_policy${taxMode === "stripe" ? ",checkout_tax_mode" : ""})
       SELECT ?,?,?,?,CASE WHEN ? AND slot IS NOT NULL THEN ? ELSE ? END,?,
         CASE WHEN ? AND slot IS NOT NULL THEN ? ELSE ? END,'usd',
-        CASE WHEN ? THEN slot ELSE NULL END,'pending',?,?,?${taxMode === "stripe" ? ",'stripe'" : ""} FROM candidate WHERE NOT EXISTS (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND google_subject=? AND status='paid')`,
+        CASE WHEN ? THEN slot ELSE NULL END,'pending',?,?,?,1${taxMode === "stripe" ? ",'stripe'" : ""} FROM candidate WHERE NOT EXISTS (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND google_subject=? AND status='paid')`,
       config.mode,
       orderId,
       config.mode,
@@ -392,6 +413,7 @@ async function createCheckout(env, stripe, identity, config) {
   }
   const params = {
     ...taxCheckoutParams(order),
+    ...businessCheckoutParams(order),
     mode: "payment",
     client_reference_id: order.order_id,
     customer_email: order.checkout_email,
@@ -649,6 +671,7 @@ export async function handlePurchase({ request, env, params }) {
         mode,
         currency: "usd",
         taxMode: checkoutTaxMode(env),
+        businessUseRequired: true,
         amount: launch
           ? catalog.launch.unit_amount
           : catalog.standard.unit_amount,
@@ -675,8 +698,10 @@ export async function handlePurchase({ request, env, params }) {
     if (path === "checkout" && !checkoutAccess(env, identity).allowed)
       return json(CHECKOUT_PAUSED, 403);
     await preflight(env, stripe);
-    if (path === "checkout" && request.method === "POST")
-      return json(await createCheckout(env, stripe, identity, config));
+    if (path === "checkout" && request.method === "POST") {
+      const body = request.body ? await boundedJSON(request) : {};
+      return json(await createCheckout(env, stripe, identity, config, body));
+    }
     if (path === "confirm" && request.method === "POST") {
       const body = await boundedJSON(request);
       if (!/^cs_(test_|live_)?[A-Za-z0-9]+$/.test(body.sessionId || ""))
@@ -706,11 +731,20 @@ export async function handlePurchase({ request, env, params }) {
       return json({
         purchased: await hasPurchase(env, identity.google_subject),
         status: receipt.status,
+        businessReview: receipt.businessReview,
       });
     }
     return json({ error: "Not found." }, 404);
   } catch (error) {
     // Never send Stripe errors, request details, or secrets to clients/logs.
+    if (error.message === "business_consent")
+      return json(
+        {
+          error:
+            "Confirm that this purchase is for business or professional use.",
+        },
+        400,
+      );
     if (error.message === "bad_request")
       return json({ error: "Invalid request." }, 400);
     if (error.message === "purchase_limit")

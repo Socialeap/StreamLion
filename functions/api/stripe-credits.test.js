@@ -31,6 +31,7 @@ function fixture(t, { tax = false } = {}) {
     "0008_streamlion_ai_credits",
     "0017_streamlion_saved_cards",
     ...(tax ? ["0019_checkout_tax"] : []),
+    "0020_checkout_business",
   ])
     sql.exec(
       readFileSync(
@@ -267,6 +268,15 @@ function fixture(t, { tax = false } = {}) {
           ...(p.get("metadata[save_card]") ? { save_card: "1" } : {}),
         },
         customer: p.get("customer"),
+        custom_fields: p.has("custom_fields[0][key]")
+          ? [
+              {
+                key: "business_name",
+                text: { value: "Synthetic Provider LLC" },
+              },
+            ]
+          : [],
+        consent: { terms_of_service: "accepted" },
         client_reference_id: orderId,
         currency: "usd",
         amount_subtotal: price.unit_amount,
@@ -329,6 +339,13 @@ function fixture(t, { tax = false } = {}) {
       headers = {},
     } = {},
   ) {
+    if (
+      path === "checkout" &&
+      body &&
+      typeof body === "object" &&
+      !(body instanceof Uint8Array)
+    )
+      body = { businessUse: true, ...body };
     return handleCredits({
       env,
       params: { path: [path] },
@@ -1936,4 +1953,63 @@ test("persisted taxed credit retries recheck classification and exclusive behavi
       assert.equal(f.created.at(-1).get("automatic_tax[enabled]"), "true");
       assert.equal(f.creates(), 1);
     });
+});
+
+test("new packs require business consent but old balances and receipts remain available", async (t) => {
+  const f = fixture(t, { tax: true });
+  const cookie = await f.login();
+  f.license();
+  const r = await f.request("checkout", {
+    method: "POST",
+    cookie,
+    body: { packId: "small", businessUse: false },
+  });
+  assert.equal(r.status, 400);
+  assert.equal(f.created.length, 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_credit_orders_v1").get().n,
+    0,
+  );
+});
+
+test("business pack hold issues no credits; reviewed data recovers once while checkout is paused", async (t) => {
+  const f = fixture(t, { tax: true });
+  const cookie = await f.login();
+  f.license();
+  await f.request("checkout", {
+    method: "POST",
+    cookie,
+    body: { packId: "small" },
+  });
+  const order = f.sql
+    .prepare("SELECT * FROM streamlion_credit_orders_v1")
+    .get();
+  assert.equal(order.checkout_business_policy, 1);
+  const s = f.sessions.get(order.checkout_session);
+  f.pay(s.id);
+  s.custom_fields = [];
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  const confirm = () =>
+    f.request("confirm", { method: "POST", cookie, body: { sessionId: s.id } });
+  const held = await (await confirm()).json();
+  assert.equal(held.status, "processing");
+  assert.equal(held.businessReview, "manual");
+  assert.equal(held.credited, false);
+  assert.equal(
+    f.sql
+      .prepare("SELECT credited_micros FROM streamlion_credit_orders_v1")
+      .get().credited_micros,
+    0,
+  );
+  s.custom_fields = [
+    { key: "business_name", text: { value: "QA Harbor Spatial" } },
+  ];
+  assert.equal((await (await confirm()).json()).credited, true);
+  assert.equal((await (await confirm()).json()).credited, true);
+  assert.equal(
+    f.sql
+      .prepare("SELECT credited_micros FROM streamlion_credit_orders_v1")
+      .get().credited_micros,
+    10000000,
+  );
 });

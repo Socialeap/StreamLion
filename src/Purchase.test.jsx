@@ -289,3 +289,95 @@ test("malformed verification never grants access and optional storage failure ne
   assert.ok(paid.getByText("Workspace"));
   cleanup();
 });
+
+test("business checkout requires a fresh declaration and sends it without hiding backup or restoration", async (t) => {
+  window.history.replaceState(null, "", "/api/purchase");
+  const posts = [];
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    if (options.method === "POST") {
+      posts.push(JSON.parse(options.body));
+      return response({ processing: true, businessReview: "pending" });
+    }
+    return response(
+      url.endsWith("config")
+        ? { ...config, businessUseRequired: true }
+        : {
+            enabled: true,
+            required: true,
+            connected: true,
+            purchased: false,
+            account: "qa@example.com",
+            subject: "qa",
+          },
+    );
+  });
+  const ui = render(<Purchase />);
+  await act(async () => {});
+  const button = ui.getByRole("button", {
+    name: "Continue to secure checkout",
+  });
+  assert.equal(button.disabled, true);
+  assert.ok(ui.getByRole("button", { name: "Download my device backup" }));
+  await act(async () => fireEvent.click(ui.getByRole("checkbox")));
+  assert.equal(button.disabled, false);
+  await act(async () => fireEvent.click(button));
+  assert.deepEqual(posts, [{ businessUse: true }]);
+  assert.ok(
+    ui.getByText(/Payment received\. Your business tax details need checking/),
+  );
+  cleanup();
+});
+
+test("a lost return URL retains the original business-review session for Check again", async (t) => {
+  window.history.replaceState(null, "", "/api/purchase");
+  let checkouts = 0,
+    confirms = 0,
+    restored = 0;
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    if (url.endsWith("checkout")) {
+      checkouts++;
+      return response({
+        processing: true,
+        businessReview: "pending",
+        sessionId: "cs_test_business",
+      });
+    }
+    if (url.endsWith("confirm")) {
+      confirms++;
+      assert.equal(JSON.parse(options.body).sessionId, "cs_test_business");
+      return response({ purchased: true, status: "paid" });
+    }
+    return response(
+      url.endsWith("config")
+        ? { ...config, businessUseRequired: true }
+        : {
+            enabled: true,
+            required: true,
+            connected: true,
+            purchased: false,
+            account: "qa@example.com",
+            subject: "qa",
+          },
+    );
+  });
+  const ui = render(<Purchase onPurchased={() => restored++} />);
+  await act(async () => {});
+  await act(async () => fireEvent.click(ui.getByRole("checkbox")));
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "Continue to secure checkout" }),
+    ),
+  );
+  assert.equal(
+    new URLSearchParams(window.location.search).get("session_id"),
+    "cs_test_business",
+  );
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "Check again" })),
+  );
+  assert.equal(checkouts, 1);
+  assert.equal(confirms, 1);
+  assert.equal(restored, 1);
+  assert.equal(window.location.search, "");
+  cleanup();
+});

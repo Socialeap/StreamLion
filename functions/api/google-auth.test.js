@@ -1006,6 +1006,14 @@ for (const scenario of [
     },
   },
   { reason: "account_check", identity: { email: "private@example.com" } },
+  ...[false, undefined, "true", 1].map((email_verified) => ({
+    reason: "account_check",
+    identity: {
+      sub: "private-subject",
+      email: "private@example.com",
+      email_verified,
+    },
+  })),
   { reason: "session_save", databaseFailure: true },
 ]) {
   test(`callback safely identifies ${scenario.reason} without exposing provider data`, async () => {

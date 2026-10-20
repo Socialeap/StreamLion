@@ -1,0 +1,14 @@
+{
+  "status": "HOLD: review only; merge, configuration and deployment require separate release authorization",
+  "replaceExistingBindingsOnly": {
+    "STREAMLION_REQUIRE_LICENSE": "true",
+    "STREAMLION_CHECKOUT_MODE": "paused"
+  },
+  "assertUnchanged": {
+    "ENABLE_BRIEF_IMPORT": "false",
+    "STREAMLION_AI_COST_APPROVED": "false",
+    "STREAMLION_AI_CREDIT_SALES_ENABLED": "false",
+    "STREAMLION_SAVED_CARDS_ENABLED": "false"
+  },
+  "preserve": "All payment/accounting modes, tax decisions, credentials, QA history/allowances, policies, email limits/recipients, webhook destinations, records, drafts and folder selections. No new runtime variables."
+}

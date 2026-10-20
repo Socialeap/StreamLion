@@ -93,6 +93,27 @@ export function coordinationPreflight(
           expected.set(r.name, r);
       }
     }
+    // Business checkout is another exact additive order contract. Older
+    // migration checks must understand its complete shape, without accepting
+    // arbitrary/partial additions to the protected order tables.
+    if (
+      target < "0020" &&
+      input.stamps.streamlion_checkout_business_schema_v1 === 1
+    ) {
+      db.exec(
+        readFileSync(new URL("0020_checkout_business.sql", migrations), "utf8"),
+      );
+      for (const r of rows()) {
+        if (
+          [
+            "streamlion_purchases_v1",
+            "streamlion_credit_orders_v1",
+            "streamlion_checkout_business_schema_v1",
+          ].includes(r.name)
+        )
+          expected.set(r.name, r);
+      }
+    }
     for (const [name, row] of expected) {
       const found = actual.get(name);
       if (

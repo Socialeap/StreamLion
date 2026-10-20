@@ -1,3 +1,9 @@
+import {
+  requireBusinessSchema,
+  requireBusinessConsent,
+  businessCheckoutParams,
+  businessReview,
+} from "./checkout-business.js";
 import Stripe from "stripe";
 import {
   checkoutTaxMode,
@@ -494,6 +500,12 @@ export async function reconcileCredits(
         intent,
         session.amount_total,
       ));
+    const review =
+      status === "paid" ? await businessReview(stripe, session, order) : null;
+    if (review) {
+      status = "processing";
+      target = 0;
+    }
     const saved = await run(
       env,
       `UPDATE streamlion_credit_orders_v1 SET checkout_session=?,payment_intent=?,status=?,amount_refunded=?,credited_micros=?,updated_at=?,revision=revision+1 WHERE order_id=? AND revision=?`,
@@ -509,7 +521,12 @@ export async function reconcileCredits(
     // The grant trigger runs in the same transaction as this revision check.
     if (saved.meta.changes) {
       if (status === "paid") await rememberCard(env, order, intent);
-      return { ...order, status, credited_micros: target };
+      return {
+        ...order,
+        status,
+        credited_micros: target,
+        businessReview: review,
+      };
     }
   }
   throw new Error("credit_busy");
@@ -534,13 +551,24 @@ async function expireOrders(env, mode) {
     Date.now(),
   );
 }
-async function createOrder(env, config, identity, pack) {
+async function createOrder(
+  env,
+  config,
+  identity,
+  pack,
+  businessUse,
+  legacyTopup = false,
+) {
+  if (!legacyTopup) {
+    requireBusinessConsent({ businessUse });
+    await requireBusinessSchema(env);
+  }
   const taxMode = checkoutTaxMode(env, true);
   await taxSchemaReady(env, taxMode);
   const now = Date.now();
   await run(
     env,
-    `INSERT OR IGNORE INTO streamlion_credit_orders_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,credits_micros,created_at,expires_at,updated_at${taxMode === "stripe" ? ",checkout_tax_mode" : ""}) VALUES(?,?,?,?,?,?,?,'usd',?,?,?,?${taxMode === "stripe" ? ",'stripe'" : ""})`,
+    `INSERT OR IGNORE INTO streamlion_credit_orders_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,credits_micros,created_at,expires_at,updated_at${legacyTopup ? "" : ",checkout_business_policy"}${taxMode === "stripe" ? ",checkout_tax_mode" : ""}) VALUES(?,?,?,?,?,?,?,'usd',?,?,?,?${legacyTopup ? "" : ",1"}${taxMode === "stripe" ? ",'stripe'" : ""})`,
     crypto.randomUUID(),
     config.mode,
     identity.google_subject,
@@ -555,7 +583,15 @@ async function createOrder(env, config, identity, pack) {
   );
   return pendingOrder(env, config.mode, identity.google_subject);
 }
-async function checkout(env, stripe, identity, config, packId, saveCard) {
+async function checkout(
+  env,
+  stripe,
+  identity,
+  config,
+  packId,
+  saveCard,
+  businessUse,
+) {
   if (!(await salesReady(env, config.mode))) throw new Error("credit_closed");
   if (!(await hasPurchase(env, identity.google_subject)))
     return { licenseRequired: true };
@@ -574,7 +610,12 @@ async function checkout(env, stripe, identity, config, packId, saveCard) {
     // Checkout Session of its own.
     order = await reconcileCredits(env, stripe, order.order_id);
     if (order.status === "pending") return { pendingAmount: order.amount };
-    if (order.status === "processing") return { processing: true };
+    if (order.status === "processing")
+      return {
+        processing: true,
+        businessReview: order.businessReview,
+        ...(order.businessReview ? { sessionId: order.checkout_session } : {}),
+      };
     if (order.status === "paid") return { credited: true };
     order = null;
   }
@@ -589,11 +630,17 @@ async function checkout(env, stripe, identity, config, packId, saveCard) {
       return order.price_id === pack.priceId
         ? { url: order.checkout_url }
         : { pendingAmount: order.amount };
-    if (order.status === "processing") return { processing: true };
+    if (order.status === "processing")
+      return {
+        processing: true,
+        businessReview: order.businessReview,
+        ...(order.businessReview ? { sessionId: order.checkout_session } : {}),
+      };
     if (order.status === "paid") return { credited: true };
     order = null;
   }
-  if (!order) order = await createOrder(env, config, identity, pack);
+  if (!order)
+    order = await createOrder(env, config, identity, pack, businessUse);
   if (!order || order.price_id !== pack.priceId)
     throw new Error("credit_pending");
   if (!order.checkout_session && (await topupOf(env, order.order_id)))
@@ -615,6 +662,7 @@ async function checkout(env, stripe, identity, config, packId, saveCard) {
   const session = await stripe.checkout.sessions.create(
     {
       ...taxCheckoutParams(order),
+      ...businessCheckoutParams(order),
       mode: "payment",
       client_reference_id: order.order_id,
       ...(save ? { customer } : { customer_email: order.checkout_email }),
@@ -706,7 +754,7 @@ async function topup(env, stripe, identity, config, packId) {
       return { pendingAmount: order.amount };
   }
   if (!order) {
-    order = await createOrder(env, config, identity, pack);
+    order = await createOrder(env, config, identity, pack, undefined, true);
     if (!order || order.price_id !== pack.priceId || order.checkout_session)
       throw new Error("credit_pending");
     // Claim the order only while no Checkout Session is recorded for it.
@@ -944,6 +992,7 @@ export async function handleCredits({ request, env, params }) {
           checkoutTaxMode(env, true) === "off" &&
           (await cardsReady(env)),
         taxMode: checkoutTaxMode(env, true),
+        businessUseRequired: true,
         checkoutMode: access.mode,
         mode,
         markupPercent: 30,
@@ -1011,6 +1060,7 @@ export async function handleCredits({ request, env, params }) {
           config,
           body.packId,
           body.saveCard,
+          body.businessUse,
         ),
       );
     if (path === "topup")
@@ -1045,12 +1095,21 @@ export async function handleCredits({ request, env, params }) {
       );
       return json({
         status: receipt.status,
+        businessReview: receipt.businessReview,
         credited: receipt.credited_micros > 0,
       });
     }
   } catch (error) {
     if (error instanceof RequestBodyError)
       return json({ error: error.message }, error.status);
+    if (error.message === "business_consent")
+      return json(
+        {
+          error:
+            "Confirm that this purchase is for business or professional use.",
+        },
+        400,
+      );
     if (error.message === "bad_request" || error instanceof SyntaxError)
       return json({ error: "Invalid credit request." }, 400);
     if (error.message === "purchase_limit")

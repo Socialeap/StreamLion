@@ -1,3 +1,7 @@
+import BusinessPurchaseConsent, {
+  BUSINESS_REVIEW_MESSAGE,
+  rememberBusinessReview,
+} from "./BusinessPurchaseConsent.jsx";
 import { useEffect, useRef, useState } from "react";
 import { AppHeader, BottomNavigation } from "./AppNavigation.jsx";
 import { purchaseRequest } from "./purchase-api.js";
@@ -7,6 +11,7 @@ export default function Purchase({ onPurchased }) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const [businessUse, setBusinessUse] = useState(false);
   const epoch = useRef(0);
   async function load() {
     const generation = ++epoch.current;
@@ -29,6 +34,7 @@ export default function Purchase({ onPurchased }) {
           window.history.replaceState(null, "", window.location.pathname);
         setConfig({ enabled: true, required: a.required, mode: a.mode });
         setAccount(a);
+        setBusinessUse(false);
         onPurchased?.();
         return;
       }
@@ -43,13 +49,15 @@ export default function Purchase({ onPurchased }) {
         if (generation !== epoch.current) return;
         setAccount({ ...a, purchased: receipt.purchased });
         setMessage(
-          receipt.purchased
-            ? "Your purchase is ready."
-            : ["refunded", "disputed", "failed", "expired"].includes(
-                  receipt.status,
-                )
-              ? "This payment does not provide active access. Contact support if you need help."
-              : "Your payment is still being confirmed. Check again in a moment; you will not be charged again.",
+          receipt.businessReview
+            ? BUSINESS_REVIEW_MESSAGE
+            : receipt.purchased
+              ? "Your purchase is ready."
+              : ["refunded", "disputed", "failed", "expired"].includes(
+                    receipt.status,
+                  )
+                ? "This payment does not provide active access. Contact support if you need help."
+                : "Your payment is still being confirmed. Check again in a moment; you will not be charged again.",
         );
         if (receipt.purchased) {
           setConfig({ enabled: true, required: a.required, mode: a.mode });
@@ -78,16 +86,24 @@ export default function Purchase({ onPurchased }) {
     };
   }, []);
   async function checkout() {
+    if (config?.businessUseRequired && !businessUse) {
+      setError("Confirm business or professional use before continuing.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const result = await purchaseRequest("checkout", {
         method: "POST",
         account: account.subject,
+        body: JSON.stringify({ businessUse }),
       });
       if (result.purchased) {
         setAccount({ ...account, purchased: true });
         onPurchased?.();
+      } else if (result.businessReview) {
+        rememberBusinessReview(result);
+        setMessage(BUSINESS_REVIEW_MESSAGE);
       } else if (result.processing)
         setMessage(
           "Your payment is being confirmed. Check again shortly; you will not be charged again.",
@@ -215,7 +231,7 @@ export default function Purchase({ onPurchased }) {
                   </p>
                   {config.taxMode === "stripe" && (
                     <p>
-                      Plus applicable sales tax. Enter your billing address in
+                      Plus applicable taxes. Enter your billing address in
                       Stripe Checkout to see the tax and final total before
                       paying.
                     </p>
@@ -242,9 +258,9 @@ export default function Purchase({ onPurchased }) {
                   {!account?.connected ? (
                     <>
                       <p>
-                        Choose the Google account you will use for your
-                        projects. Already purchased? The same sign-in restores
-                        access.
+                        Sign in with a Google-confirmed email. Choose the
+                        account you will use for your projects. Already
+                        purchased? The same sign-in restores access.
                       </p>
                       <a
                         className="purchase-primary"
@@ -258,10 +274,19 @@ export default function Purchase({ onPurchased }) {
                       <p>
                         Purchase for <strong>{account.account}</strong>
                       </p>
+                      {config.businessUseRequired && (
+                        <BusinessPurchaseConsent
+                          checked={businessUse}
+                          onChange={setBusinessUse}
+                          disabled={busy}
+                        />
+                      )}
                       <button
                         className="purchase-primary"
                         onClick={checkout}
-                        disabled={busy}
+                        disabled={
+                          busy || (config.businessUseRequired && !businessUse)
+                        }
                       >
                         {busy ? "Checking…" : "Continue to secure checkout"}
                       </button>
