@@ -43,9 +43,16 @@ function fixture(t, { tax = false } = {}) {
   const wrap = (q, args = []) => ({
     bind: (...a) => wrap(q, a),
     first: async () => sql.prepare(q).get(...args) || null,
-    run: async () => ({
-      meta: { changes: sql.prepare(q).run(...args).changes },
-    }),
+    run: async () => {
+      const execute = () => ({
+        meta: { changes: sql.prepare(q).run(...args).changes },
+      });
+      return q.startsWith(
+        "INSERT OR IGNORE INTO streamlion_credit_orders_v1",
+      ) && card.orderInsert
+        ? card.orderInsert(q, execute)
+        : execute();
+    },
   });
   const db = { prepare: wrap };
   const env = {
@@ -1656,6 +1663,106 @@ test("a saved card belongs to one account and mode, and checkout pauses stop top
   f.env.STREAMLION_CHECKOUT_MODE = "paused";
   assert.equal((await f.post("topup", { packId: "small" })).status, 403);
   assert.equal(f.topups.length, 0);
+});
+
+for (const winner of ["hosted", "direct"]) {
+  test(`${winner} order wins concurrent hosted/direct inserts without crossing business policies`, async (t) => {
+    const f = await savedCardFixture(t);
+    await f.saveCard();
+    const sessionCount = f.created.length;
+    // Both requests see no pending order. Insert the chosen source first,
+    // then let both requests read the same still-pending winning order.
+    let entered = 0,
+      bothEntered,
+      firstInserted,
+      secondInserted;
+    const both = new Promise((resolve) => {
+      bothEntered = resolve;
+    });
+    const first = new Promise((resolve) => {
+      firstInserted = resolve;
+    });
+    const second = new Promise((resolve) => {
+      secondInserted = resolve;
+    });
+    f.card.orderInsert = async (q, execute) => {
+      if (++entered === 2) bothEntered();
+      await both;
+      const source = q.includes("checkout_business_policy")
+        ? "hosted"
+        : "direct";
+      if (source === winner) {
+        const result = execute();
+        firstInserted();
+        await second;
+        return result;
+      }
+      await first;
+      const result = execute();
+      secondInserted();
+      return result;
+    };
+    const [hosted, direct] = await Promise.all([
+      f.post("checkout", { packId: "medium" }),
+      f.post("topup", { packId: "medium" }),
+    ]);
+    assert.equal(hosted.status, 200);
+    assert.equal(direct.status, 200);
+    const order = f.sql
+      .prepare(
+        "SELECT * FROM streamlion_credit_orders_v1 WHERE price_id='price_medium'",
+      )
+      .get();
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT COUNT(*) n FROM streamlion_credit_orders_v1 WHERE price_id='price_medium'",
+        )
+        .get().n,
+      1,
+    );
+    assert.equal(order.checkout_business_policy, winner === "hosted" ? 1 : 0);
+    if (winner === "hosted") {
+      assert.match(hosted.url, /^https:\/\/checkout\.stripe\.com\//);
+      assert.equal(direct.pendingAmount, 2500);
+      assert.equal(f.topups.length, 0);
+      assert.equal(
+        f.sql
+          .prepare("SELECT COUNT(*) n FROM streamlion_credit_topups_v1")
+          .get().n,
+        0,
+      );
+      assert.equal(f.created.length, sessionCount + 1);
+      assert.equal(
+        f.created.at(-1).get("custom_fields[0][key]"),
+        "business_name",
+      );
+    } else {
+      assert.equal(hosted.pendingAmount, 2500);
+      assert.equal(hosted.url, undefined);
+      assert.equal(direct.credited, true);
+      assert.equal(f.created.length, sessionCount);
+      assert.equal(f.topups.length, 1);
+      assert.equal(order.checkout_session, null);
+    }
+  });
+}
+
+test("hosted checkout does not adopt a direct order before its top-up claim is recorded", async (t) => {
+  const f = await savedCardFixture(t);
+  await f.saveCard();
+  const sessionCount = f.created.length;
+  f.card.orderInsert = async (q, execute) => {
+    const result = execute();
+    f.card.orderInsert = null;
+    const hosted = await f.post("checkout", { packId: "medium" });
+    assert.equal(hosted.pendingAmount, 2500);
+    assert.equal(hosted.url, undefined);
+    assert.equal(f.created.length, sessionCount);
+    return result;
+  };
+  assert.equal((await f.post("topup", { packId: "medium" })).credited, true);
+  assert.equal(f.topups.length, 1);
 });
 
 test("a top-up that claims an order first keeps a concurrent Checkout from being shown", async (t) => {

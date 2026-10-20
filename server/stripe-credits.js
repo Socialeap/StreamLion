@@ -643,6 +643,11 @@ async function checkout(
     order = await createOrder(env, config, identity, pack, businessUse);
   if (!order || order.price_id !== pack.priceId)
     throw new Error("credit_pending");
+  // INSERT OR IGNORE may return the other path's account-level order.
+  // Never turn a direct/legacy order into a new business-policy Checkout.
+  // Existing Sessions above retain their original reconciliation contract.
+  if (order.checkout_business_policy !== 1)
+    return { pendingAmount: order.amount };
   if (!order.checkout_session && (await topupOf(env, order.order_id)))
     return { pendingAmount: order.amount };
   validateTaxPrice(pack.stripePrice, order.checkout_tax_mode);
@@ -741,6 +746,8 @@ async function topup(env, stripe, identity, config, packId) {
   await expireOrders(env, config.mode);
   let order = await pendingOrder(env, config.mode, identity.google_subject),
     marked = order && (await topupOf(env, order.order_id));
+  if (order && (order.checkout_business_policy ?? 0) !== 0)
+    return { pendingAmount: order.amount };
   if (order) {
     // An open Checkout, or an order still waiting for one, finishes first.
     if (order.checkout_session || !marked)
@@ -757,6 +764,10 @@ async function topup(env, stripe, identity, config, packId) {
     order = await createOrder(env, config, identity, pack, undefined, true);
     if (!order || order.price_id !== pack.priceId || order.checkout_session)
       throw new Error("credit_pending");
+    // The hosted insert can win after our initial pending-order read. Its
+    // required business review must never be bypassed by a direct charge.
+    if ((order.checkout_business_policy ?? 0) !== 0)
+      return { pendingAmount: order.amount };
     // Claim the order only while no Checkout Session is recorded for it.
     const claimed = await run(
       env,
