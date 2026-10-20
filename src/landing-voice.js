@@ -17,8 +17,7 @@ export const LANDING_VOICE_SAMPLES = Object.freeze({
   },
   outputs: {
     question: "What are the deliverables?",
-    // Awaiting corrected owner recording: the supplied file duplicated Access.
-    audio: null,
+    audio: "/welcome/audio/harbor-house-outputs-v1.mp3",
     narration:
       "The deliverables are a tour link, site notes, and checked measurements. Send them to the Harbor Property project manager.",
   },

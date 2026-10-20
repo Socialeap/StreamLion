@@ -47,11 +47,8 @@ test("each available answer plays its own local recording only after a click", (
       ui.document.querySelector("#voice-answer-text").textContent,
       landingVoiceAnswer(topic).text,
     );
-    if (!sample.audio) {
-      assert.equal(ui.read.disabled, true);
-      assert.match(ui.status(), /being updated/);
-      continue;
-    }
+    assert.ok(sample.audio, `${topic} must have a recording`);
+    assert.equal(ui.read.disabled, false);
     ui.read.click();
     const audio = ui.played.at(-1);
     assert.equal(audio.getAttribute("src"), sample.audio);
@@ -132,7 +129,7 @@ test("leaving or hiding the page stops the owned recording", (t) => {
 test("published recordings exist and no two answers accidentally share identical audio", () => {
   const hashes = new Set();
   for (const sample of Object.values(LANDING_VOICE_SAMPLES)) {
-    if (!sample.audio) continue;
+    assert.ok(sample.audio, "Every answer must have a recording");
     const audio = readFileSync(
       new URL(`../public${sample.audio}`, import.meta.url),
     );
@@ -145,5 +142,5 @@ test("published recordings exist and no two answers accidentally share identical
     );
     hashes.add(hash);
   }
-  assert.ok(hashes.size >= 2);
+  assert.equal(hashes.size, 3);
 });
