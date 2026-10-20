@@ -15,6 +15,9 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
     "0003_google_workspace_folder",
     "0004_streamlion_purchases",
     "0005_streamlion_launch_200",
+    "0007_streamlion_ai_pilot",
+    "0008_streamlion_ai_credits",
+    "0020_checkout_business",
   ])
     sql.exec(
       readFileSync(
@@ -23,11 +26,7 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
       ),
     );
   if (tax) {
-    for (const name of [
-      "0007_streamlion_ai_pilot",
-      "0008_streamlion_ai_credits",
-      "0019_checkout_tax",
-    ])
+    for (const name of ["0019_checkout_tax"])
       sql.exec(
         readFileSync(
           new URL(`../../migrations/${name}.sql`, import.meta.url),
@@ -83,6 +82,7 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
   const sessions = new Map(),
     intents = new Map();
   const created = [];
+  const taxProof = { status: "pending" };
   let creates = 0;
   const response = (value) =>
     new Response(JSON.stringify(value), {
@@ -97,6 +97,20 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
       "tests must never reach any real provider",
     );
     if (path === "/v1/account") return response({ id: env.STRIPE_ACCOUNT_ID });
+    if (path === "/v1/customers/cus_business/tax_ids")
+      return response({
+        object: "list",
+        has_more: false,
+        data: [
+          {
+            type: "eu_vat",
+            value: "DE123456789",
+            verification: { status: taxProof.status },
+          },
+        ],
+      });
+    if (path === "/v1/customers/cus_business")
+      return response({ id: "cus_business", metadata: {} });
     if (path.startsWith("/v1/prices/"))
       return response(catalog[path.split("/").at(-1)]);
     if (path === "/v1/checkout/sessions" && options.method === "POST") {
@@ -123,6 +137,15 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
         mode: "payment",
         status: "open",
         payment_status: "unpaid",
+        custom_fields: params.has("custom_fields[0][key]")
+          ? [
+              {
+                key: "business_name",
+                text: { value: "Synthetic Provider LLC" },
+              },
+            ]
+          : [],
+        consent: { terms_of_service: "accepted" },
         client_reference_id: orderId,
         metadata: { app: "streamlion", order_id: orderId },
         currency: "usd",
@@ -181,7 +204,9 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
       cookie,
       method = "GET",
       origin = "https://app.example",
-      body,
+      body = path === "checkout"
+        ? JSON.stringify({ businessUse: true })
+        : undefined,
       headers = {},
       query = "",
     } = {},
@@ -266,6 +291,7 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
     sessions,
     catalog,
     created,
+    taxProof,
     login,
     request,
     checkout,
@@ -736,7 +762,11 @@ test("only an authenticated matching account can create checkout; client price t
   const response = await f.request("checkout", {
     method: "POST",
     cookie,
-    body: JSON.stringify({ price_id: "price_evil", amount: 1 }),
+    body: JSON.stringify({
+      price_id: "price_evil",
+      amount: 1,
+      businessUse: true,
+    }),
   });
   assert.equal(response.status, 200);
   assert.equal(
@@ -1227,4 +1257,93 @@ test("persisted taxed Core retries reject missing classification or inclusive pr
         "the original idempotency contract must recover the same Session",
       );
     });
+});
+
+test("new Core purchases require a server-checked declaration before reserving an order", async (t) => {
+  const f = fixture(t);
+  const cookie = await f.login();
+  for (const businessUse of [false, "true", 1, null]) {
+    const r = await f.request("checkout", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ businessUse }),
+    });
+    assert.equal(r.status, 400);
+  }
+  assert.equal(f.creates, 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    0,
+  );
+});
+
+test("new Core business receipts hold fulfillment and still reconcile full refunds while paused", async (t) => {
+  const f = fixture(t, { tax: true });
+  const { cookie, order } = await f.checkout();
+  assert.equal(order.checkout_business_policy, 1);
+  assert.equal(f.created[0].get("customer_creation"), "always");
+  assert.equal(f.created[0].get("tax_id_collection[enabled]"), "true");
+  f.paid(order);
+  const session = f.sessions.get(order.checkout_session);
+  session.custom_fields = [];
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  const confirm = () =>
+    f.request("confirm", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ sessionId: order.checkout_session }),
+    });
+  const held = await (await confirm()).json();
+  assert.equal(held.purchased, false);
+  assert.equal(held.businessReview, "manual");
+  assert.equal(held.status, "processing");
+  session.payment_intent.latest_charge.amount_refunded =
+    session.payment_intent.latest_charge.amount;
+  const refunded = await (await confirm()).json();
+  assert.equal(refunded.status, "refunded");
+  assert.equal(refunded.purchased, false);
+});
+
+test("legacy Core sessions recover without new declarations or custom-field requirements", async (t) => {
+  const f = fixture(t);
+  const { cookie, order } = await f.checkout();
+  f.sql
+    .prepare(
+      "UPDATE streamlion_purchases_v1 SET checkout_business_policy=0 WHERE order_id=?",
+    )
+    .run(order.order_id);
+  f.sessions.get(order.checkout_session).custom_fields = [];
+  f.paid(order);
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  const receipt = await (
+    await f.request("confirm", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ sessionId: order.checkout_session }),
+    })
+  ).json();
+  assert.equal(receipt.purchased, true);
+});
+
+test("Stripe tax-ID verification recovers a pending business receipt without another payment", async (t) => {
+  const f = fixture(t, { tax: true });
+  const { cookie, order } = await f.checkout();
+  f.paid(order);
+  const s = f.sessions.get(order.checkout_session);
+  s.customer = "cus_business";
+  s.customer_details = { tax_ids: [{ type: "eu_vat", value: "DE123456789" }] };
+  const confirm = () =>
+    f.request("confirm", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ sessionId: s.id }),
+    });
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  const pending = await (await confirm()).json();
+  assert.equal(pending.businessReview, "pending");
+  assert.equal(pending.purchased, false);
+  f.taxProof.status = "verified";
+  assert.equal((await (await confirm()).json()).purchased, true);
+  assert.equal((await (await confirm()).json()).purchased, true);
+  assert.equal(f.creates, 1);
 });

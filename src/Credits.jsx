@@ -1,3 +1,7 @@
+import BusinessPurchaseConsent, {
+  BUSINESS_REVIEW_MESSAGE,
+  rememberBusinessReview,
+} from "./BusinessPurchaseConsent.jsx";
 import { useEffect, useRef, useState } from "react";
 import {
   Info,
@@ -74,6 +78,7 @@ export default function Credits() {
     [saveCard, setSaveCard] = useState(false),
     [chosen, setChosen] = useState(null),
     [bankCheck, setBankCheck] = useState(null);
+  const [businessUse, setBusinessUse] = useState(false);
   const epoch = useRef(0),
     submitting = useRef(false);
   async function load() {
@@ -88,6 +93,7 @@ export default function Credits() {
       if (generation !== epoch.current) return;
       if (a.status === "rejected") throw a.reason;
       setAccount(a.value);
+      setBusinessUse(false);
       const sessionId = new URLSearchParams(window.location.search).get(
         "session_id",
       );
@@ -100,13 +106,15 @@ export default function Credits() {
         });
         if (generation !== epoch.current) return;
         setMessage(
-          result.status === "paid"
-            ? "Your credits are ready."
-            : ["refunded", "disputed", "failed", "expired"].includes(
-                  result.status,
-                )
-              ? "This payment has no active credits. Contact support if you need help."
-              : "Payment is still being confirmed. Check again shortly; no new payment is needed.",
+          result.businessReview
+            ? BUSINESS_REVIEW_MESSAGE
+            : result.status === "paid"
+              ? "Your credits are ready."
+              : ["refunded", "disputed", "failed", "expired"].includes(
+                    result.status,
+                  )
+                ? "This payment has no active credits. Contact support if you need help."
+                : "Payment is still being confirmed. Check again shortly; no new payment is needed.",
         );
         const current = await creditRequest("status");
         if (generation !== epoch.current) return;
@@ -135,6 +143,10 @@ export default function Credits() {
   }, []);
   async function buy(packId, save = false) {
     if (submitting.current || busy || !account?.connected) return;
+    if (config?.businessUseRequired && !businessUse) {
+      setError("Confirm business or professional use before continuing.");
+      return;
+    }
     submitting.current = true;
     setBusy(true);
     setError("");
@@ -142,7 +154,11 @@ export default function Credits() {
       const result = await creditRequest("checkout", {
         method: "POST",
         account: account.subject,
-        body: JSON.stringify({ packId, ...(save ? { saveCard: true } : {}) }),
+        body: JSON.stringify({
+          packId,
+          ...(config?.businessUseRequired ? { businessUse } : {}),
+          ...(save ? { saveCard: true } : {}),
+        }),
       });
       if (result.licenseRequired)
         setError(
@@ -152,7 +168,10 @@ export default function Credits() {
         setMessage(
           `You already have a pending $${(result.pendingAmount / 100).toFixed(2)} top-up. Choose that pack to continue it, or wait for its checkout to expire before changing packs.`,
         );
-      else if (result.processing)
+      else if (result.businessReview) {
+        rememberBusinessReview(result);
+        setMessage(BUSINESS_REVIEW_MESSAGE);
+      } else if (result.processing)
         setMessage("Payment is being confirmed. Check again shortly.");
       else if (result.credited) {
         setMessage("Your last credit payment is ready.");
@@ -541,6 +560,13 @@ export default function Credits() {
                 </p>
               ) : (
                 <>
+                  {config.businessUseRequired && (
+                    <BusinessPurchaseConsent
+                      checked={businessUse}
+                      onChange={setBusinessUse}
+                      disabled={busy}
+                    />
+                  )}
                   {config.savedCards && !account.card && (
                     <label className="credit-save">
                       <input
@@ -577,7 +603,9 @@ export default function Credits() {
                             ? setChosen(pack)
                             : buy(pack.id, saveCard)
                         }
-                        disabled={busy}
+                        disabled={
+                          busy || (config.businessUseRequired && !businessUse)
+                        }
                       >
                         <strong>{creditLabel(pack.creditsMicros)}</strong>
                         <span>

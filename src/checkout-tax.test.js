@@ -73,7 +73,7 @@ test("the additive tax migration preserves historical orders, grants and default
   const db = new DatabaseSync(":memory:");
   try {
     for (const file of readdirSync(new URL("../migrations/", import.meta.url))
-      .filter((n) => n.endsWith(".sql") && !n.startsWith("0019"))
+      .filter((n) => n.endsWith(".sql") && n.slice(0, 4) < "0019")
       .sort())
       db.exec(
         readFileSync(new URL("../migrations/" + file, import.meta.url), "utf8"),
@@ -163,7 +163,7 @@ test("tax preflight accepts entirely absent optional saved-card schema and rejec
     for (const file of readdirSync(new URL("../migrations/", import.meta.url))
       .filter(
         (n) =>
-          n.endsWith(".sql") && !n.startsWith("0017") && !n.startsWith("0019"),
+          n.endsWith(".sql") && !n.startsWith("0017") && n.slice(0, 4) < "0019",
       )
       .sort())
       db.exec(

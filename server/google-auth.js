@@ -470,7 +470,7 @@ export async function handleGoogle({ request, env, params }) {
         !identityResponse.ok ||
         !identity.sub ||
         !identity.email ||
-        !identity.email_verified
+        identity.email_verified !== true
       )
         return failed("account_check", [clearFlow]);
       callbackStage = "session_save";

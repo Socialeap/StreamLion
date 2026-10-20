@@ -533,3 +533,44 @@ test("a saved card can be removed after confirmation", async (t) => {
     ui.getByRole("checkbox", { name: /Save my card for one-tap top-ups/ }),
   );
 });
+
+test("business pack checkout requires consent and explains pending evidence without buying again", async (t) => {
+  window.history.replaceState(null, "", "/api/credits");
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    if (options.method === "POST") {
+      calls.push(JSON.parse(options.body));
+      return Response.json({ processing: true, businessReview: "manual" });
+    }
+    return Response.json(
+      url.endsWith("config")
+        ? {
+            enabled: true,
+            businessUseRequired: true,
+            packs,
+            projectMicros: 3000000,
+          }
+        : {
+            enabled: true,
+            connected: true,
+            purchased: true,
+            subject: "qa",
+            account: "qa@example.com",
+            balanceMicros: 0,
+          },
+    );
+  });
+  const ui = render(<Credits />);
+  await act(async () => {});
+  await goToSection(ui, "Wallet");
+  const button = ui.getByRole("button", { name: "800 credits for $10.00" });
+  assert.equal(button.disabled, true);
+  await act(async () => fireEvent.click(ui.getByRole("checkbox")));
+  assert.equal(button.disabled, false);
+  await act(async () => fireEvent.click(button));
+  assert.deepEqual(calls, [{ packId: "small", businessUse: true }]);
+  assert.ok(
+    ui.getByText(/Payment received\. Your business tax details need checking/),
+  );
+  cleanup();
+});
