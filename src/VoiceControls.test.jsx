@@ -248,3 +248,93 @@ test("a missing reservation cannot be cleared while the lost POST quote may stil
     true,
   );
 });
+
+for (const status of [400, 401, 402, 403, 409, 415, 422]) {
+  test(`definitive ${status} validation clears recovery immediately and requires a fresh quote`, async (t) => {
+    const calls = mock(t, {
+      speak: async () =>
+        Response.json(
+          { error: "Validation rejected before reservation" },
+          { status },
+        ),
+    });
+    const ui = render(<Harness />);
+    await waitFor(() =>
+      assert.equal(
+        ui.getByRole("button", { name: "Review speech-only price" }).disabled,
+        false,
+      ),
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Review speech-only price" }),
+    );
+    fireEvent.click(
+      await ui.findByRole("button", { name: /Prepare speech —/ }),
+    );
+    await ui.findByText(/Validation rejected before reservation/);
+    assert.equal(window.localStorage.getItem(pendingKey), null);
+    assert.equal(
+      ui.queryByRole("button", { name: "Check speech request" }),
+      null,
+    );
+    assert.equal(ui.queryByRole("button", { name: /Prepare speech —/ }), null);
+    assert.equal(
+      ui.getByRole("button", { name: "Review speech-only price" }).disabled,
+      false,
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Review speech-only price" }),
+    );
+    await ui.findByRole("button", { name: /Prepare speech —/ });
+    assert.equal(calls.filter((c) => c.url.endsWith("/quote")).length, 2);
+    assert.equal(calls.filter((c) => c.url.endsWith("/speak")).length, 1);
+  });
+}
+for (const scenario of [
+  {
+    name: "existing reservation",
+    response: () =>
+      Response.json(
+        { error: "Request already submitted", state: "reserved" },
+        { status: 409 },
+      ),
+  },
+  {
+    name: "uncertain server failure",
+    response: () =>
+      Response.json({ error: "Check the existing request" }, { status: 503 }),
+  },
+  {
+    name: "unreadable validation response",
+    response: () => new Response("edge interruption", { status: 409 }),
+  },
+]) {
+  test(`${scenario.name} preserves recovery and blocks another purchase`, async (t) => {
+    const calls = mock(t, { speak: async () => scenario.response() });
+    const ui = render(<Harness />);
+    await waitFor(() =>
+      assert.equal(
+        ui.getByRole("button", { name: "Review speech-only price" }).disabled,
+        false,
+      ),
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Review speech-only price" }),
+    );
+    fireEvent.click(
+      await ui.findByRole("button", { name: /Prepare speech —/ }),
+    );
+    await waitFor(() =>
+      assert.ok(
+        ui.getByRole("button", { name: "Check speech request" }).disabled ===
+          false,
+      ),
+    );
+    assert.ok(window.localStorage.getItem(pendingKey));
+    assert.equal(
+      ui.getByRole("button", { name: "Review speech-only price" }).disabled,
+      true,
+    );
+    assert.equal(calls.filter((c) => c.url.endsWith("/speak")).length, 1);
+  });
+}

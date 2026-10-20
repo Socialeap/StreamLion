@@ -237,10 +237,12 @@ export default function VoiceControls({
         if (response.status === 502) {
           clearPending(id);
         } else if (
-          [400, 401, 402, 403, 409, 415, 422, 503].includes(response.status) &&
+          [400, 401, 402, 403, 409, 415, 422].includes(response.status) &&
           !value.state
         ) {
-          /* Reservation may be uncertain after a network edge failure: status read decides. */
+          // Validation rejected this request before reservation. A 409 that
+          // reports an existing state still needs recovery, as does a 503.
+          clearPending(id);
         }
         throw Error(
           value.error || "Speech could not be prepared. Check its status.",

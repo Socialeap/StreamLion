@@ -373,7 +373,28 @@ export async function handleSpeech({ request, env }, dependencies = {}) {
         policy.cost_micros,
         now(),
       );
-    } catch {
+    } catch (error) {
+      // An insert acknowledgement can be lost after committing. Never report
+      // that no charge exists until this request's ledger has been checked.
+      const prior = await db
+        .prepare(
+          "SELECT state FROM streamlion_speech_turns_v1 WHERE mode='live' AND google_subject=? AND request_id=?",
+        )
+        .bind(subject, input.requestId)
+        .first();
+      if (prior)
+        return reply(
+          {
+            error:
+              "Request already submitted. Check its status; no audio is generated again.",
+            state: prior.state,
+          },
+          409,
+        );
+      // Only the atomic capacity trigger definitively rejects a new insert.
+      // Storage/transport errors remain uncertain and reach the 503 handler.
+      if (!String(error?.message || error).includes("speech_capacity"))
+        throw error;
       return reply(
         {
           error:

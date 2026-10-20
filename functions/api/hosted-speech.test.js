@@ -588,3 +588,60 @@ test("read-only preflight accepts only absent or exact complete schema, rejectin
     /mismatch/,
   );
 });
+
+test("reservation storage failures remain uncertain; a lost insert acknowledgement preserves the existing hold", async (t) => {
+  const f = await fixture(t);
+  const q = await (
+    await f.call("quote", { projectId: "p", question: "contact" })
+  ).json();
+  const database = f.env.GOOGLE_SESSIONS;
+  let commit = false;
+  f.env.GOOGLE_SESSIONS = {
+    ...database,
+    prepare(sql) {
+      const statement = database.prepare(sql);
+      if (!sql.startsWith("INSERT INTO streamlion_speech_turns_v1"))
+        return statement;
+      return {
+        bind(...args) {
+          const bound = statement.bind(...args);
+          return {
+            run: async () => {
+              if (commit) await bound.run();
+              throw Error("storage acknowledgement lost");
+            },
+          };
+        },
+      };
+    },
+  };
+  const body = { requestId: id, quoteToken: q.quoteToken };
+  assert.equal((await f.call("speak", body)).status, 503);
+  assert.equal(f.balance(), 100000);
+  commit = true;
+  const result = await f.call("speak", body);
+  assert.equal(result.status, 409);
+  assert.equal((await result.json()).state, "reserved");
+  assert.equal(f.balance(), 98700);
+  assert.equal(f.calls, 0);
+  await expireSpeech(database, "account-a", Date.now() + 300001);
+  assert.equal(f.balance(), 100000);
+});
+
+test("a definitive capacity rejection reports no existing reservation or provider call", async (t) => {
+  const f = await fixture(t);
+  const q = await (
+    await f.call("quote", { projectId: "p", question: "contact" })
+  ).json();
+  f.db.exec(
+    "UPDATE streamlion_credit_wallets_v1 SET balance_micros=1 WHERE google_subject='account-a'",
+  );
+  const response = await f.call("speak", {
+    requestId: id,
+    quoteToken: q.quoteToken,
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).state, undefined);
+  assert.equal(f.balance(), 1);
+  assert.equal(f.calls, 0);
+});
