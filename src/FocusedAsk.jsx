@@ -21,6 +21,7 @@ export default function FocusedAsk({
   projectPanel,
   contextPanel,
   toolsPanel,
+  voiceControls,
   stage,
   onStageChange,
   inputId,
@@ -96,15 +97,20 @@ export default function FocusedAsk({
     setPanel(null);
   };
   const readAloudControl = (
-    <label className="check-label ask-read-aloud">
-      <input
-        type="checkbox"
-        checked={readAloud}
-        onChange={(event) => onReadAloud(event.target.checked)}
-      />
-      <Volume2 size={16} aria-hidden="true" />
-      Read aloud
-    </label>
+    <>
+      <label className="check-label ask-read-aloud">
+        <input
+          type="checkbox"
+          checked={readAloud}
+          onChange={(event) => onReadAloud(event.target.checked)}
+        />
+        <Volume2 size={16} aria-hidden="true" />
+        Read aloud
+      </label>
+      <button type="button" onClick={() => setPanel("settings")}>
+        Voice options
+      </button>
+    </>
   );
   return (
     <section
@@ -404,6 +410,7 @@ export default function FocusedAsk({
           )}
           {!decision && panel === "settings" && (
             <>
+              {voiceControls}
               <ThemeSwitch
                 initialTheme={document.documentElement.dataset.theme}
               />

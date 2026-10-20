@@ -390,6 +390,12 @@ export default function Credits() {
                 ))}
               </tbody>
             </table>
+            <p>
+              Optional hosted speech has a separate per-clip quote when
+              available. It reads a saved-detail answer without generating an AI
+              answer. Device voice, text and the prerecorded voice preview use
+              no credits.
+            </p>
             <BriefPrivacyNotice />
             {config?.mode === "test" && (
               <p className="credits-availability">
@@ -419,6 +425,13 @@ export default function Credits() {
                 cannot be prepared or an answer does not finish, the reserved
                 credits are returned. A finished text answer is charged even if
                 spoken playback is unavailable.
+              </li>
+              <li>
+                <strong>Speech-only clips:</strong> review the exact text and
+                separate quote before confirming. A failed preparation returns
+                reserved purchased credits. A prepared clip is charged once even
+                if playback fails; replaying a loaded clip does not buy it
+                again. Starter credits are unchanged.
               </li>
               <li>
                 Before you share your request form, check that your balance

@@ -22,6 +22,7 @@ export default {
     if (env.ENABLE_CHATGPT_EXTENSION === "true")
       Object.assign(result, await purgeExtensionState(env.GOOGLE_SESSIONS));
     Object.assign(result, await purgeBriefState(env.GOOGLE_SESSIONS));
+    Object.assign(result, await purgeSpeechState(env.GOOGLE_SESSIONS));
     // Counts only: no account IDs, cookies, tokens, project data or request URLs.
     console.log(
       JSON.stringify({ service: "streamlion-session-cleanup", ...result }),
@@ -95,4 +96,28 @@ export async function purgeExtensionState(database, now = Date.now()) {
     extensionCodesRemoved: results[3].meta.changes,
     extensionLocksRemoved: results[4].meta.changes,
   };
+}
+
+// Safe before migration 0021. Preserve ledger history and count failed attempts
+// toward provider budgets; the transition trigger returns a stale hold once.
+export async function purgeSpeechState(database, now = Date.now()) {
+  const present = await database
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='streamlion_speech_schema_v1'",
+    )
+    .first();
+  if (!present) return { staleSpeechReturned: 0 };
+  const markers = await database
+    .prepare(
+      "SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN ('streamlion_speech_turns_v1','streamlion_speech_transition_v1','streamlion_speech_refund_v1')",
+    )
+    .first();
+  if (markers?.n !== 3) throw Error("speech_cleanup_schema");
+  const result = await database
+    .prepare(
+      "UPDATE streamlion_speech_turns_v1 SET state='failed' WHERE state='reserved' AND created_at<?",
+    )
+    .bind(now - 300000)
+    .run();
+  return { staleSpeechReturned: result.meta.changes };
 }
