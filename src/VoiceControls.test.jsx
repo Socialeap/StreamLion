@@ -49,16 +49,16 @@ function mock(t, { enabled = true, speak } = {}) {
       return Response.json({
         enabled,
         scope: "scope-a",
-        priceMicros: 1300,
-        balanceMicros: 10000,
+        priceMicros: 12500,
+        balanceMicros: 100000,
         maxChars: 1200,
       });
     if (url.endsWith("/quote"))
       return Response.json({
         text: "Site contact: Example Person",
         quoteToken: "quote",
-        priceMicros: 1300,
-        balanceMicros: 10000,
+        priceMicros: 12500,
+        balanceMicros: 100000,
         expiresAt: Date.now() + 60000,
       });
     if (url.endsWith("/speak")) {
@@ -71,7 +71,7 @@ function mock(t, { enabled = true, speak } = {}) {
       });
     }
     if (url.includes("/status"))
-      return Response.json({ state: "complete", priceMicros: 1300 });
+      return Response.json({ state: "complete", priceMicros: 12500 });
     throw Error("unexpected URL");
   });
   return calls;
@@ -144,7 +144,10 @@ test("a fresh speech-only quote and explicit confirmation are required; double c
   fireEvent.click(ui.getByRole("button", { name: "Review speech-only price" }));
   await ui.findByText("Site contact: Example Person");
   assert.equal(calls.filter((c) => c.url.endsWith("/speak")).length, 0);
-  const button = ui.getByRole("button", { name: /Prepare speech —/ });
+  const button = ui.getByRole("button", {
+    name: "Prepare speech — 1 credit",
+    exact: true,
+  });
   fireEvent.click(button);
   fireEvent.click(button);
   await waitFor(() =>

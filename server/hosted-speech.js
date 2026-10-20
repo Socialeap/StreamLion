@@ -26,10 +26,18 @@ export const speechApproved = (env) =>
   paymentMode(env) === "live" &&
   env.STREAMLION_AI_CREDITS_MODE === "live" &&
   Boolean(env.DEEPINFRA_API_KEY && env.GOOGLE_SESSIONS);
-export const speechPrice = (cost) => {
-  if (!Number.isSafeInteger(cost) || cost <= 0 || cost > 1000000)
+// One existing display credit. Customer price never derives from the provider reserve.
+export const SPEECH_PRICE_MICROS = 12500;
+export const speechPrice = (policy) => {
+  const cost = policy?.cost_micros;
+  if (
+    policy?.price_micros !== SPEECH_PRICE_MICROS ||
+    !Number.isSafeInteger(cost) ||
+    cost <= 0 ||
+    cost > 1000000
+  )
     throw Error("speech_policy");
-  return Math.ceil((cost * 130) / 100);
+  return policy.price_micros;
 };
 // Text is rebuilt from the authorized workbook; callers cannot submit arbitrary TTS text.
 export function speechText(project, question, topicId) {
@@ -181,10 +189,20 @@ export async function handleSpeech({ request, env }, dependencies = {}) {
       .first();
     const markers = await db
       .prepare(
-        "SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN ('streamlion_speech_policy_v1','streamlion_speech_turns_v1','streamlion_speech_schema_v1','idx_streamlion_speech_pending','idx_streamlion_speech_capacity','streamlion_speech_reserve_v1','streamlion_speech_debit_v1','streamlion_speech_transition_v1','streamlion_speech_refund_v1')",
+        "SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN ('streamlion_speech_policy_v1','streamlion_speech_turns_v1','streamlion_speech_schema_v1','idx_streamlion_speech_pending','idx_streamlion_speech_capacity','streamlion_speech_reserve_v2','streamlion_speech_pricing_schema_v1','streamlion_speech_debit_v1','streamlion_speech_transition_v1','streamlion_speech_refund_v1')",
       )
       .first();
-    if (stamp?.version !== 1 || markers?.n !== 9) throw Error("speech_schema");
+    const pricingStamp = await db
+      .prepare(
+        "SELECT version FROM streamlion_speech_pricing_schema_v1 WHERE version=1",
+      )
+      .first();
+    if (
+      stamp?.version !== 1 ||
+      pricingStamp?.version !== 1 ||
+      markers?.n !== 10
+    )
+      throw Error("speech_schema");
     const session = await getSession(request, env);
     if (!session)
       return route === "config"
@@ -229,7 +247,7 @@ export async function handleSpeech({ request, env }, dependencies = {}) {
       return route === "config"
         ? reply({ enabled: false, reason: "policy_paused" })
         : reply({ error: "Hosted speech is paused." }, 503);
-    const price = speechPrice(policy.cost_micros);
+    const price = speechPrice(policy);
     if (
       policy.daily_requests <= 0 ||
       policy.daily_budget_micros < policy.cost_micros ||

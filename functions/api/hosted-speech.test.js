@@ -15,6 +15,10 @@ const migration = readFileSync(
   new URL("../../migrations/0021_hosted_speech.sql", import.meta.url),
   "utf8",
 );
+const pricingMigration = readFileSync(
+  new URL("../../migrations/0022_speech_fixed_price.sql", import.meta.url),
+  "utf8",
+);
 const id = "11111111-1111-4111-8111-111111111111";
 function wav() {
   const b = Buffer.alloc(48);
@@ -33,7 +37,7 @@ function wav() {
   b.writeUInt32LE(4, 40);
   return b.toString("base64");
 }
-async function fixture(t) {
+async function fixture(t, { pricing = true } = {}) {
   const f = await extensionFixture();
   t.after(() => f.db.close());
   f.db.exec(
@@ -46,6 +50,7 @@ async function fixture(t) {
     ),
   );
   f.db.exec(migration);
+  if (pricing) f.db.exec(pricingMigration);
   f.db.exec(
     "INSERT INTO streamlion_credit_wallets_v1 VALUES('live','account-a',100000); INSERT INTO streamlion_purchases_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,status,created_at,expires_at,updated_at) VALUES('paid','live','account-a','example@example.com','price','prod',1,'usd','paid',0,0,0)",
   );
@@ -113,7 +118,7 @@ async function fixture(t) {
   };
 }
 
-test("migration starts both policies inactive and unpriced; activation flags and absent schema fail closed", async (t) => {
+test("migration keeps policies inactive with no provider reserve or budget; activation flags and absent schema fail closed", async (t) => {
   const f = await fixture(t);
   f.db.exec(
     "UPDATE streamlion_speech_policy_v1 SET active=0,cost_micros=0,daily_budget_micros=0,total_budget_micros=0,daily_requests=0",
@@ -143,7 +148,7 @@ test("speech-only quotes authoritative text, charges once, and replay/status nev
   const q = await (
     await f.call("quote", { projectId: "p", question: "Who is the contact?" })
   ).json();
-  assert.equal(q.priceMicros, 1300);
+  assert.equal(q.priceMicros, 12500);
   assert.match(q.text, /Example Person/);
   assert.equal(f.calls, 0);
   assert.equal(f.balance(), 100000);
@@ -154,7 +159,7 @@ test("speech-only quotes authoritative text, charges once, and replay/status nev
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Content-Type"), "audio/wav");
   assert.equal(f.calls, 1);
-  assert.equal(f.balance(), 98700);
+  assert.equal(f.balance(), 87500);
   assert.equal(
     (await f.call("speak", { requestId: id, quoteToken: q.quoteToken })).status,
     409,
@@ -268,20 +273,29 @@ test("atomic wallet/capacity holds reject double submissions, insufficient funds
   const f = await fixture(t),
     db = f.env.GOOGLE_SESSIONS;
   const settled = await Promise.allSettled([
-    reserveSpeech(db, "account-a", id, "scope", "hash", 1300, 1000, Date.now()),
+    reserveSpeech(
+      db,
+      "account-a",
+      id,
+      "scope",
+      "hash",
+      12500,
+      1000,
+      Date.now(),
+    ),
     reserveSpeech(
       db,
       "account-a",
       "other",
       "scope",
       "hash",
-      1300,
+      12500,
       1000,
       Date.now(),
     ),
   ]);
   assert.equal(settled.filter((r) => r.status === "fulfilled").length, 1);
-  assert.equal(f.balance(), 98700);
+  assert.equal(f.balance(), 87500);
   assert.throws(
     () => f.db.exec("UPDATE streamlion_speech_turns_v1 SET price_micros=1"),
     /speech_transition/,
@@ -296,7 +310,7 @@ test("atomic wallet/capacity holds reject double submissions, insufficient funds
       "third",
       "scope",
       "hash",
-      1300,
+      12500,
       1000,
       Date.now(),
     ),
@@ -359,8 +373,8 @@ test("access, repeated codes, arbitrary instructions and oversized answers stay 
     () => speechText({ title: "test" }, "calculate a new answer"),
     /speech_access/,
   );
-  assert.equal(speechPrice(1000), 1300);
-  assert.throws(() => speechPrice(0));
+  assert.equal(speechPrice({ price_micros: 12500, cost_micros: 1000 }), 12500);
+  assert.throws(() => speechPrice({ price_micros: 12500, cost_micros: 0 }));
   assert.equal(speechAudio(wav()).length, 48);
   const invalid = Buffer.from(wav(), "base64");
   invalid.writeUInt16LE(0, 22); // A RIFF label alone does not make playable audio.
@@ -384,7 +398,7 @@ test("budget caps retain failed attempts, rate limits and price checks are enfor
   f.db.exec(
     "UPDATE streamlion_speech_policy_v1 SET total_budget_micros=1000 WHERE mode='live'",
   );
-  await reserveSpeech(db, "account-a", id, "scope", "hash", 1300, 1000, now);
+  await reserveSpeech(db, "account-a", id, "scope", "hash", 12500, 1000, now);
   await finishSpeech(db, "account-a", id, "failed");
   await assert.rejects(
     reserveSpeech(
@@ -393,7 +407,7 @@ test("budget caps retain failed attempts, rate limits and price checks are enfor
       "second",
       "scope",
       "hash",
-      1300,
+      12500,
       1000,
       now + 61000,
     ),
@@ -409,7 +423,7 @@ test("budget caps retain failed attempts, rate limits and price checks are enfor
       "second",
       "scope",
       "hash",
-      1300,
+      12500,
       1000,
       now + 61000,
     ),
@@ -425,7 +439,7 @@ test("budget caps retain failed attempts, rate limits and price checks are enfor
       "second",
       "scope",
       "hash",
-      1300,
+      12500,
       1000,
       now + 61000,
     ),
@@ -445,14 +459,14 @@ test("budget caps retain failed attempts, rate limits and price checks are enfor
       next,
       "scope",
       "hash",
-      1300,
+      12500,
       1000,
       now,
     );
     await finishSpeech(db, "account-a", next, "failed");
   }
   await assert.rejects(
-    reserveSpeech(db, "account-a", "fourth", "scope", "hash", 1300, 1000, now),
+    reserveSpeech(db, "account-a", "fourth", "scope", "hash", 12500, 1000, now),
     /speech_capacity/,
   );
   assert.equal(f.balance(), 100000);
@@ -531,7 +545,7 @@ test("partial schema fails closed; oversized inputs never reach provider; daily 
     id,
     "scope",
     "hash",
-    1300,
+    12500,
     1000,
     Date.now() - 300001,
   );
@@ -553,7 +567,7 @@ test("partial schema fails closed; oversized inputs never reach provider; daily 
 test("read-only preflight accepts only absent or exact complete schema, rejecting partial and mutated objects", async (t) => {
   const { speechPreflight } =
     await import("../../scripts/preflight-speech.mjs");
-  const f = await fixture(t);
+  const f = await fixture(t, { pricing: false });
   assert.equal(
     speechPreflight({ schema: [], stamps: {} }).migration,
     "pending",
@@ -622,7 +636,7 @@ test("reservation storage failures remain uncertain; a lost insert acknowledgeme
   const result = await f.call("speak", body);
   assert.equal(result.status, 409);
   assert.equal((await result.json()).state, "reserved");
-  assert.equal(f.balance(), 98700);
+  assert.equal(f.balance(), 87500);
   assert.equal(f.calls, 0);
   await expireSpeech(database, "account-a", Date.now() + 300001);
   assert.equal(f.balance(), 100000);
@@ -643,5 +657,192 @@ test("a definitive capacity rejection reports no existing reservation or provide
   assert.equal(response.status, 409);
   assert.equal((await response.json()).state, undefined);
   assert.equal(f.balance(), 1);
+  assert.equal(f.calls, 0);
+});
+
+test("fixed retail debit stays one credit when the independent provider reserve changes", async (t) => {
+  const f = await fixture(t);
+  for (const [index, cost] of [1000, 2000].entries()) {
+    f.db
+      .prepare(
+        "UPDATE streamlion_speech_policy_v1 SET cost_micros=? WHERE mode='live'",
+      )
+      .run(cost);
+    const q = await (
+      await f.call("quote", { projectId: "p", question: "contact" })
+    ).json();
+    assert.equal(q.priceMicros, 12500);
+    const requestId = `${index + 3}1111111-1111-4111-8111-111111111111`;
+    assert.equal(
+      (await f.call("speak", { requestId, quoteToken: q.quoteToken })).status,
+      200,
+    );
+  }
+  assert.equal(f.balance(), 75000);
+  const totals = f.db
+    .prepare(
+      "SELECT SUM(price_micros) price,SUM(reserve_micros) reserve FROM streamlion_speech_turns_v1",
+    )
+    .get();
+  assert.deepEqual({ ...totals }, { price: 25000, reserve: 3000 });
+  await assert.rejects(
+    reserveSpeech(
+      f.env.GOOGLE_SESSIONS,
+      "account-a",
+      "old-markup",
+      "scope",
+      "hash",
+      2600,
+      2000,
+      Date.now(),
+    ),
+    /speech_capacity/,
+  );
+  await assert.rejects(
+    reserveSpeech(
+      f.env.GOOGLE_SESSIONS,
+      "account-a",
+      "wrong-cost",
+      "scope",
+      "hash",
+      12500,
+      1000,
+      Date.now(),
+    ),
+    /speech_capacity/,
+  );
+  assert.throws(
+    () =>
+      f.db.exec("UPDATE streamlion_speech_policy_v1 SET price_micros=25000"),
+    /CHECK/,
+  );
+  assert.throws(
+    () => speechPrice({ price_micros: 25000, cost_micros: 1000 }),
+    /speech_policy/,
+  );
+});
+
+test("0022 preserves historical charges and refunds and every existing policy field without opening speech", async (t) => {
+  const f = await fixture(t, { pricing: false });
+  await reserveSpeech(
+    f.env.GOOGLE_SESSIONS,
+    "account-a",
+    id,
+    "scope",
+    "hash",
+    1300,
+    1000,
+    Date.now(),
+  );
+  f.db.exec(
+    "UPDATE streamlion_speech_policy_v1 SET active=0,cost_micros=0,daily_budget_micros=0,total_budget_micros=0,daily_requests=0",
+  );
+  const oldPolicy = f.db
+    .prepare("SELECT * FROM streamlion_speech_policy_v1 ORDER BY mode")
+    .all();
+  const oldTurns = f.db
+    .prepare("SELECT * FROM streamlion_speech_turns_v1")
+    .all();
+  const balance = f.balance();
+  f.db.exec(pricingMigration);
+  assert.deepEqual(
+    f.db.prepare("SELECT * FROM streamlion_speech_turns_v1").all(),
+    oldTurns,
+  );
+  assert.equal(f.balance(), balance);
+  for (const row of f.db
+    .prepare("SELECT * FROM streamlion_speech_policy_v1 ORDER BY mode")
+    .all()) {
+    const { price_micros, ...original } = row;
+    assert.equal(price_micros, 12500);
+    assert.deepEqual(original, {
+      ...oldPolicy.find((p) => p.mode === row.mode),
+    });
+  }
+  await finishSpeech(f.env.GOOGLE_SESSIONS, "account-a", id, "failed");
+  assert.equal(f.balance(), 100000); // Return original 1300, not the new 12500 price.
+  await finishSpeech(f.env.GOOGLE_SESSIONS, "account-a", id, "failed");
+  assert.equal(f.balance(), 100000);
+  f.env.STREAMLION_HOSTED_SPEECH_APPROVED = "false";
+  assert.equal((await (await f.call("config")).json()).enabled, false);
+  assert.equal(f.calls, 0);
+});
+
+test("fixed-price migration preflight accepts exact predecessor or complete result only; partial pricing fails closed", async (t) => {
+  const { speechPricePreflight } =
+    await import("../../scripts/preflight-speech-price.mjs");
+  const f = await fixture(t, { pricing: false });
+  const snapshot = () => ({
+    schema: f.db
+      .prepare("SELECT name,type,sql FROM sqlite_master WHERE sql IS NOT NULL")
+      .all(),
+    stamps: Object.fromEntries(
+      ["streamlion_speech_schema_v1", "streamlion_speech_pricing_schema_v1"]
+        .filter((n) =>
+          f.db.prepare("SELECT name FROM sqlite_master WHERE name=?").get(n),
+        )
+        .map((n) => [
+          n,
+          f.db.prepare(`SELECT version FROM ${n}`).get().version,
+        ]),
+    ),
+  });
+  assert.equal(speechPricePreflight(snapshot()).migration, "pending");
+  assert.equal(
+    (await f.call("quote", { projectId: "p", question: "contact" })).status,
+    503,
+  );
+  f.db.exec(pricingMigration);
+  assert.equal(speechPricePreflight(snapshot()).migration, "already_applied");
+  const full = snapshot();
+  for (const name of [
+    "streamlion_speech_pricing_schema_v1",
+    "streamlion_speech_reserve_v2",
+    "streamlion_speech_refund_v1",
+  ]) {
+    assert.throws(
+      () =>
+        speechPricePreflight({
+          ...full,
+          schema: full.schema.filter((r) => r.name !== name),
+        }),
+      /partial|mismatch/,
+    );
+  }
+  assert.throws(
+    () => speechPricePreflight({ schema: [], stamps: {} }),
+    /Missing/,
+  );
+  assert.throws(
+    () =>
+      speechPricePreflight({
+        ...full,
+        stamps: { streamlion_speech_schema_v1: 1 },
+      }),
+    /stamp/,
+  );
+  assert.throws(
+    () =>
+      speechPricePreflight({
+        ...full,
+        schema: full.schema.map((r) =>
+          r.name === "streamlion_speech_reserve_v2"
+            ? {
+                ...r,
+                sql: r.sql.replace(
+                  "p.price_micros=12500",
+                  "p.price_micros=25000",
+                ),
+              }
+            : r,
+        ),
+      }),
+    /mismatch/,
+  );
+  f.db.exec("DROP TRIGGER streamlion_speech_reserve_v2");
+  assert.equal(
+    (await f.call("quote", { projectId: "p", question: "contact" })).status,
+    503,
+  );
   assert.equal(f.calls, 0);
 });
