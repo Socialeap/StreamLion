@@ -164,6 +164,31 @@ migration has been applied during this task.
 
 ## 5. Stripe/Cloudflare configuration gate — separate authorization
 
+### Workers Free binding capacity
+
+The closed-tax setup encountered the Workers Free limit of 64 runtime
+variables: adding both tax flags to the prior configuration produced 66.
+The temporary test-email overrides expired on October 12, 2026 and are no
+longer declared in the production Wrangler profile. Their removal frees two
+runtime variable slots. The effective email ceilings remain 20 attempts/day
+and 500/month in both payment modes; recipient rules, budget history and
+notification retry behavior are unchanged. Keep the temporary-override support
+in the notification code for separately authorized future testing.
+
+Use encrypted Pages Production bindings for
+`STREAMLION_CHECKOUT_TAX_MODE` and `STREAMLION_CREDIT_TAX_TREATMENT`, matching
+the existing server-only configuration mechanism. Dashboard plaintext values
+outside the committed Wrangler `vars` list do not reach Functions in this
+project. Preserve all credential bindings, existing private QA settings and
+other modes. This configuration change requires its own review/merge and
+closed deployment before claiming tax activation; it does not authorize an
+upgrade or sales opening.
+
+The owner confirmed the NY certificate effective date is October 24, 2026.
+The existing Stripe registration is scheduled for `2026-10-24T04:00:00Z`,
+midnight in New York. Do not activate it early or duplicate the registration.
+Checkout stays paused before and after that date until separately authorized.
+
 Prerequisites: gates 2–4 accepted, applicable legal approval and explicit future
 cost approval. Verify Stripe live account and exact StreamLion product/price IDs
 against the current release receipt. Configure only confirmed tax codes and
