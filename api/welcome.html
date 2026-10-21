@@ -353,7 +353,7 @@ Capture the living room and kitchen.</textarea>
               ><span class="demo-area" id="demo-area">Job brief</span>
             </div>
             <div data-demo-panel="prepare">
-              <h3>A client brief becomes work you can check.</h3>
+              <h3>Your uploaded content converts to a briefing checklist.</h3>
               <p class="small">
                 Review the sample tasks beside the request that produced them.
               </p>
@@ -693,8 +693,9 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
         <div class="roi-intro">
           <h2 id="roi-title">Put a value on<br /><em>less admin.</em></h2>
           <p class="lead">
-            What could an organized job give back? Start with the admin tasks
-            you already do.
+            Estimate how much admin time you could save on one job. Compare your
+            current process with the time you think the same tasks would take
+            using StreamLion.
           </p>
           <ul class="outcome-list">
             <li>
@@ -729,22 +730,39 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
         </div>
         <div class="roi-calculator">
           <h3>Build your time-value estimate</h3>
-          <p class="small" id="roi-assumptions">
-            Start with these example timings for one job. Adjust both columns to
-            match your work. “Organized” assumes reviewed brief tasks,
-            room-linked readings and a handover assembled from your field
-            records.
+          <ol class="roi-instructions" id="roi-assumptions">
+            <li>Enter the minutes each task takes you now.</li>
+            <li>
+              Estimate the minutes you would need with StreamLion: review
+              suggested brief tasks, keep readings with each room, and assemble
+              a handover from those records. Include your review time.
+            </li>
+            <li>
+              Enter your hourly value to convert the time difference into a
+              dollar estimate.
+            </li>
+          </ol>
+          <p class="roi-edit-notice" id="roi-input-help">
+            <strong>These are editable fields.</strong> The numbers shown are
+            examples only. Click or tap each outlined box and replace the number
+            with your own estimate. Use 0 for a task you do not do.
           </p>
           <div class="table-scroll">
             <table class="task-timings">
               <caption>
-                Example workload · minutes per job
+                Your inputs · minutes per job
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Admin task</th>
-                  <th scope="col">Today</th>
-                  <th scope="col">Organized</th>
+                  <th scope="col">
+                    Your current process<span
+                      >Minutes per job · edit below</span
+                    >
+                  </th>
+                  <th scope="col">
+                    With StreamLion<span>Your estimate · minutes per job</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -753,7 +771,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
                   <td>
                     <input
                       id="time-brief-before"
-                      aria-label="Prepare brief tasks: minutes today"
+                      aria-describedby="roi-input-help"
+                      aria-label="Prepare brief tasks: minutes per job in your current process"
                       type="number"
                       min="0"
                       max="480"
@@ -764,7 +783,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
                   <td>
                     <input
                       id="time-brief-after"
-                      aria-label="Prepare brief tasks: minutes organized"
+                      aria-describedby="roi-input-help"
+                      aria-label="Prepare brief tasks: your estimated minutes per job with StreamLion"
                       type="number"
                       min="0"
                       max="480"
@@ -778,7 +798,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
                   <td>
                     <input
                       id="time-readings-before"
-                      aria-label="Organize field records: minutes today"
+                      aria-describedby="roi-input-help"
+                      aria-label="Organize field records: minutes per job in your current process"
                       type="number"
                       min="0"
                       max="480"
@@ -789,7 +810,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
                   <td>
                     <input
                       id="time-readings-after"
-                      aria-label="Organize field records: minutes organized"
+                      aria-describedby="roi-input-help"
+                      aria-label="Organize field records: your estimated minutes per job with StreamLion"
                       type="number"
                       min="0"
                       max="480"
@@ -803,7 +825,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
                   <td>
                     <input
                       id="time-handover-before"
-                      aria-label="Prepare handover: minutes today"
+                      aria-describedby="roi-input-help"
+                      aria-label="Prepare handover: minutes per job in your current process"
                       type="number"
                       min="0"
                       max="480"
@@ -814,7 +837,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
                   <td>
                     <input
                       id="time-handover-after"
-                      aria-label="Prepare handover: minutes organized"
+                      aria-describedby="roi-input-help"
+                      aria-label="Prepare handover: your estimated minutes per job with StreamLion"
                       type="number"
                       min="0"
                       max="480"
@@ -828,16 +852,19 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
           </div>
           <div class="roi-inputs">
             <label for="roi-rate"
-              >Your hourly value (USD)<input
+              >Enter your hourly value (USD)<input
                 type="number"
                 id="roi-rate"
                 min="0"
                 max="10000"
                 step="any"
                 value="60"
-                aria-describedby="roi-disclaimer"
+                aria-describedby="roi-input-help roi-disclaimer"
             /></label>
           </div>
+          <p class="small roi-estimate-label" id="roi-estimate-label">
+            Showing example values — replace all seven numbers above.
+          </p>
           <p id="roi-message" role="status" aria-live="polite"></p>
           <p
             class="roi-time-summary"
@@ -848,6 +875,9 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
             <p class="roi-per-job">
               <output id="roi-per-job">$13.00</output>
               <span>estimated time value per job</span>
+            </p>
+            <p class="roi-calculation" id="roi-calculation">
+              13 minutes ÷ 60 × $60.00/hour = $13.00 per job.
             </p>
             <div class="roi-comparison">
               <div>
@@ -876,8 +906,9 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
             </p>
           </div>
           <p class="small" id="roi-disclaimer">
-            Editable planning assumptions. Results express time value at your
-            hourly rate. App prices exclude tax.
+            Your estimates, not measured StreamLion performance or guaranteed
+            savings. Time value is not cash earned or a discount. Optional paid
+            services are separate; app prices exclude tax.
           </p>
           <a class="button" href="#pricing"
             >See the one-time price <span aria-hidden="true">→</span></a
@@ -933,7 +964,9 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
               Broader project answers using prepaid credits. Your quote appears
               before each answer. Spoken replies are optional.
             </p>
-            <a class="text-link" href="/api/credits">Explore credit options →</a>
+            <a class="text-link" href="/api/credits"
+              >Explore credit options →</a
+            >
           </div>
           <div>
             <h3>Optional client coordination</h3>

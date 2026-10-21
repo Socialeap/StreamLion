@@ -125,18 +125,20 @@ function updateValue() {
     ? ""
     : "Enter a timing from 0 to 480 minutes in every box (each column totals up to 480), and an hourly value above $0, up to $10,000.";
   document.querySelector("#roi-time-summary").textContent = estimate
-    ? `${count.format(estimate.before)} min today → ${count.format(estimate.after)} min organized. ${
+    ? `Your current process: ${count.format(estimate.before)} min/job. Your StreamLion estimate: ${count.format(estimate.after)} min/job. ${
         estimate.minutes > 0
-          ? `${count.format(estimate.minutes)} minutes freed in this scenario.`
+          ? `${count.format(estimate.minutes)} minutes saved per job in this estimate.`
           : estimate.minutes === 0
             ? "These timings show no time difference."
-            : `${count.format(-estimate.minutes)} more minutes in the organized scenario. Revisit the task timings to see where the extra work comes from.`
+            : `${count.format(-estimate.minutes)} more minutes per job with StreamLion in this estimate. Revisit the task timings to see where the extra work comes from.`
       }`
     : "";
   const value = estimate?.value;
   if (!value) return;
   document.querySelector("#roi-per-job").textContent =
     value.perJob < 0.005 ? "<$0.01" : currency.format(value.perJob);
+  document.querySelector("#roi-calculation").textContent =
+    `${count.format(estimate.minutes)} minutes ÷ 60 × ${currency.format(Number(rate.value))}/hour = ${value.perJob < 0.005 ? "<$0.01" : currency.format(value.perJob)} per job.`;
   for (const name of ["standard", "launch"]) {
     document.querySelector(`#roi-${name}`).textContent = count.format(
       value[`${name}Jobs`],
@@ -147,9 +149,13 @@ function updateValue() {
       `${value[`${name}Progress`] * 100}%`;
   }
 }
-document
-  .querySelectorAll(".task-timings input, #roi-rate")
-  .forEach((input) => input.addEventListener("input", updateValue));
+document.querySelectorAll(".task-timings input, #roi-rate").forEach((input) =>
+  input.addEventListener("input", () => {
+    document.querySelector("#roi-estimate-label").textContent =
+      "Your editable estimate — check all seven numbers match your work.";
+    updateValue();
+  }),
+);
 updateValue();
 
 let demoJob = sampleJob();
