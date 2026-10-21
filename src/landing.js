@@ -8,6 +8,7 @@ import { parseMeasurements } from "./measurements.js";
 import {
   confirmedPurchaseQuote,
   estimateTaskValue,
+  formatTimeValueEquation,
   VALUE_TASKS,
 } from "./landing-value.js";
 import { initializeLandingVoice } from "./landing-voice.js";
@@ -139,7 +140,7 @@ function updateValue() {
   document.querySelector("#roi-per-job").textContent =
     value.perJob < 0.005 ? "<$0.01" : currency.format(value.perJob);
   document.querySelector("#roi-calculation").textContent =
-    `${count.format(estimate.minutes)} minutes ÷ 60 × ${currency.format(Number(rate.value))}/hour = ${value.perJob < 0.005 ? "<$0.01" : currency.format(value.perJob)} per job.`;
+    formatTimeValueEquation(estimate.minutes, rate.value, value.perJob);
   for (const name of ["standard", "launch"]) {
     document.querySelector(`#roi-${name}`).textContent = count.format(
       value[`${name}Jobs`],
