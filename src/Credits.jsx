@@ -391,10 +391,10 @@ export default function Credits() {
               </tbody>
             </table>
             <p>
-              Optional hosted speech has a separate per-clip quote when
-              available. It reads a saved-detail answer without generating an AI
-              answer. Device voice, text and the prerecorded voice preview use
-              no credits.
+              Optional hosted speech costs 1 credit per clip, up to 1,200
+              characters, when available. It reads a saved-detail answer without
+              generating an AI answer. Device voice, text and the prerecorded
+              voice preview use no credits.
             </p>
             <BriefPrivacyNotice />
             {config?.mode === "test" && (
