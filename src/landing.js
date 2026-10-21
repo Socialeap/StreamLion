@@ -121,16 +121,17 @@ function updateValue() {
   }));
   const estimate = estimateTaskValue(tasks, rate.value, purchasePrices);
   document.querySelector("#roi-result").hidden = !estimate?.value;
+  document.querySelector("#roi-example").hidden = !estimate?.value;
   document.querySelector("#roi-message").textContent = estimate
     ? ""
     : "Enter a timing from 0 to 480 minutes in every box (each column totals up to 480), and an hourly value above $0, up to $10,000.";
   document.querySelector("#roi-time-summary").textContent = estimate
-    ? `Your current process: ${count.format(estimate.before)} min/job. Your StreamLion estimate: ${count.format(estimate.after)} min/job. ${
+    ? `Current: ${count.format(estimate.before)} → with StreamLion: ${count.format(estimate.after)} min/job. ${
         estimate.minutes > 0
-          ? `${count.format(estimate.minutes)} minutes saved per job in this estimate.`
+          ? `${count.format(estimate.minutes)} min saved per job (estimated).`
           : estimate.minutes === 0
-            ? "These timings show no time difference."
-            : `${count.format(-estimate.minutes)} more minutes per job with StreamLion in this estimate. Revisit the task timings to see where the extra work comes from.`
+            ? "No estimated time saved."
+            : `${count.format(-estimate.minutes)} extra min/job with StreamLion (estimated).`
       }`
     : "";
   const value = estimate?.value;
@@ -152,7 +153,7 @@ function updateValue() {
 document.querySelectorAll(".task-timings input, #roi-rate").forEach((input) =>
   input.addEventListener("input", () => {
     document.querySelector("#roi-estimate-label").textContent =
-      "Your editable estimate — check all seven numbers match your work.";
+      "Your estimates — check all seven numbers.";
     updateValue();
   }),
 );

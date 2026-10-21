@@ -1873,8 +1873,8 @@ dialog .small {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 80px;
-  padding: 100px 0;
-  align-items: center;
+  padding: 80px 0;
+  align-items: start;
 }
 .roi-intro h2 em {
   font-style: normal;
@@ -1888,9 +1888,9 @@ dialog .small {
 .outcome-list {
   list-style: none;
   padding: 0;
-  margin: 40px 0 0;
+  margin: 28px 0 0;
   display: grid;
-  gap: 28px;
+  gap: 20px;
 }
 .outcome-list li {
   display: flex;
@@ -1933,7 +1933,7 @@ dialog .small {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 18px;
-  margin: 26px 0;
+  margin: 18px 0;
 }
 .roi-inputs label {
   font-size: 13px;
@@ -2775,11 +2775,35 @@ dialog .small {
   margin-top: 8px;
 }
 .roi-edit-notice {
-  padding: 14px 16px;
-  border-left: 3px solid var(--forest);
+  color: var(--forest);
+  font-weight: 600;
+}
+.roi-example {
+  margin-top: 28px;
+  padding: 18px 20px;
   background: #edf3e5;
+  border-radius: 8px;
+}
+.roi-example h3 {
+  font-size: 16px;
+}
+.roi-help {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.roi-help summary {
+  padding: 14px 0;
+  cursor: pointer;
   font-size: 14px;
-  line-height: 1.6;
+  font-weight: 600;
+}
+.roi-help summary:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 3px;
+}
+.roi-help .roi-instructions {
+  margin-top: 0;
 }
 .task-timings thead th span {
   display: block;

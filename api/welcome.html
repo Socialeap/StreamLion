@@ -693,9 +693,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
         <div class="roi-intro">
           <h2 id="roi-title">Put a value on<br /><em>less admin.</em></h2>
           <p class="lead">
-            Estimate how much admin time you could save on one job. Compare your
-            current process with the time you think the same tasks would take
-            using StreamLion.
+            Compare admin time per job, then value the difference at your hourly
+            rate.
           </p>
           <ul class="outcome-list">
             <li>
@@ -727,42 +726,69 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
               </div>
             </li>
           </ul>
+          <div class="roi-example" id="roi-example">
+            <h3>Time saved × your hourly value</h3>
+            <p class="roi-calculation" id="roi-calculation">
+              13 minutes ÷ 60 × $60.00/hour = $13.00 per job.
+            </p>
+            <div class="roi-comparison">
+              <div>
+                <strong
+                  ><output id="roi-standard">4</output>
+                  <span id="roi-standard-unit">jobs</span></strong
+                >
+                <p id="roi-standard-price">At $39.95</p>
+                <div class="value-bar" aria-hidden="true">
+                  <i id="roi-standard-bar"></i>
+                </div>
+              </div>
+              <div hidden data-launch-comparison>
+                <strong
+                  ><output id="roi-launch">3</output>
+                  <span id="roi-launch-unit">jobs</span></strong
+                >
+                <p id="roi-launch-price">At $29.96 launch price</p>
+                <div class="value-bar" aria-hidden="true">
+                  <i id="roi-launch-bar"></i>
+                </div>
+              </div>
+            </div>
+            <p class="roi-bar-caption">
+              Jobs to cover the one-time price at your estimated time value.
+            </p>
+          </div>
+          <details class="roi-help">
+            <summary>How to use the calculator</summary>
+            <ol class="roi-instructions" id="roi-assumptions">
+              <li>Enter the minutes each task takes you now.</li>
+              <li>
+                Estimate the same tasks with StreamLion, including review time.
+                Use 0 for tasks you skip.
+              </li>
+              <li>
+                Enter your hourly value. The difference becomes an estimated
+                time value per job.
+              </li>
+            </ol>
+          </details>
         </div>
         <div class="roi-calculator">
-          <h3>Build your time-value estimate</h3>
-          <ol class="roi-instructions" id="roi-assumptions">
-            <li>Enter the minutes each task takes you now.</li>
-            <li>
-              Estimate the minutes you would need with StreamLion: review
-              suggested brief tasks, keep readings with each room, and assemble
-              a handover from those records. Include your review time.
-            </li>
-            <li>
-              Enter your hourly value to convert the time difference into a
-              dollar estimate.
-            </li>
-          </ol>
-          <p class="roi-edit-notice" id="roi-input-help">
-            <strong>These are editable fields.</strong> The numbers shown are
-            examples only. Click or tap each outlined box and replace the number
-            with your own estimate. Use 0 for a task you do not do.
+          <h3>Estimate your time savings</h3>
+          <p class="small roi-edit-notice" id="roi-input-help">
+            <span id="roi-estimate-label"
+              >Example values — edit all seven numbers.</span
+            >
           </p>
           <div class="table-scroll">
             <table class="task-timings">
               <caption>
-                Your inputs · minutes per job
+                Minutes per job · enter your estimates
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Admin task</th>
-                  <th scope="col">
-                    Your current process<span
-                      >Minutes per job · edit below</span
-                    >
-                  </th>
-                  <th scope="col">
-                    With StreamLion<span>Your estimate · minutes per job</span>
-                  </th>
+                  <th scope="col">Your current process</th>
+                  <th scope="col">With StreamLion<span>Your estimate</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -852,7 +878,7 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
           </div>
           <div class="roi-inputs">
             <label for="roi-rate"
-              >Enter your hourly value (USD)<input
+              >Your hourly value (USD)<input
                 type="number"
                 id="roi-rate"
                 min="0"
@@ -862,9 +888,6 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
                 aria-describedby="roi-input-help roi-disclaimer"
             /></label>
           </div>
-          <p class="small roi-estimate-label" id="roi-estimate-label">
-            Showing example values — replace all seven numbers above.
-          </p>
           <p id="roi-message" role="status" aria-live="polite"></p>
           <p
             class="roi-time-summary"
@@ -876,39 +899,10 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
               <output id="roi-per-job">$13.00</output>
               <span>estimated time value per job</span>
             </p>
-            <p class="roi-calculation" id="roi-calculation">
-              13 minutes ÷ 60 × $60.00/hour = $13.00 per job.
-            </p>
-            <div class="roi-comparison">
-              <div>
-                <strong
-                  ><output id="roi-standard">4</output>
-                  <span id="roi-standard-unit">jobs</span></strong
-                >
-                <p id="roi-standard-price">At $39.95</p>
-                <div class="value-bar" aria-hidden="true">
-                  <i id="roi-standard-bar"></i>
-                </div>
-              </div>
-              <div hidden data-launch-comparison>
-                <strong
-                  ><output id="roi-launch">3</output>
-                  <span id="roi-launch-unit">jobs</span></strong
-                >
-                <p id="roi-launch-price">At $29.96 launch price</p>
-                <div class="value-bar" aria-hidden="true">
-                  <i id="roi-launch-bar"></i>
-                </div>
-              </div>
-            </div>
-            <p class="roi-bar-caption">
-              Jobs to cover the one-time price at your estimated time value.
-            </p>
           </div>
           <p class="small" id="roi-disclaimer">
-            Your estimates, not measured StreamLion performance or guaranteed
-            savings. Time value is not cash earned or a discount. Optional paid
-            services are separate; app prices exclude tax.
+            Planning estimate; actual savings vary. Optional services extra.
+            Prices exclude tax.
           </p>
           <a class="button" href="#pricing"
             >See the one-time price <span aria-hidden="true">→</span></a
