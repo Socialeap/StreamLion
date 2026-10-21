@@ -6,6 +6,7 @@ import {
   confirmedPurchaseQuote,
   estimateTimeValue,
   estimateTaskValue,
+  formatTimeValueEquation,
 } from "./landing-value.js";
 
 const liveQuote = {
@@ -160,4 +161,17 @@ test("incomplete or invalid task timings do not silently become zero", () => {
   );
   assert.equal(estimateTaskValue(tasks.slice(1), 60), null);
   assert.equal(estimateTaskValue(tasks, ""), null);
+});
+
+test("equation preserves the entered rate and fractional minutes before rounding the total", () => {
+  for (const [minutes, rate, expected] of [
+    [480, "1.004", "480 minutes ÷ 60 × $1.004/hour ≈ $8.03 per job."],
+    [60, "9.986", "60 minutes ÷ 60 × $9.986/hour ≈ $9.99 per job."],
+    [0.04, "10000", "0.04 minutes ÷ 60 × $10000/hour ≈ $6.67 per job."],
+    [13, "60", "13 minutes ÷ 60 × $60/hour ≈ $13.00 per job."],
+    [0.1, "0.01", "0.1 minutes ÷ 60 × $0.01/hour < $0.01 per job."],
+  ]) {
+    const { perJob } = estimateTimeValue(minutes, rate);
+    assert.equal(formatTimeValueEquation(minutes, rate, perJob), expected);
+  }
 });

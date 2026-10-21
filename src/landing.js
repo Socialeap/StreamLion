@@ -8,6 +8,7 @@ import { parseMeasurements } from "./measurements.js";
 import {
   confirmedPurchaseQuote,
   estimateTaskValue,
+  formatTimeValueEquation,
   VALUE_TASKS,
 } from "./landing-value.js";
 import { initializeLandingVoice } from "./landing-voice.js";
@@ -121,22 +122,25 @@ function updateValue() {
   }));
   const estimate = estimateTaskValue(tasks, rate.value, purchasePrices);
   document.querySelector("#roi-result").hidden = !estimate?.value;
+  document.querySelector("#roi-example").hidden = !estimate?.value;
   document.querySelector("#roi-message").textContent = estimate
     ? ""
     : "Enter a timing from 0 to 480 minutes in every box (each column totals up to 480), and an hourly value above $0, up to $10,000.";
   document.querySelector("#roi-time-summary").textContent = estimate
-    ? `${count.format(estimate.before)} min today → ${count.format(estimate.after)} min organized. ${
+    ? `Current: ${count.format(estimate.before)} → with StreamLion: ${count.format(estimate.after)} min/job. ${
         estimate.minutes > 0
-          ? `${count.format(estimate.minutes)} minutes freed in this scenario.`
+          ? `${count.format(estimate.minutes)} min saved per job (estimated).`
           : estimate.minutes === 0
-            ? "These timings show no time difference."
-            : `${count.format(-estimate.minutes)} more minutes in the organized scenario. Revisit the task timings to see where the extra work comes from.`
+            ? "No estimated time saved."
+            : `${count.format(-estimate.minutes)} extra min/job with StreamLion (estimated).`
       }`
     : "";
   const value = estimate?.value;
   if (!value) return;
   document.querySelector("#roi-per-job").textContent =
     value.perJob < 0.005 ? "<$0.01" : currency.format(value.perJob);
+  document.querySelector("#roi-calculation").textContent =
+    formatTimeValueEquation(estimate.minutes, rate.value, value.perJob);
   for (const name of ["standard", "launch"]) {
     document.querySelector(`#roi-${name}`).textContent = count.format(
       value[`${name}Jobs`],
@@ -147,9 +151,13 @@ function updateValue() {
       `${value[`${name}Progress`] * 100}%`;
   }
 }
-document
-  .querySelectorAll(".task-timings input, #roi-rate")
-  .forEach((input) => input.addEventListener("input", updateValue));
+document.querySelectorAll(".task-timings input, #roi-rate").forEach((input) =>
+  input.addEventListener("input", () => {
+    document.querySelector("#roi-estimate-label").textContent =
+      "Your estimates — check all seven numbers.";
+    updateValue();
+  }),
+);
 updateValue();
 
 let demoJob = sampleJob();

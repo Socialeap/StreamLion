@@ -3,6 +3,18 @@ const LAUNCH_PRICE = 29.96;
 
 export const VALUE_TASKS = ["brief", "readings", "handover"];
 
+const equationCurrency = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
+
+/** Explain the estimate using the same input precision as the calculation. */
+export function formatTimeValueEquation(minutes, hourlyRate, perJob) {
+  const total =
+    perJob < 0.005 ? "< $0.01" : `≈ ${equationCurrency.format(perJob)}`;
+  return `${minutes} minutes ÷ 60 × $${Number(hourlyRate)}/hour ${total} per job.`;
+}
+
 /** Only a valid live quote with available slots may reveal promotional pricing. */
 export function confirmedPurchaseQuote(config) {
   if (

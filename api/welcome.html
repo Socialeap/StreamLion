@@ -353,7 +353,7 @@ Capture the living room and kitchen.</textarea>
               ><span class="demo-area" id="demo-area">Job brief</span>
             </div>
             <div data-demo-panel="prepare">
-              <h3>A client brief becomes work you can check.</h3>
+              <h3>Your uploaded content converts to a briefing checklist.</h3>
               <p class="small">
                 Review the sample tasks beside the request that produced them.
               </p>
@@ -693,8 +693,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
         <div class="roi-intro">
           <h2 id="roi-title">Put a value on<br /><em>less admin.</em></h2>
           <p class="lead">
-            What could an organized job give back? Start with the admin tasks
-            you already do.
+            Compare admin time per job, then value the difference at your hourly
+            rate.
           </p>
           <ul class="outcome-list">
             <li>
@@ -726,128 +726,10 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
               </div>
             </li>
           </ul>
-        </div>
-        <div class="roi-calculator">
-          <h3>Build your time-value estimate</h3>
-          <p class="small" id="roi-assumptions">
-            Start with these example timings for one job. Adjust both columns to
-            match your work. “Organized” assumes reviewed brief tasks,
-            room-linked readings and a handover assembled from your field
-            records.
-          </p>
-          <div class="table-scroll">
-            <table class="task-timings">
-              <caption>
-                Example workload · minutes per job
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Admin task</th>
-                  <th scope="col">Today</th>
-                  <th scope="col">Organized</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <th scope="row">Prepare tasks from the brief</th>
-                  <td>
-                    <input
-                      id="time-brief-before"
-                      aria-label="Prepare brief tasks: minutes today"
-                      type="number"
-                      min="0"
-                      max="480"
-                      step="0.5"
-                      value="6"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      id="time-brief-after"
-                      aria-label="Prepare brief tasks: minutes organized"
-                      type="number"
-                      min="0"
-                      max="480"
-                      step="0.5"
-                      value="2"
-                    />
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Organize room readings &amp; notes</th>
-                  <td>
-                    <input
-                      id="time-readings-before"
-                      aria-label="Organize field records: minutes today"
-                      type="number"
-                      min="0"
-                      max="480"
-                      step="0.5"
-                      value="8"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      id="time-readings-after"
-                      aria-label="Organize field records: minutes organized"
-                      type="number"
-                      min="0"
-                      max="480"
-                      step="0.5"
-                      value="3"
-                    />
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Assemble a client handover</th>
-                  <td>
-                    <input
-                      id="time-handover-before"
-                      aria-label="Prepare handover: minutes today"
-                      type="number"
-                      min="0"
-                      max="480"
-                      step="0.5"
-                      value="6"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      id="time-handover-after"
-                      aria-label="Prepare handover: minutes organized"
-                      type="number"
-                      min="0"
-                      max="480"
-                      step="0.5"
-                      value="2"
-                    />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="roi-inputs">
-            <label for="roi-rate"
-              >Your hourly value (USD)<input
-                type="number"
-                id="roi-rate"
-                min="0"
-                max="10000"
-                step="any"
-                value="60"
-                aria-describedby="roi-disclaimer"
-            /></label>
-          </div>
-          <p id="roi-message" role="status" aria-live="polite"></p>
-          <p
-            class="roi-time-summary"
-            id="roi-time-summary"
-            aria-live="polite"
-          ></p>
-          <div id="roi-result" aria-live="polite" aria-atomic="true">
-            <p class="roi-per-job">
-              <output id="roi-per-job">$13.00</output>
-              <span>estimated time value per job</span>
+          <div class="roi-example" id="roi-example">
+            <h3>Time saved × your hourly value</h3>
+            <p class="roi-calculation" id="roi-calculation">
+              13 minutes ÷ 60 × $60/hour ≈ $13.00 per job.
             </p>
             <div class="roi-comparison">
               <div>
@@ -875,9 +757,152 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
               Jobs to cover the one-time price at your estimated time value.
             </p>
           </div>
+          <details class="roi-help">
+            <summary>How to use the calculator</summary>
+            <ol class="roi-instructions" id="roi-assumptions">
+              <li>Enter the minutes each task takes you now.</li>
+              <li>
+                Estimate the same tasks with StreamLion, including review time.
+                Use 0 for tasks you skip.
+              </li>
+              <li>
+                Enter your hourly value. The difference becomes an estimated
+                time value per job.
+              </li>
+            </ol>
+          </details>
+        </div>
+        <div class="roi-calculator">
+          <h3>Estimate your time savings</h3>
+          <p class="small roi-edit-notice" id="roi-input-help">
+            <span id="roi-estimate-label"
+              >Example values — edit all seven numbers.</span
+            >
+          </p>
+          <div class="table-scroll">
+            <table class="task-timings">
+              <caption>
+                Minutes per job · enter your estimates
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Admin task</th>
+                  <th scope="col">Your current process</th>
+                  <th scope="col">With StreamLion<span>Your estimate</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Prepare tasks from the brief</th>
+                  <td>
+                    <input
+                      id="time-brief-before"
+                      aria-describedby="roi-input-help"
+                      aria-label="Prepare brief tasks: minutes per job in your current process"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="6"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      id="time-brief-after"
+                      aria-describedby="roi-input-help"
+                      aria-label="Prepare brief tasks: your estimated minutes per job with StreamLion"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="2"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Organize room readings &amp; notes</th>
+                  <td>
+                    <input
+                      id="time-readings-before"
+                      aria-describedby="roi-input-help"
+                      aria-label="Organize field records: minutes per job in your current process"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="8"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      id="time-readings-after"
+                      aria-describedby="roi-input-help"
+                      aria-label="Organize field records: your estimated minutes per job with StreamLion"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="3"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Assemble a client handover</th>
+                  <td>
+                    <input
+                      id="time-handover-before"
+                      aria-describedby="roi-input-help"
+                      aria-label="Prepare handover: minutes per job in your current process"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="6"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      id="time-handover-after"
+                      aria-describedby="roi-input-help"
+                      aria-label="Prepare handover: your estimated minutes per job with StreamLion"
+                      type="number"
+                      min="0"
+                      max="480"
+                      step="0.5"
+                      value="2"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="roi-inputs">
+            <label for="roi-rate"
+              >Your hourly value (USD)<input
+                type="number"
+                id="roi-rate"
+                min="0"
+                max="10000"
+                step="any"
+                value="60"
+                aria-describedby="roi-input-help roi-disclaimer"
+            /></label>
+          </div>
+          <p id="roi-message" role="status" aria-live="polite"></p>
+          <p
+            class="roi-time-summary"
+            id="roi-time-summary"
+            aria-live="polite"
+          ></p>
+          <div id="roi-result" aria-live="polite" aria-atomic="true">
+            <p class="roi-per-job">
+              <output id="roi-per-job">$13.00</output>
+              <span>estimated time value per job</span>
+            </p>
+          </div>
           <p class="small" id="roi-disclaimer">
-            Editable planning assumptions. Results express time value at your
-            hourly rate. App prices exclude tax.
+            Planning estimate; actual savings vary. Optional services extra.
+            Prices exclude tax.
           </p>
           <a class="button" href="#pricing"
             >See the one-time price <span aria-hidden="true">→</span></a
@@ -933,7 +958,9 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
               Broader project answers using prepaid credits. Your quote appears
               before each answer. Spoken replies are optional.
             </p>
-            <a class="text-link" href="/api/credits">Explore credit options →</a>
+            <a class="text-link" href="/api/credits"
+              >Explore credit options →</a
+            >
           </div>
           <div>
             <h3>Optional client coordination</h3>
