@@ -82,4 +82,7 @@ test("the client entry names the browser brief and preserves the provider entry"
   assert.match(faq, /No exact address or access codes/);
   assert.match(faq, /local draft to review together, not an approved scope/);
   assert.match(faq, /does not automatically write to Google/);
+  const workflow = document.querySelector("#workflow").textContent.replace(/\s+/g, " ");
+  assert.match(workflow, /provider directory is preparing to launch/);
+  assert.doesNotMatch(workflow, /A client finds you through/);
 });
