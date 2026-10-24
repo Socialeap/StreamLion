@@ -35,8 +35,10 @@ API quota controls, workspace/license gate, backups and purchase ledger.
   snapshotted at approval. Retries, refresh, reconnect and other devices reuse
   that record. The UI shows UTC. Admissions/activations require the approved
   application/admission window and enough time for the full duration before the
-  overall closing date. The 48-hour invitation deadline is shortened if needed
-  to preserve the complete advertised duration. No shortened trial is hidden.
+  overall closing date. The invitation deadline is the earliest of 48 hours
+  after approval, the application/admission window end, and the overall closing
+  date minus the complete trial duration. Activation is permitted strictly before
+  that deadline. No shortened trial is hidden.
 - Permit one explicit, reasoned extension while access is still active, up to
   seven extra days total, never beyond the overall closing date. Expired or
   revoked accounts cannot be revived through this UI. Every transition/extension
@@ -208,7 +210,7 @@ trial expiry and Stripe scheduling can never authorize checkout automatically.
 - Unit/SQLite handlers: default off/no database touch; separate applications and
   access; duplicate registration; reservation/cumulative caps; invitation binding,
   expiry and CSRF/account/admin checks; explicit activation and durable dates;
-  expiry boundaries; reconnect; paid preservation; bounded/audited extension;
+  expiry boundaries (including all three invitation deadline bounds); reconnect; paid preservation; bounded/audited extension;
   read-only retrieval after expiry; missing/partial schema; $0 legacy AI gate.
 - Actual local Workers/D1: five concurrent final-slot approvals produce one
   reservation; five concurrent activations share one durable start/end and one
@@ -232,7 +234,7 @@ feedback and signups cannot substitute for this proof.
 
 ## Review validation receipt — October 24, 2026
 
-Final local result: **1,028/1,028 tests passed**, including the actual local
+Final local result: **1,031/1,031 tests passed**, including the actual local
 Workers/D1 concurrency test and offline cold-start expiry regression. Frontend
 production build, Pages Functions compilation, both auxiliary Worker dry builds,
 capacity exercise and `git diff --check` passed. The first sandboxed full-suite

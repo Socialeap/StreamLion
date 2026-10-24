@@ -589,3 +589,37 @@ test("an activated account fails closed when its pilot policy or version stamp i
   );
   assert.equal(await pilotAccess(f.env, "a"), null);
 });
+
+for (const [label, windowDays, closingDays, expectedHours] of [
+  ["admission window", 1 / 24, 60, 1],
+  ["overall closing date minus the trial duration", 1, 14 + 1 / 24, 1],
+  ["48-hour maximum", 30, 60, 48],
+]) {
+  test(`invitation deadline respects ${label} and matches the exclusive activation boundary`, async (t) => {
+    let now = Date.UTC(2026, 9, 24, 20);
+    t.mock.method(Date, "now", () => now);
+    const f = await fixture(t);
+    f.sql
+      .prepare(
+        "UPDATE streamlion_free_pilot_policy_v1 SET application_end=?,closes_at=? WHERE mode='live'",
+      )
+      .run(now + windowDays * DAY, now + closingDays * DAY);
+    await f.admit("a");
+    await f.admit("b");
+    const deadline = now + expectedHours * 3600000;
+    const invited = await (await f.req("status", "a")).json();
+    assert.equal(invited.inviteUntil, deadline);
+    assert.equal(invited.state, "invited");
+    f.sql
+      .prepare("UPDATE streamlion_google_sessions_v1 SET expires_at=?")
+      .run(deadline + DAY);
+    now = deadline - 1;
+    assert.equal((await f.activate("a")).status, 200);
+    now = deadline;
+    assert.equal((await f.activate("b")).status, 409);
+    const expired = await (await f.req("status", "b")).json();
+    assert.equal(expired.state, "invitation_expired");
+    assert.equal(expired.active, false);
+    assert.equal(await pilotAccess(f.env, "b"), null);
+  });
+}
