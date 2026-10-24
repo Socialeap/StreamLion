@@ -183,12 +183,12 @@ test("activation reuses verified snapshots while preserving both completion chec
   assert.deepEqual(f.counts, { snapshots: 0, appends: 0 });
   assert.equal(
     f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
-    1,
+    0,
   );
 });
 
 for (const lostAppend of [1, 2, 3, 4]) {
-  test(`cold recovery reconciles lost acknowledgement ${lostAppend} without duplicates or another charge`, async (t) => {
+  test(`cold recovery reconciles lost acknowledgement ${lostAppend} without duplicates or a project charge`, async (t) => {
     const f = await fixture(t);
     f.afterAppend(async (receipt) => {
       if (f.counts.appends === lostAppend)
@@ -226,7 +226,7 @@ for (const lostAppend of [1, 2, 3, 4]) {
     assert.equal(
       f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get()
         .n,
-      1,
+      0,
     );
     assert.equal(
       f.sql
@@ -295,7 +295,7 @@ for (const fault of [
   });
 }
 
-test("parallel original-operation recovery retains one logical history and one charge", async (t) => {
+test("parallel original-operation recovery retains one logical history and no project charge", async (t) => {
   const f = await fixture(t);
   f.afterAppend(async (receipt) => {
     if (f.counts.appends === 1) throw new Error("lost acknowledgement");
@@ -318,7 +318,7 @@ test("parallel original-operation recovery retains one logical history and one c
   assert.equal(snapshot.projects.revisions.length, 2);
   assert.equal(
     f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
-    1,
+    0,
   );
 });
 
@@ -360,9 +360,8 @@ for (const tamperAfter of [2, 4]) {
       "pending",
     );
     assert.equal(
-      f.sql.prepare("SELECT state FROM streamlion_shared_spends_v1").get()
-        .state,
-      tamperAfter === 2 ? "reserved" : "complete",
+      f.sql.prepare("SELECT state FROM streamlion_shared_spends_v1").get(),
+      undefined,
     );
   });
 }
@@ -444,8 +443,8 @@ test("a manual Projects edit during the event request is rejected before a confl
     "pending",
   );
   assert.equal(
-    f.sql.prepare("SELECT state FROM streamlion_shared_spends_v1").get().state,
-    "reserved",
+    f.sql.prepare("SELECT state FROM streamlion_shared_spends_v1").get(),
+    undefined,
   );
 });
 

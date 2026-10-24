@@ -1752,7 +1752,7 @@ test("separate engines serialize writes and recover unknown save without another
     /timeout/,
   );
   assert.equal(google.heads.get(job.id).state, "activation_pending");
-  assert.equal((await sharedWallet(db, "test", "a")).available, 4500000);
+  assert.equal((await sharedWallet(db, "test", "a")).available, 7500000);
   await assert.rejects(
     () =>
       new CoordinationEngine(env, connection, google).store(
@@ -1772,11 +1772,11 @@ test("separate engines serialize writes and recover unknown save without another
     { role: "client" },
   );
   assert.equal(google.heads.get(job.id).state, "confirmed");
-  assert.equal((await sharedWallet(db, "test", "a")).available, 4500000);
+  assert.equal((await sharedWallet(db, "test", "a")).available, 7500000);
   await engine.command("confirm", job.id, command, { role: "client" });
   assert.equal(
     sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
-    1,
+    0,
   );
   await assert.rejects(
     () =>
@@ -4648,4 +4648,377 @@ test("a public request can email its status link once, only to the address given
     emailLink: true,
   });
   assert.equal(Object.hasOwn(none, "linkEmailed"), false);
+});
+
+async function deliveryFixture(t) {
+  const f = fixture(t),
+    google = googleFixture();
+  const uploads = [];
+  google.privateFolder = async () => {};
+  google.json = async () => ({ ids: ["completion-file"] });
+  google.upload = async (plan) => {
+    uploads.push(plan);
+  };
+  let job = newClientJob({
+    id: "delivery-job",
+    provider: "a",
+    clientEmail: "client@example.com",
+    title: "Delivery test",
+    now: 1,
+  });
+  job = reduceClientJob(
+    job,
+    {
+      action: "edit",
+      expectedRevision: job.revision,
+      fields: {
+        address: "1 Main",
+        scope: "Capture lobby",
+        deliverables: "Tour link",
+        accessInstructions: "Meet owner",
+        sourceNotes: "PRIVATE-DO-NOT-SHARE",
+      },
+    },
+    { role: "provider" },
+    2,
+  );
+  job = reduceClientJob(
+    job,
+    { action: "submit", expectedRevision: job.revision },
+    { role: "client" },
+    3,
+  );
+  google.heads.set(job.id, job);
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) VALUES('delivery-job','connection-a','delivery-job',?,1)",
+    )
+    .run(await seal(f.env, "client@example.com", "job-email:delivery-job"));
+  const engine = new CoordinationEngine(f.env, f.connection, google);
+  const command = async (id, action, extra = {}, role = "provider") =>
+    engine.command(
+      id,
+      job.id,
+      { action, expectedRevision: google.heads.get(job.id).revision, ...extra },
+      { role },
+    );
+  await command("provider-agrees", "approve", { authorizedMicros: 3000000 });
+  return { ...f, google, engine, command, uploads, jobId: job.id };
+}
+
+test("new scope approval and field progress preserve all 600 starter credits; reviewed completion delivery settles once", async (t) => {
+  const f = await deliveryFixture(t);
+  await f.command("client-agrees", "approve", {}, "client");
+  assert.equal(f.google.heads.get(f.jobId).projectBilling, "delivery");
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 7500000);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
+    0,
+  );
+  await f.command("working", "progress", { state: "in_progress" });
+  await f.command("finished", "progress", { state: "work_completed" });
+  const { completionBrief } = await import("../../server/completion-brief.js");
+  const preview = await completionBrief(
+    f.google.heads.get(f.jobId),
+    await f.google.snapshot(),
+    "Provider",
+  );
+  assert.match(preview.document, /Completion Brief/);
+  assert.doesNotMatch(preview.document, /PRIVATE-DO-NOT-SHARE/);
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 7500000);
+  await assert.rejects(
+    () => f.command("unreviewed", "progress", { state: "delivered" }),
+    /Review the Completion Brief/,
+  );
+  const delivery = {
+    state: "delivered",
+    completionHash: preview.hash,
+    completionReviewed: true,
+    authorizedMicros: 3000000,
+  };
+  const originalRevision = f.google.heads.get(f.jobId).revision;
+  await f.command("send-completion", "progress", delivery);
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 4500000);
+  assert.equal(f.google.heads.get(f.jobId).state, "delivered");
+  assert.equal(f.google.heads.get(f.jobId).completion.hash, preview.hash);
+  assert.equal(
+    f.google.heads.get(f.jobId).attachments.at(-1).visibility,
+    "client",
+  );
+  assert.equal(
+    Buffer.from(f.uploads[0].content, "base64").toString(),
+    preview.document,
+  );
+  await f.engine.command(
+    "send-completion",
+    f.jobId,
+    { action: "progress", expectedRevision: originalRevision, ...delivery },
+    { role: "provider" },
+  );
+  await f.command("client-received", "accept_delivery", {}, "client");
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
+    1,
+  );
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 4500000);
+});
+
+test("insufficient delivery credits preserve work and upload nothing; the original operation recovers after top-up", async (t) => {
+  const f = await deliveryFixture(t);
+  await f.command("client-agrees", "approve", {}, "client");
+  await f.command("finished", "progress", { state: "work_completed" });
+  const { completionBrief } = await import("../../server/completion-brief.js");
+  const preview = await completionBrief(
+    f.google.heads.get(f.jobId),
+    await f.google.snapshot(),
+    "Provider",
+  );
+  f.sql.exec(
+    "UPDATE streamlion_promotional_wallets_v1 SET balance_micros=0 WHERE google_subject='a'",
+  );
+  const delivery = {
+    action: "progress",
+    expectedRevision: f.google.heads.get(f.jobId).revision,
+    state: "delivered",
+    completionHash: preview.hash,
+    completionReviewed: true,
+    authorizedMicros: 3000000,
+  };
+  await assert.rejects(
+    () =>
+      f.engine.command("delivery-retry", f.jobId, delivery, {
+        role: "provider",
+      }),
+    /Insufficient/,
+  );
+  assert.equal(f.google.heads.get(f.jobId).state, "work_completed");
+  assert.equal(f.uploads.length, 0);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
+    0,
+  );
+  f.sql.exec(
+    "UPDATE streamlion_credit_wallets_v1 SET balance_micros=3000000 WHERE google_subject='a'",
+  );
+  await f.engine.command("delivery-retry", f.jobId, delivery, {
+    role: "provider",
+  });
+  assert.equal(f.google.heads.get(f.jobId).state, "delivered");
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 0);
+});
+
+test("changed saved evidence invalidates the reviewed report before any financial or delivery operation", async (t) => {
+  const f = await deliveryFixture(t);
+  await f.command("client-agrees", "approve", {}, "client");
+  await f.command("finished", "progress", { state: "work_completed" });
+  const { completionBrief } = await import("../../server/completion-brief.js");
+  const preview = await completionBrief(
+    f.google.heads.get(f.jobId),
+    await f.google.snapshot(),
+    "Provider",
+  );
+  const snapshot = await f.google.snapshot();
+  snapshot.notes.heads.push({
+    recordId: "note-a",
+    projectId: f.jobId,
+    area: "Lobby",
+    text: "New reviewed evidence",
+    reviewState: "reviewed",
+    updatedAt: new Date(Date.now() + 1000).toISOString(),
+  });
+  const original = f.google.snapshot;
+  f.google.snapshot = async () => ({
+    ...(await original()),
+    notes: snapshot.notes,
+  });
+  await assert.rejects(
+    () =>
+      f.command("stale-delivery", "progress", {
+        state: "delivered",
+        completionHash: preview.hash,
+        completionReviewed: true,
+        authorizedMicros: 3000000,
+      }),
+    /saved job changed/,
+  );
+  assert.equal(await f.engine.operation("stale-delivery"), null);
+  assert.equal(f.uploads.length, 0);
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 7500000);
+});
+
+test("a response lost during delivery recovers the reviewed report and settles its reserved fee once", async (t) => {
+  const f = await deliveryFixture(t);
+  await f.command("client-agrees", "approve", {}, "client");
+  await f.command("finished", "progress", { state: "work_completed" });
+  const { completionBrief } = await import("../../server/completion-brief.js");
+  const preview = await completionBrief(
+    f.google.heads.get(f.jobId),
+    await f.google.snapshot(),
+    "Provider",
+  );
+  const event = f.google.event.bind(f.google);
+  let fail = true;
+  f.google.event = async (e) => {
+    if (e.action === "settle_delivery" && fail)
+      throw new Error("synthetic response loss");
+    return event(e);
+  };
+  const command = {
+    action: "progress",
+    expectedRevision: f.google.heads.get(f.jobId).revision,
+    state: "delivered",
+    completionHash: preview.hash,
+    completionReviewed: true,
+    authorizedMicros: 3000000,
+  };
+  await assert.rejects(
+    () =>
+      f.engine.command("recover-delivery", f.jobId, command, {
+        role: "provider",
+      }),
+    /response loss/,
+  );
+  assert.equal(f.google.heads.get(f.jobId).state, "delivery_pending");
+  assert.equal(f.google.heads.get(f.jobId).completion, undefined);
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 4500000);
+  fail = false;
+  await f.engine.command("recover-delivery", f.jobId, command, {
+    role: "provider",
+  });
+  assert.equal(f.google.heads.get(f.jobId).state, "delivered");
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 4500000);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
+    1,
+  );
+});
+
+test("an encrypted legacy activation journal retains its original approval-time settlement contract", async (t) => {
+  const f = await deliveryFixture(t);
+  const originalRun = f.engine.run.bind(f.engine);
+  f.engine.run = async () => {
+    throw new Error("legacy operation queued");
+  };
+  await assert.rejects(
+    () => f.command("legacy-confirmation", "approve", {}, "client"),
+    /queued/,
+  );
+  const operation = await f.engine.operation("legacy-confirmation");
+  const plan = await unseal(
+    f.env,
+    operation.payload,
+    "operation:legacy-confirmation",
+  );
+  delete plan.deferProjectCharge;
+  for (const e of plan.events) delete e.job.projectBilling;
+  f.sql
+    .prepare(
+      "UPDATE streamlion_coordination_operations_v1 SET payload=? WHERE id=?",
+    )
+    .run(
+      await seal(f.env, plan, "operation:legacy-confirmation"),
+      "legacy-confirmation",
+    );
+  await originalRun("legacy-confirmation");
+  assert.equal(f.google.heads.get(f.jobId).state, "confirmed");
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 4500000);
+  await originalRun("legacy-confirmation");
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
+    1,
+  );
+});
+
+test("a draft checklist cannot leak private exceptions into a client Completion Brief", async (t) => {
+  const f = await deliveryFixture(t);
+  await f.command("client-agrees", "approve", {}, "client");
+  const snapshot = await f.google.snapshot();
+  snapshot.notes.heads.push({
+    recordId: "private-checklist",
+    projectId: f.jobId,
+    area: "StreamLion project checklist",
+    text: "DRAFT-PRIVATE-SECRET",
+    reviewState: "draft",
+    updatedAt: new Date().toISOString(),
+  });
+  const { completionBrief } = await import("../../server/completion-brief.js");
+  await assert.rejects(
+    () => completionBrief(f.google.heads.get(f.jobId), snapshot, "Provider"),
+    /Review and save the project checklist/,
+  );
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 7500000);
+});
+
+test("twenty existing references do not consume the generated Completion Brief slot, and reopened jobs do not pay again", async (t) => {
+  const f = await deliveryFixture(t);
+  await f.command("client-agrees", "approve", {}, "client");
+  for (let n = 0; n < 20; n++)
+    f.google.heads.get(f.jobId).attachments.push({
+      id: "reference-" + n,
+      name: "reference.pdf",
+      visibility: "client",
+      driveId: "file-" + n,
+      type: "application/pdf",
+      bytes: 5,
+      at: 1,
+    });
+  await f.command("finished", "progress", { state: "work_completed" });
+  const { completionBrief } = await import("../../server/completion-brief.js");
+  async function deliver(id) {
+    const preview = await completionBrief(
+      f.google.heads.get(f.jobId),
+      await f.google.snapshot(),
+      "Provider",
+      f.env.GOOGLE_AUTH_ORIGIN,
+    );
+    await f.command(id, "progress", {
+      state: "delivered",
+      completionHash: preview.hash,
+      completionReviewed: true,
+      authorizedMicros: 3000000,
+    });
+  }
+  await deliver("first-delivery");
+  assert.equal(f.google.heads.get(f.jobId).attachments.length, 21);
+  await f.command("acknowledged", "accept_delivery", {}, "client");
+  await f.command("closed", "close");
+  await f.command("reopened", "reopen", {
+    reason: "Client requested a correction",
+  });
+  await f.command("correction-finished", "progress", {
+    state: "work_completed",
+  });
+  f.sql.exec(
+    "UPDATE streamlion_coordination_policy_v1 SET project_micros=2000000 WHERE mode='test'",
+  );
+  await deliver("corrected-delivery");
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 4500000);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
+    1,
+  );
+});
+
+test("a workbook with one event slot left cannot reserve credits for a two-checkpoint delivery", async (t) => {
+  const f = await deliveryFixture(t);
+  await f.command("client-agrees", "approve", {}, "client");
+  await f.command("finished", "progress", { state: "work_completed" });
+  const original = f.google.snapshot;
+  f.google.snapshot = async () => ({
+    ...(await original()),
+    rows: [[], [], Array(9999)],
+  });
+  await assert.rejects(
+    () =>
+      f.command("full-history", "progress", {
+        state: "delivered",
+        completionReviewed: true,
+        authorizedMicros: 3000000,
+        completionHash: "a".repeat(64),
+      }),
+    /cannot fit both delivery checkpoints/,
+  );
+  assert.equal(await f.engine.operation("full-history"), null);
+  assert.equal((await sharedWallet(f.db, "test", "a")).available, 7500000);
+  assert.equal(f.uploads.length, 0);
 });

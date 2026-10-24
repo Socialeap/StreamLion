@@ -774,7 +774,7 @@ function ProjectHomeContent({
                 className="primary"
                 onClick={openReport}
               >
-                Preview job handover
+                Preview Completion Brief
               </button>
               <button
                 onClick={() =>

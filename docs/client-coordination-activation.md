@@ -34,7 +34,7 @@ A paid Core account can receive 7,500,000 promotional microUSD (600 starter cred
 
 Existing AI price, model budgets, rate limits, Stripe reconciliation and purchased-credit refund behavior remain. Already-reserved AI turns are backfilled without another debit. No new checkout, subscription, auto-recharge or provider call is installed.
 
-One project charge follows mutual approval. Drafts, clarification, rejected requests, later revisions and reopening incur no second charge. Cancellation after confirmed activation does not automatically refund it. Commercial cancellation/refund terms need owner approval before a paid pilot.
+For newly agreed jobs, the project charge follows reviewed Completion Brief delivery to the protected client portal; scope approval does not reserve project credits. Drafts, clarification, rejected requests, later revisions and reopening incur no second charge. Existing paid jobs and encrypted legacy activation journals retain their original charging contract. Cancellation after a completed charge does not automatically refund it. See [delivery-workflow-revision.md](delivery-workflow-revision.md) for delivery verification, recovery and release gates. Commercial cancellation/refund terms need owner approval before a paid pilot.
 
 ## PWA notifications and Resend
 

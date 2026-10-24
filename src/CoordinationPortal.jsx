@@ -1,3 +1,4 @@
+import CompletionDelivery from "./CompletionDelivery.jsx";
 import { SubmittedPricing, FormPricingControls } from "./PricingEstimate.jsx";
 import ProviderBrand from "./ProviderBrand.jsx";
 import React, {
@@ -81,6 +82,8 @@ const states = {
   clarification: "Needs clarification",
   awaiting_agreement: "Awaiting agreement",
   activation_pending: "Confirming — recovery in progress",
+  delivery_pending:
+    "Verifying Completion Brief delivery — retry the original operation",
   confirmed: "Confirmed",
   in_progress: "In progress",
   work_completed: "Work completed · delivery pending",
@@ -1566,6 +1569,9 @@ export default function CoordinationPortal({
                     )}
                     link={links.find((l) => l.jobId === selectedJob.id)}
                     client={false}
+                    prepareCompletion={(id) =>
+                      api("provider/completion?job=" + encodeURIComponent(id))
+                    }
                     tab={workOrderTab}
                     onTabChange={setWorkOrderTab}
                     busy={busy}
@@ -1781,8 +1787,8 @@ function RequestGuide() {
       </li>
       <li>
         <strong>Agree before starting.</strong> Review missing details, clarify
-        the brief and approve the scope together. The displayed job charge
-        applies after both sides approve.
+        the brief and approve the scope together. For new jobs, the displayed
+        project fee is taken when you deliver the Completion Brief.
       </li>
       <li>
         <strong>Work, deliver and close.</strong> Follow changes and
@@ -1983,6 +1989,7 @@ function JobPanel({
   client,
   busy,
   command,
+  prepareCompletion,
   upload,
   invite,
   inviteAvailable = true,
@@ -2037,7 +2044,8 @@ function JobPanel({
   const [downloadNotice, setDownloadNotice] = useState("");
   const closed = Boolean(job.closedAt),
     issues = readiness(job);
-  const canEdit = !closed && job.state !== "activation_pending";
+  const canEdit =
+    !closed && !["activation_pending", "delivery_pending"].includes(job.state);
   useEffect(() => {
     // Initial state already uses this revision. Its passive effect must not
     // replace wording entered immediately after the first form commit.
@@ -2483,9 +2491,10 @@ function JobPanel({
                   checked={authorized}
                   onChange={(e) => setAuthorized(e.target.checked)}
                 />
-                I authorize {price / CREDIT_UNIT} credits for this job once both
-                sides approve. Later edits and reopening carry no second project
-                charge.
+                I authorize {price / CREDIT_UNIT} credits when I deliver this
+                job’s Completion Brief. Scope approval and field progress use no
+                project credits. AI is quoted separately. Later edits and
+                reopening carry no second project charge.
               </label>
             )}
             <button
@@ -2731,6 +2740,34 @@ function JobPanel({
             {downloadNotice && <p role="status">{downloadNotice}</p>}
           </div>
         )}
+        {job.completion && (
+          <p className="coord-notice">
+            <a
+              href={
+                "/api/coordination/" +
+                (client ? "client" : "provider") +
+                "/file?job=" +
+                encodeURIComponent(job.id) +
+                "&id=" +
+                encodeURIComponent(job.completion.attachmentId)
+              }
+            >
+              Download Completion Brief
+            </a>{" "}
+            · Delivered report; original attachments are available in Files.
+          </p>
+        )}
+        {!client &&
+          job.projectBilling === "delivery" &&
+          job.state === "work_completed" &&
+          issues.length === 0 && (
+            <CompletionDelivery
+              job={job}
+              busy={busy}
+              command={command}
+              prepareCompletion={prepareCompletion}
+            />
+          )}
         <div className="coord-payment">
           <strong>Provider-reported payment</strong>
           <p>
@@ -2778,14 +2815,16 @@ function JobPanel({
                 >
                   Mark work completed
                 </button>
-                <button
-                  disabled={busy || issues.length > 0}
-                  onClick={() =>
-                    command(job, "progress", { state: "delivered" })
-                  }
-                >
-                  Mark delivered
-                </button>
+                {job.projectBilling !== "delivery" && (
+                  <button
+                    disabled={busy || issues.length > 0}
+                    onClick={() =>
+                      command(job, "progress", { state: "delivered" })
+                    }
+                  >
+                    Mark delivered
+                  </button>
+                )}
               </div>
             )}
             <label>

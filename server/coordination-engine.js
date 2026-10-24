@@ -1,3 +1,4 @@
+import { completionBrief } from "./completion-brief.js";
 import { hash, seal, unseal } from "./google-auth.js";
 import { base64Bytes } from "./base64.js";
 import { CoordinationGoogle } from "./coordination-google.js";
@@ -520,6 +521,7 @@ export class CoordinationEngine {
           409,
         );
       next.chargeAuthorizedMicros = policy.project_micros;
+      next.projectBilling = "delivery";
     }
     if (next.state === "activation_pending") {
       const policy = await this.db
@@ -540,7 +542,116 @@ export class CoordinationEngine {
         next.updatedAt,
       );
       plan.activation = true;
+      plan.deferProjectCharge =
+        next.projectBilling === "delivery" || !job.accepted;
+      next.projectBilling = plan.deferProjectCharge
+        ? "delivery"
+        : next.projectBilling;
       plan.events.push(eventFor(id + "-confirmed", next, "system", "activate"));
+    }
+    if (command.action === "approve" && !job.accepted) {
+      next.projectBilling = "delivery";
+      plan.events[0].job.projectBilling = "delivery";
+    }
+    if (
+      command.action === "progress" &&
+      command.state === "delivered" &&
+      job.projectBilling === "delivery"
+    ) {
+      if (
+        readiness(job).length ||
+        job.state !== "work_completed" ||
+        command.completionReviewed !== true ||
+        command.authorizedMicros !== job.chargeAuthorizedMicros
+      )
+        throw new CoordinationError(
+          "Review the Completion Brief and authorize its delivery charge first.",
+          409,
+        );
+      if (snapshot.rows?.[2]?.length + 2 > 10000)
+        throw new CoordinationError(
+          "Workbook history cannot fit both delivery checkpoints. Preserve the job for reviewed workbook rollover before delivery.",
+          409,
+        );
+      const brief = await completionBrief(
+        job,
+        snapshot,
+        this.connection.client_brand,
+        this.env.GOOGLE_AUTH_ORIGIN,
+      );
+      if (command.completionHash !== brief.hash)
+        throw new CoordinationError(
+          "The saved job changed. Prepare and review the latest Completion Brief.",
+          409,
+        );
+      const policy = await this.db
+        .prepare(
+          "SELECT project_micros FROM streamlion_coordination_policy_v1 WHERE mode=? AND active=1",
+        )
+        .bind(this.connection.mode)
+        .first();
+      const priorSpend = await this.db
+        .prepare(
+          "SELECT * FROM streamlion_shared_spends_v1 WHERE mode=? AND google_subject=? AND id=?",
+        )
+        .bind(
+          this.connection.mode,
+          this.connection.google_subject,
+          "job:" + job.id,
+        )
+        .first();
+      if (
+        (!priorSpend || priorSpend.state !== "complete") &&
+        (!policy || policy.project_micros !== job.chargeAuthorizedMicros)
+      )
+        throw new CoordinationError(
+          "The project credit price changed. Stop for review before delivery.",
+          409,
+        );
+      await this.google.privateFolder();
+      const generated = await this.google.json(
+        "https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive&type=files",
+      );
+      const attachment = {
+        id,
+        kind: "completion",
+        name: "Completion-Brief.html",
+        type: "text/html",
+        bytes: brief.bytes,
+        driveId: generated.ids[0],
+        sha256: brief.hash,
+        visibility: "client",
+        at: next.updatedAt,
+      };
+      next.state = "delivery_pending";
+      delete next.deliveredAt;
+      const delivered = reduceClientJob(
+        next,
+        {
+          action: "settle_delivery",
+          expectedRevision: next.revision,
+          attachment,
+          completion: {
+            attachmentId: id,
+            hash: brief.hash,
+            generatedAt: brief.generatedAt,
+          },
+        },
+        { role: "system" },
+        next.updatedAt,
+      );
+      plan.events = [
+        eventFor(id, next, actor.role, "progress"),
+        eventFor(id + "-delivered", delivered, "system", "settle_delivery"),
+      ];
+      plan.settlement = true;
+      const bytes = new TextEncoder().encode(brief.document);
+      // Chunking avoids passing a report-sized argument list to the runtime.
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 8192)
+        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      plan.file = { attachment, content: btoa(binary) };
+      next = delivered;
     }
     plan.projection = projectionFor(next, snapshot, id);
     if (plan.activation) {
@@ -827,8 +938,25 @@ export class CoordinationEngine {
     } else {
       const first = plan.events[0],
         last = plan.events.at(-1);
-      if (plan.file) await this.google.upload(plan.file);
-      if (plan.activation) {
+      if (plan.settlement) {
+        const current = await this.google.snapshot();
+        const missing = plan.events.filter(
+          (event) => !current.events.has(event.id),
+        ).length;
+        if (current.rows?.[2]?.length + missing > 10000)
+          throw new CoordinationError(
+            "Workbook history cannot fit the remaining delivery checkpoints. Preserve the original operation for reviewed recovery.",
+            409,
+          );
+      }
+      if (plan.activation && plan.deferProjectCharge)
+        await grantStarter(
+          this.db,
+          this.connection.mode,
+          this.connection.google_subject,
+          Date.now(),
+        );
+      if ((plan.activation && !plan.deferProjectCharge) || plan.settlement) {
         await grantStarter(
           this.db,
           this.connection.mode,
@@ -848,6 +976,7 @@ export class CoordinationEngine {
             409,
           );
       }
+      if (plan.file) await this.google.upload(plan.file);
       if (plan.archive) await this.google.archive(last.job, id, plan.archive);
       await this.google.withWriteSnapshot(async (writer) => {
         await writer.event(first);
@@ -855,17 +984,29 @@ export class CoordinationEngine {
           plan.projection,
           plan.finalProjection?.revisionId,
         );
-        if (plan.activation) {
+        if (plan.activation || plan.settlement) {
           await writer.verify();
-          await finishProject(
-            this.db,
-            this.connection.mode,
-            this.connection.google_subject,
-            last.jobId,
-            "complete",
-          );
+          if (plan.activation && !plan.deferProjectCharge)
+            await finishProject(
+              this.db,
+              this.connection.mode,
+              this.connection.google_subject,
+              last.jobId,
+              "complete",
+            );
           await writer.event(last);
-          await writer.projection(plan.finalProjection);
+          if (plan.settlement) {
+            await writer.verify();
+            await finishProject(
+              this.db,
+              this.connection.mode,
+              this.connection.google_subject,
+              last.jobId,
+              "complete",
+            );
+          }
+          if (plan.finalProjection)
+            await writer.projection(plan.finalProjection);
         }
       });
       if (plan.revokeSessions)

@@ -9,6 +9,7 @@ const ORDER = {
   confirmed: 2,
   in_progress: 3,
   work_completed: 4,
+  delivery_pending: 4,
   delivered: 5,
   closed: 5,
 };

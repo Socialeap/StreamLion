@@ -300,12 +300,8 @@ export default function Credits() {
       },
     },
     {
-      title: "5. Coordinate the job with your client",
-      free: "Copy the agreed details into your own project, then send updates, changes and results by email, text or phone.",
-      credit: {
-        price: pill(config?.projectMicros, "per project"),
-        text: "You authorize the charge once you and your client mutually approve the Project Brief, which becomes your shared Coordination Brief. You both get a real-time Coordination page that stays in sync: progress, questions, changes and delivery links; archived to your Google Drive once complete, visible to your client for 90 days.",
-      },
+      title: "5. Agree the brief and coordinate the job",
+      free: "You and your client approve the same Project Brief. Keep questions, agreed changes and saved progress on the shared Coordination page. Scope approval and ordinary progress updates use no project credits.",
     },
     {
       title: "6. In the field: add notes",
@@ -317,6 +313,14 @@ export default function Credits() {
       credit: {
         price: pill(config?.aiMicros, "per answer"),
         text: "AI answers more complex questions using the brief and your field notes. StreamLion filters detected private details in your question and project records before OpenAI receives them, then restores names in the answer.",
+      },
+    },
+    {
+      title: "8. Deliver the Completion Brief",
+      free: "Preview and export your Core handover without a project charge.",
+      credit: {
+        price: pill(config?.projectMicros, "per completed delivery"),
+        text: "For newly agreed jobs, review the Completion Brief and confirm its delivery to the protected client portal. The project fee is taken once at delivery. Existing jobs already charged at approval are not billed again.",
       },
     },
   ];
@@ -343,8 +347,10 @@ export default function Credits() {
             </p>
             <p className="credits-starter">
               To start, eligible StreamLion app purchasers receive 600 free
-              starter credits, enough for two Coordination pages. They are used
-              before any credits you buy.
+              starter credits once when connecting client coordination. They can
+              fund AI and project delivery and are used before purchased
+              credits. Two 240-credit deliveries fit within that balance if it
+              has not been used for other services.
             </p>
             {account?.connected && (
               <p className="credits-balance-line">
@@ -414,11 +420,13 @@ export default function Credits() {
                 its price, and you confirm it before any credits are used.
               </li>
               <li>
-                <strong>Coordination page:</strong> you authorize the charge
-                when you approve the Project Brief, and it is taken once your
-                client approves too. A declined or unfinished request costs
-                nothing. Later edits, corrections or reopening the same job do
-                not add a second charge.
+                <strong>Completion Brief delivery:</strong> for newly agreed
+                jobs, scope approval and field progress do not take the project
+                fee. Review the Completion Brief and confirm delivery to the
+                client portal to use the quoted project credits once. Later
+                edits, corrections or reopening the same job do not add another
+                project fee. Existing jobs already charged at scope approval
+                retain that payment.
               </li>
               <li>
                 <strong>Brief preparation and AI answers:</strong> if a brief
@@ -434,9 +442,11 @@ export default function Credits() {
                 again. Starter credits are unchanged.
               </li>
               <li>
-                Before you share your request form, check that your balance
-                covers each job you expect to accept. If it falls short, the
-                approval waits until you add credits; the request is kept.
+                Keep enough credits for the delivery fee and any separately
+                quoted AI use. If your balance falls short at delivery, your
+                project and draft are kept while you add credits and retry. A
+                delivery whose result is uncertain stays pending for
+                verification; retry its original operation.
               </li>
             </ul>
           </section>

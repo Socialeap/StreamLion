@@ -127,7 +127,7 @@ export default function HandoverReport({
     >
       <div className="handover-controls">
         <div className="section-heading">
-          <h2 id="handover-title">Review your job handover</h2>
+          <h2 id="handover-title">Review your Completion Brief</h2>
           <button onClick={onClose} disabled={busy}>
             Close report
           </button>

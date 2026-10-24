@@ -174,6 +174,11 @@ export function reduceClientJob(previous, command, actor, now) {
     )
   )
     throw new CoordinationError("This job is read-only.", 409);
+  if (job.state === "delivery_pending" && command.action !== "settle_delivery")
+    throw new CoordinationError(
+      "Delivery verification is pending. Retry the original delivery operation.",
+      409,
+    );
   if (
     job.state === "activation_pending" &&
     !["activate", "cancel"].includes(command.action)
@@ -213,7 +218,7 @@ export function reduceClientJob(previous, command, actor, now) {
       break;
     }
     case "attach":
-      if (job.attachments.length >= 20)
+      if (job.attachments.filter((a) => a.kind !== "completion").length >= 20)
         throw new CoordinationError("Maximum 20 attachments per job.");
       job.attachments.push(command.attachment);
       break;
@@ -412,6 +417,17 @@ export function reduceClientJob(previous, command, actor, now) {
         job.workCompletedAt ??= now;
       if (command.state === "in_progress") delete job.workCompletedAt;
       if (command.state === "delivered") job.deliveredAt = now;
+      break;
+    case "settle_delivery":
+      if (actor.role !== "system" || job.state !== "delivery_pending")
+        throw new CoordinationError(
+          "Delivery must be verified by the service.",
+          403,
+        );
+      job.attachments.push(command.attachment);
+      job.completion = command.completion;
+      job.state = "delivered";
+      job.deliveredAt = now;
       break;
     case "accept_delivery":
       if (actor.role !== "client" || job.state !== "delivered")
