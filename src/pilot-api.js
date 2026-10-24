@@ -10,7 +10,11 @@ export async function pilotRequest(route, { account, ...options } = {}) {
     },
   });
   const result = await r.json();
-  if (!r.ok) throw new Error(result.error || "Pilot could not be checked.");
+  if (!r.ok)
+    throw Object.assign(
+      new Error(result.error || "Pilot could not be checked."),
+      { code: result.code, registered: result.registered === true },
+    );
   return result;
 }
 export function pilotReceipt(status, now = Date.now()) {

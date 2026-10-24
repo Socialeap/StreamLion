@@ -12,6 +12,7 @@ import {
   VALUE_TASKS,
 } from "./landing-value.js";
 import { initializeLandingVoice } from "./landing-voice.js";
+import { initializeLandingPilot } from "./landing-pilot.js";
 import { beforeLeaving } from "./workflow.js";
 import { closeoutNextActions } from "./landing-demo.js";
 import {
@@ -666,23 +667,5 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
     /* Keep the standard-price HTML fallback; never imply unconfirmed slots. */
   });
 
-// No public pilot promises until both server configuration and owner policy allow it.
-fetch("/api/free-pilot/config", {
-  credentials: "omit",
-  cache: "no-store",
-  signal: AbortSignal.timeout(8000),
-})
-  .then((r) => (r.ok ? r.json() : null))
-  .then((data) => {
-    if (!data?.enabled || !data.interestOpen) return;
-    const p = document.createElement("p");
-    p.className = "shell";
-    const a = document.createElement("a");
-    a.href = "/pilot/";
-    a.textContent = data.applicationsOpen
-      ? "Register interest in the controlled free pilot — manual approval required"
-      : "Join the StreamLion interest list — immediate pilot access unavailable";
-    p.append(a);
-    document.querySelector("main")?.prepend(p);
-  })
-  .catch(() => {});
+// Public pilot offers stay hidden until a fresh server policy is confirmed.
+initializeLandingPilot(document, window);
