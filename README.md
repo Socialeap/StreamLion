@@ -37,3 +37,7 @@ Append-only workbook revisions support idempotent retry and detect competing rev
 Existing project streamlion, repository Socialeap/StreamLion, production branch main. Build npm run build, output dist, repository root, Node 22. Do not alter Porkbun nameservers, transfer/unlock the domain, or change apex/www/email/3dps records. Existing streamlion.transcendencemedia.com CNAME/Pages arrangement is retained.
 
 Official wasm Rollup/esbuild overrides accommodate the development machine's native-binary policy. CI runs tests/build. Owner Google setup, published frontend, live Google roundtrip, offline recovery, and phone microphone acceptance are separate gates. The retired ChatGPT routes return HTTP 410 after deployment. See the committed release instructions before claiming completion.
+
+## Owner admin portal (review candidate)
+
+The `/admin/` entry adds user/activity/credit reporting and audited individual goodwill grants. Approved limits are 800 credits per grant/account/month and 4,000 globally/month; manual goodwill can fund otherwise-enabled speech and survives Core refunds. Source access and provider-cost gates remain unchanged. Migration 0025 and all admin policies are closed by default. See [admin release gates](docs/admin-portal-release.md), [approved spec](docs/superpowers/specs/2026-10-24-admin-portal.md), and the execution plan. No merge/deploy/live enrollment is implied.

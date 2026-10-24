@@ -2,6 +2,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { adminSuccessorForLegacy } from "./preflight-admin.mjs";
 const migrations = new URL("../migrations/", import.meta.url);
 const normalized = (sql) =>
   sql.replace(/;\s*$/, "").replace(/\s+/g, " ").trim();
@@ -113,6 +114,26 @@ export function coordinationPreflight(
         )
           expected.set(r.name, r);
       }
+    }
+    // 0025 replaces shared funding guards. Accept the exact, stamped successor
+    // only; older classifiers must never invite replay of legacy charging SQL.
+    if (
+      input.schema.some((r) => r.name === "streamlion_admin_schema_v1") ||
+      input.stamps.streamlion_admin_schema_v1 !== undefined
+    ) {
+      try {
+        if (adminSuccessorForLegacy(input).migration !== "already_applied")
+          throw new Error("Partial admin successor");
+      } catch (error) {
+        throw new Error(
+          "Schema mismatch: admin successor. Stop for review. " + error.message,
+        );
+      }
+      return {
+        migration: "already_applied",
+        activation: false,
+        newMarkers: added,
+      };
     }
     for (const [name, row] of expected) {
       const found = actual.get(name);

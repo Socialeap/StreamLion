@@ -1,3 +1,4 @@
+import { expectedAdminSchema } from "../../scripts/preflight-admin.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -1425,11 +1426,11 @@ test("already reminded projects do not starve subsequent archive reminders", asy
 });
 test("0011 exact preflight accepts pending/applied and rejects partial, altered or unstamped state", (t) => {
   const f = fixture(t);
-  const schema = f.sql
-    .prepare(
-      "SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%' AND sql IS NOT NULL",
-    )
-    .all();
+  const schema = expectedAdminSchema(false).schema.filter((r) =>
+    r.name.startsWith("streamlion_"),
+  );
+  // Pending older migrations are tested before the source-aware 0025 successor.
+  // Removing its prerequisites while retaining 0025 would be an unsafe partial state.
   const stamps = Object.fromEntries(
     schema
       .filter((r) => r.name.includes("_schema_"))
@@ -2554,11 +2555,11 @@ test("Google interruption after verified claim retains the original operation an
 });
 test("0012 preflight accepts only exact complete or entirely absent markers", (t) => {
   const f = fixture(t),
-    schema = f.sql
-      .prepare(
-        "SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%' AND sql IS NOT NULL",
-      )
-      .all();
+    schema = expectedAdminSchema(false).schema.filter((r) =>
+      r.name.startsWith("streamlion_"),
+    );
+  // Pending older migrations are tested before the source-aware 0025 successor.
+  // Removing its prerequisites while retaining 0025 would be an unsafe partial state.
   const stamps = Object.fromEntries(
     schema
       .filter((r) => r.name.includes("_schema_"))
