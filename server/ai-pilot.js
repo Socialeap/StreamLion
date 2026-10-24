@@ -132,7 +132,7 @@ export async function handleAI(context) {
         ? json({ enabled: false, reason: "connect_google" })
         : json({ error: "Connect Google before using AI." }, 401);
     if (
-      (paid || licenseRequired(env)) &&
+      (paid || licenseRequired(env) || env.ENABLE_FREE_PILOT === "true") &&
       !(await hasPurchase(env, session.google_subject))
     )
       return json({ error: "A StreamLion license is required." }, 402);

@@ -2,6 +2,7 @@ import { base64url as b64, base64urlBytes as unb64 } from "./base64.js";
 import { FOLDER_MIME } from "../src/drive-folders.js";
 import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
+import { pilotAccess, pilotHistory } from "./pilot-access.js";
 import { managedAppend } from "./coordination-engine.js";
 const SESSION = "__Host-streamlion-session";
 const WORKSPACE = "__Host-streamlion-workspace";
@@ -637,7 +638,16 @@ export async function handleGoogle({ request, env, params }) {
     }
     // Sign-in/status/disconnect stay accessible so unpaid buyers can authenticate
     // and restore a purchase. Every server-backed workspace operation is gated.
-    if (licenseRequired(env) && !(await hasPurchase(env, row.google_subject)))
+    if (
+      licenseRequired(env) &&
+      !(await hasPurchase(env, row.google_subject)) &&
+      !(await pilotAccess(env, row.google_subject)) &&
+      !(
+        request.method === "GET" &&
+        ["sheets", "drive"].includes(route) &&
+        (await pilotHistory(env, row.google_subject))
+      )
+    )
       return json(
         { error: "Purchase StreamLion or restore your purchase to continue." },
         402,
@@ -812,6 +822,7 @@ export async function handleGoogle({ request, env, params }) {
 // destinations retain the existing PWA/purchase behavior; no open redirects.
 export function googleReturnPath(value, env) {
   if (value === "purchase" || value === "/api/purchase") return "/api/purchase";
+  if (value === "/pilot/") return "/pilot/";
   if (value === "credits" || value === "/api/credits") return "/api/credits";
   if (value === "/api/client-requests") return "/api/client-requests";
   if (

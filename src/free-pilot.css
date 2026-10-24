@@ -1,0 +1,60 @@
+.free-pilot {
+  max-width: 52rem;
+  overflow-wrap: anywhere;
+}
+.free-pilot section {
+  margin-top: 2rem;
+}
+.free-pilot label {
+  display: block;
+  margin: 1rem 0;
+}
+.free-pilot input:not([type="checkbox"]),
+.free-pilot textarea,
+.free-pilot select {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0.75rem;
+  font: inherit;
+  min-height: 44px;
+}
+.free-pilot textarea {
+  min-height: 6rem;
+}
+.free-pilot .pilot-check {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+.free-pilot input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.free-pilot button {
+  min-height: 44px;
+  margin: 0.25rem;
+  padding: 0.7rem 1rem;
+}
+.free-pilot .pilot-account {
+  border-top: 1px solid #80958b;
+  padding: 1rem 0;
+}
+.free-pilot :focus-visible {
+  outline: 3px solid #286c56;
+  outline-offset: 3px;
+}
+.pilot-banner {
+  padding: 0.7rem 1rem;
+  background: #edf8f2;
+  color: #123e2b;
+}
+.pilot-banner a {
+  color: inherit;
+  text-decoration: underline;
+}
+.free-pilot a {
+  overflow-wrap: anywhere;
+}

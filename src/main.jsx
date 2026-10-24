@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import "./purchase.css";
+import "./free-pilot.css";
 import { offerUpdate } from "./updates.js";
 import "./style.css";
 import { preferredTheme, applyTheme } from "./theme.js";

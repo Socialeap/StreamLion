@@ -184,10 +184,12 @@ other modes. This configuration change requires its own review/merge and
 closed deployment before claiming tax activation; it does not authorize an
 upgrade or sales opening.
 
-The owner confirmed the NY certificate effective date is October 24, 2026.
-The existing Stripe registration is scheduled for `2026-10-24T04:00:00Z`,
-midnight in New York. Do not activate it early or duplicate the registration.
-Checkout stays paused before and after that date until separately authorized.
+On October 24, 2026, the owner rechecked the NY business dashboard and reported
+the certificate is still pending. The earlier October 24 date and any existing
+Stripe registration schedule are not proof of issuance or permission to sell.
+Do not duplicate or change a Stripe registration under the free-pilot task.
+Checkout must stay paused until the certificate is actually issued/effective
+and the separate legal, commercial and release approvals are satisfied.
 
 Prerequisites: gates 2–4 accepted, applicable legal approval and explicit future
 cost approval. Verify Stripe live account and exact StreamLion product/price IDs
