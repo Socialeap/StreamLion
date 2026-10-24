@@ -779,7 +779,7 @@ export default function CoordinationPortal({
                 {Math.floor(status.wallet.available / CREDIT_UNIT)} credits
               </strong>
               <span>
-                {status.projectMicros / CREDIT_UNIT} per confirmed job
+                {status.projectMicros / CREDIT_UNIT} per job, at first delivery
               </span>
               <a href="/api/credits">Project cost &amp; benefits</a>
             </div>
@@ -957,8 +957,9 @@ export default function CoordinationPortal({
               </label>
               <p>
                 Eligible Core purchasers receive 600 starter credits once,
-                shared with AI assistance. A job charge applies only after both
-                parties approve.
+                shared with AI assistance. The project fee is taken when you
+                deliver the Completion Brief. Scope approval uses no project
+                credits.
               </p>
               <button disabled={busy || !consent}>
                 Enable client coordination

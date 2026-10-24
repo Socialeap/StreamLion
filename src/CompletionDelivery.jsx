@@ -6,6 +6,7 @@ export default function CompletionDelivery({
   command,
   prepareCompletion,
 }) {
+  const correction = Boolean(job.completion);
   const generation = useRef(0);
   const [brief, setBrief] = useState(null);
   const [reviewed, setReviewed] = useState(false);
@@ -79,10 +80,16 @@ export default function CompletionDelivery({
               checked={reviewed}
               onChange={(e) => setReviewed(e.target.checked)}
             />
-            I reviewed this Completion Brief and authorize{" "}
-            {job.chargeAuthorizedMicros / 12500} credits when it is delivered to
-            the client portal. Retrying or reopening this job adds no second
-            project fee.
+            {correction ? (
+              "I reviewed this corrected Completion Brief. Delivering it adds no project fee for this job."
+            ) : (
+              <>
+                I reviewed this Completion Brief and authorize{" "}
+                {job.chargeAuthorizedMicros / 12500} credits when it is
+                delivered to the client portal. Retrying or reopening this job
+                adds no second project fee.
+              </>
+            )}
           </label>
           <button
             disabled={busy || !reviewed}
@@ -95,8 +102,14 @@ export default function CompletionDelivery({
               })
             }
           >
-            Deliver Completion Brief · {job.chargeAuthorizedMicros / 12500}{" "}
-            credits
+            {correction ? (
+              "Deliver corrected Completion Brief · no additional credits"
+            ) : (
+              <>
+                Deliver Completion Brief · {job.chargeAuthorizedMicros / 12500}{" "}
+                credits
+              </>
+            )}
           </button>
         </>
       )}
