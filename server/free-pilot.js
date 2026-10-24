@@ -3,6 +3,7 @@ import { paymentMode, hasPurchase } from "./purchase-access.js";
 import { pilotAccess } from "./pilot-access.js";
 import { boundedText } from "./request-body.js";
 import { reserveGoogleRequest } from "./google-limits.js";
+import { readPilotPolicy, updatePilotPolicy } from "./pilot-policy.js";
 export { pilotAccess } from "./pilot-access.js";
 const DAY = 86400000;
 const reply = (body, status = 200) =>
@@ -38,6 +39,7 @@ const open = (p, now) =>
   p.application_start < p.application_end &&
   p.application_end < p.closes_at &&
   p.admissions_open === 1 &&
+  (p.admission_mode !== "instant" || p.interest_open === 1) &&
   p.application_start <= now &&
   now < p.application_end &&
   now + p.duration_days * DAY < p.closes_at;
@@ -47,7 +49,9 @@ const publicPolicy = (p, now) => ({
   applicationsOpen: open(p, now),
   durationDays: p.duration_days,
   closesAt: p.closes_at,
-  terms: "free-pilot-v1",
+  terms: p.admission_mode === "instant" ? "free-pilot-v2" : "free-pilot-v1",
+  admissionMode: p.admission_mode || "manual",
+  reopenAt: p.admissions_open === 1 ? p.reopen_at || null : null,
   meteredSpendUSD: 0,
 });
 const state = (r, now) =>
@@ -72,6 +76,11 @@ export async function handleFreePilot({ request, env, params }) {
       ? "GET"
       : [
             "apply",
+            "start",
+            "admin/settings",
+            "admin/schedule",
+            "admin/pause",
+            "admin/cancel-schedule",
             "activate",
             "feedback",
             "admin/approve",
@@ -95,13 +104,19 @@ export async function handleFreePilot({ request, env, params }) {
         request.headers.get("Origin") !== env.GOOGLE_AUTH_ORIGIN)
     )
       throw fail(403, "Open StreamLion to continue.");
-    const p = await select(
+    const p = await readPilotPolicy(
       env,
-      "SELECT p.* FROM streamlion_free_pilot_policy_v1 p JOIN streamlion_free_pilot_schema_v1 s ON s.version=1 WHERE p.mode=?",
       mode,
+      now,
+      ![
+        "admin/settings",
+        "admin/schedule",
+        "admin/pause",
+        "admin/cancel-schedule",
+      ].includes(route),
     );
-    if (!p) throw fail(503, "Pilot configuration is unavailable.");
     const policy = publicPolicy(p, now);
+    policy.availability = policy.applicationsOpen ? "available" : "closed";
     if (policy.applicationsOpen) {
       const counts = await select(
         env,
@@ -114,6 +129,7 @@ export async function handleFreePilot({ request, env, params }) {
         Number(counts.admitted || 0) < p.admission_cap &&
         Number(counts.occupied || 0) < p.active_cap;
     }
+    if (open(p, now) && !policy.applicationsOpen) policy.availability = "full";
     if (route === "config") return reply(policy);
     const session = await getSession(request, env);
     if (!session)
@@ -158,6 +174,15 @@ export async function handleFreePilot({ request, env, params }) {
         endsAt: r?.ends_at || null,
         inviteUntil: r?.invite_until || null,
         invitedDurationDays: r?.duration_days || null,
+        application: r
+          ? {
+              name: r.name,
+              business: r.business,
+              fit: r.fit,
+              contact: !!r.contact,
+              marketing: !!r.marketing,
+            }
+          : null,
         feedback: r
           ? {
               onboarding: !!r.onboarding,
@@ -190,6 +215,7 @@ export async function handleFreePilot({ request, env, params }) {
         .all();
       return reply({
         policy: p,
+        controlsAvailable: p.controlsAvailable === true,
         counts,
         accounts: rows.results.map((r) => ({ ...r, state: state(r, now) })),
         nextOffset: rows.results.length === 50 ? offset + 50 : null,
@@ -219,7 +245,37 @@ export async function handleFreePilot({ request, env, params }) {
     );
     if (!capacity.allowed)
       throw fail(429, "Too many requests. Wait a minute and retry.");
-    if (route === "apply") {
+    if (
+      [
+        "admin/settings",
+        "admin/schedule",
+        "admin/pause",
+        "admin/cancel-schedule",
+      ].includes(route)
+    )
+      return reply(
+        await updatePilotPolicy(env, mode, subject, route, b, p, now),
+      );
+    if (route === "apply" || route === "start") {
+      if (route === "start") {
+        if (p.admission_mode !== "instant")
+          throw fail(409, "Immediate admission is not enabled.");
+        if (
+          b.provider !== true ||
+          b.ready !== true ||
+          b.terms !== "free-pilot-v2" ||
+          ![7, 14].includes(b.durationDays)
+        )
+          throw fail(
+            400,
+            "Confirm professional provider use, readiness and the free pilot terms.",
+          );
+        if (await hasPurchase(env, subject))
+          throw fail(
+            409,
+            "Your paid access is already available. No pilot grant is needed.",
+          );
+      }
       if (p.interest_open !== 1)
         throw fail(409, "Interest registration is closed.");
       if (b.contact !== true || typeof b.marketing !== "boolean")
@@ -233,7 +289,7 @@ export async function handleFreePilot({ request, env, params }) {
       // Identity is server-derived. A retry never rewrites an admitted account.
       await run(
         env,
-        "INSERT INTO streamlion_free_pilot_accounts_v1(mode,google_subject,email,name,business,fit,contact,marketing,applied_at,updated_at,actor,action,reason) VALUES(?,?,?,?,?,?,1,?,?,?,?, 'apply','Pilot contact consent; free-pilot-v1') ON CONFLICT(mode,google_subject) DO NOTHING",
+        "INSERT INTO streamlion_free_pilot_accounts_v1(mode,google_subject,email,name,business,fit,contact,marketing,applied_at,updated_at,actor,action,reason) VALUES(?,?,?,?,?,?,1,?,?,?,?, 'apply','Pilot contact consent; free-pilot-v1') ON CONFLICT(mode,google_subject) DO UPDATE SET email=excluded.email,name=excluded.name,business=excluded.business,fit=excluded.fit,contact=excluded.contact,marketing=excluded.marketing,updated_at=excluded.updated_at,actor=excluded.actor,action=excluded.action,reason=excluded.reason WHERE streamlion_free_pilot_accounts_v1.state='applied' AND streamlion_free_pilot_accounts_v1.admitted_at IS NULL",
         mode,
         subject,
         session.email,
@@ -245,6 +301,66 @@ export async function handleFreePilot({ request, env, params }) {
         now,
         subject,
       );
+      if (route === "start") {
+        // One SQL statement checks both capacity budgets against the current policy.
+        // Reserving a slot and starting the durable clock cannot be split by retries.
+        await change(
+          env,
+          "UPDATE streamlion_free_pilot_accounts_v1 SET state='active',admitted_at=?,starts_at=?,ends_at=?+(SELECT duration_days FROM streamlion_free_pilot_policy_v1 WHERE mode=?)*86400000,original_end=?+(SELECT duration_days FROM streamlion_free_pilot_policy_v1 WHERE mode=?)*86400000,duration_days=(SELECT duration_days FROM streamlion_free_pilot_policy_v1 WHERE mode=?),terms='free-pilot-v2',updated_at=?,actor=?,action='start',reason='Verified Google account; provider, readiness and contact consent confirmed; free-pilot-v2' WHERE mode=? AND google_subject=? AND state='applied' AND admitted_at IS NULL AND EXISTS(SELECT 1 FROM streamlion_free_pilot_policy_v1 p JOIN streamlion_free_pilot_instant_schema_v1 s ON s.version=1 WHERE p.mode=? AND p.duration_days=? AND p.admission_mode='instant' AND p.interest_open=1 AND p.admissions_open=1 AND p.application_start<=? AND p.application_end>? AND p.closes_at>?+p.duration_days*86400000 AND (SELECT COUNT(*) FROM streamlion_free_pilot_accounts_v1 a WHERE a.mode=p.mode AND a.admitted_at IS NOT NULL)<p.admission_cap AND (SELECT COUNT(*) FROM streamlion_free_pilot_accounts_v1 a WHERE a.mode=p.mode AND ((a.state='active' AND a.ends_at>?) OR(a.state IN ('approved','invited') AND a.invite_until>?)))<p.active_cap)",
+          now,
+          now,
+          now,
+          mode,
+          now,
+          mode,
+          mode,
+          now,
+          subject,
+          mode,
+          subject,
+          mode,
+          b.durationDays,
+          now,
+          now,
+          now,
+          now,
+          now,
+        );
+        const access = await pilotAccess(env, subject, now);
+        if (access) return reply({ active: true, ...access });
+        const prior = await own();
+        if (prior?.admitted_at !== null && prior?.admitted_at !== undefined) {
+          const used = fail(
+            409,
+            "Your pilot has ended or was revoked. A new trial is not granted automatically.",
+          );
+          used.code = "pilot_used";
+          used.registered = true;
+          throw used;
+        }
+        const current = await readPilotPolicy(env, mode, now);
+        if (
+          current.duration_days !== b.durationDays ||
+          current.admission_mode !== "instant"
+        ) {
+          const changed = fail(
+            409,
+            "The pilot offer changed. Review the current duration and confirm the terms again.",
+          );
+          changed.code = "pilot_policy_changed";
+          changed.registered = true;
+          throw changed;
+        }
+        const failure = fail(
+          409,
+          open(current, now)
+            ? "The pilot has reached its capacity. Your interest is recorded for future openings."
+            : "Pilot admission is currently closed. Your interest is recorded.",
+        );
+        failure.code = open(current, now) ? "pilot_full" : "pilot_unavailable";
+        failure.registered = true;
+        throw failure;
+      }
       return reply({ registered: true, accessGranted: false });
     }
     if (route === "activate") {
@@ -397,6 +513,8 @@ export async function handleFreePilot({ request, env, params }) {
         error: e.status
           ? e.message
           : "Pilot is unavailable. No access was granted. Please retry later.",
+        ...(e.code ? { code: e.code } : {}),
+        ...(e.registered === true ? { registered: true } : {}),
       },
       e.status || 503,
     );

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppHeader } from "./AppNavigation.jsx";
 import { pilotRequest, pilotDate } from "./pilot-api.js";
+import PilotControls from "./PilotControls.jsx";
 const EMPTY = {
   onboarding: false,
   workflow: false,
@@ -9,11 +10,14 @@ const EMPTY = {
   willingness: "unanswered",
 };
 export default function FreePilot() {
+  const accountState = useRef({ subject: undefined, generation: 0 });
   const [data, setData] = useState(null),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [ready, setReady] = useState(false),
+    [provider, setProvider] = useState(false),
+    [terms, setTerms] = useState(false),
     [admin, setAdmin] = useState(null),
     [offset, setOffset] = useState(0),
     [feedback, setFeedback] = useState(EMPTY);
@@ -24,10 +28,44 @@ export default function FreePilot() {
     contact: false,
     marketing: false,
   });
-  async function load() {
-    const d = await pilotRequest("status");
+  function populate(d) {
+    const subject = d.subject || null;
+    if (accountState.current.subject !== subject) {
+      accountState.current = {
+        subject,
+        generation: accountState.current.generation + 1,
+      };
+      setFeedback(d.feedback || EMPTY);
+      setForm({
+        name: d.application?.name || "",
+        business: d.application?.business || "",
+        fit: d.application?.fit || "",
+        contact: !!d.application?.contact,
+        marketing: !!d.application?.marketing,
+      });
+      setProvider(false);
+      setReady(false);
+      setTerms(false);
+      setAdmin(null);
+      setOffset(0);
+      setBusy(false);
+      setError("");
+      setMessage("");
+    } else if (accountState.current.durationDays !== d.durationDays) {
+      setReady(false);
+      setTerms(false);
+    }
+    accountState.current.durationDays = d.durationDays;
     setData(d);
-    setFeedback(d.feedback || EMPTY);
+  }
+  async function load(generation) {
+    const d = await pilotRequest("status");
+    if (
+      generation !== undefined &&
+      generation !== accountState.current.generation
+    )
+      return null;
+    populate(d);
     return d;
   }
   useEffect(() => {
@@ -35,8 +73,7 @@ export default function FreePilot() {
     pilotRequest("status")
       .then((d) => {
         if (active) {
-          setData(d);
-          setFeedback(d.feedback || EMPTY);
+          populate(d);
         }
       })
       .catch((e) => active && setError(e.message));
@@ -47,12 +84,15 @@ export default function FreePilot() {
   useEffect(() => {
     if (!data?.enabled || !data.connected) return;
     let live = true;
-    const refresh = () =>
+    const refresh = () => {
+      const generation = accountState.current.generation;
       pilotRequest("status")
         .then((d) => {
-          if (live) setData(d);
+          if (live && generation === accountState.current.generation)
+            populate(d);
         })
         .catch(() => {});
+    };
     const interval = setInterval(refresh, 60000);
     window.addEventListener("focus", refresh);
     return () => {
@@ -66,12 +106,15 @@ export default function FreePilot() {
       invited = data?.state === "invited";
     const deadline = active ? data.endsAt : invited ? data.inviteUntil : null;
     if (!Number.isSafeInteger(deadline)) return;
-    const expire = () =>
+    const generation = accountState.current.generation;
+    const expire = () => {
+      if (generation !== accountState.current.generation) return;
       setData((p) => ({
         ...p,
         active: false,
         state: active ? "expired" : "invitation_expired",
       }));
+    };
     if (deadline <= Date.now()) {
       expire();
       return;
@@ -81,41 +124,84 @@ export default function FreePilot() {
       Math.min(deadline - Date.now(), 2147483647),
     );
     return () => clearTimeout(timer);
-  }, [data?.active, data?.state, data?.endsAt, data?.inviteUntil]);
+  }, [
+    data?.active,
+    data?.state,
+    data?.endsAt,
+    data?.inviteUntil,
+    data?.subject,
+  ]);
   async function perform(route, body) {
+    const generation = accountState.current.generation;
+    const subject = data.subject;
     setBusy(true);
     setError("");
     setMessage("");
     try {
       await pilotRequest(route, {
         method: "POST",
-        account: data.subject,
+        account: subject,
         body: JSON.stringify(body),
       });
-      await load();
+      if (generation !== accountState.current.generation) return false;
+      await load(generation);
+      if (generation !== accountState.current.generation) return false;
       setMessage(
         route === "apply"
           ? "Interest registered. This does not grant access."
-          : route === "activate"
+          : route === "activate" || route === "start"
             ? "Pilot activated. Your expiry is shown below."
             : "Saved.",
       );
       if (admin) await list(offset);
+      return true;
     } catch (e) {
+      if (generation !== accountState.current.generation) return false;
       setError(e.message);
+      if (route === "start" || route.startsWith("admin/")) {
+        try {
+          const fresh = await load(generation);
+          if (!fresh || generation !== accountState.current.generation)
+            return false;
+          if (route === "start" && fresh.active) {
+            setError("");
+            setMessage("Pilot activated. Your expiry is shown below.");
+          } else if (
+            route === "start" &&
+            (e.registered || fresh.state === "applied" || fresh.application)
+          )
+            setMessage(
+              "Your interest is saved. No pilot access has started. More pilot places are planned.",
+            );
+          if (admin) await list(offset, false);
+        } catch {
+          /* Keep the original failure visible; never infer access. */
+        }
+      }
+      return false;
     } finally {
-      setBusy(false);
+      if (generation === accountState.current.generation) setBusy(false);
     }
   }
-  async function list(page = 0) {
-    setError("");
+  async function list(page = 0, clearError = true) {
+    const generation = accountState.current.generation;
+    if (clearError) setError("");
     try {
-      setAdmin(await pilotRequest("admin/list?offset=" + page));
+      const result = await pilotRequest("admin/list?offset=" + page);
+      if (generation !== accountState.current.generation) return;
+      setAdmin(result);
       setOffset(page);
     } catch (e) {
-      setError(e.message);
+      if (generation === accountState.current.generation) setError(e.message);
     }
   }
+  const canApply =
+    data && ["none", "applied"].includes(data.state) && !data.startsAt;
+  const canStart =
+    canApply &&
+    !data.active &&
+    data.admissionMode === "instant" &&
+    data.availability === "available";
   return (
     <div className="purchase-shell">
       <AppHeader account={data?.account || ""} />
@@ -169,22 +255,45 @@ export default function FreePilot() {
                   Signed in as <strong>{data.account}</strong>. State:{" "}
                   <strong>{data.state.replaceAll("_", " ")}</strong>.
                 </p>
-                {data.state === "none" && data.interestOpen && (
+                {canApply && (canStart || data.interestOpen) && (
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      perform("apply", form);
+                      if (
+                        canStart &&
+                        (!provider ||
+                          !form.contact ||
+                          !ready ||
+                          !terms ||
+                          !form.name.trim() ||
+                          !form.fit.trim())
+                      )
+                        return;
+                      perform(
+                        canStart ? "start" : "apply",
+                        canStart
+                          ? {
+                              ...form,
+                              provider,
+                              ready,
+                              terms: "free-pilot-v2",
+                              durationDays: data.durationDays,
+                            }
+                          : form,
+                      );
                     }}
                   >
                     <h2>
-                      {data.applicationsOpen
-                        ? "Register interest in a pilot place"
+                      {canStart
+                        ? "Start your free pilot"
                         : "Join the interest list"}
                     </h2>
                     <p>
-                      {data.applicationsOpen
-                        ? `If approved, the pilot lasts ${data.durationDays} days from explicit activation. Places are limited and manually approved.`
-                        : "Immediate pilot admission is unavailable. You can register interest; this does not promise access or an approval date."}
+                      {canStart
+                        ? `Your ${data.durationDays}-day pilot begins when activation succeeds. Start when you are ready to test a job.`
+                        : data.availability === "full"
+                          ? "Update: this pilot group is full. More pilot places are planned. Join the interest list for news of the next opening."
+                          : "Immediate pilot admission is unavailable. You can register interest; this does not promise access or an approval date."}
                     </p>
                     <p>
                       Provide only business fit and contact details. Do not
@@ -256,19 +365,64 @@ export default function FreePilot() {
                       Marketing is optional and never affects admission. See the{" "}
                       <a href="/api/privacy">privacy policy</a>.
                     </p>
-                    <button className="purchase-primary" disabled={busy}>
-                      Register interest
+                    {canStart && (
+                      <>
+                        <label className="pilot-check">
+                          <input
+                            type="checkbox"
+                            required
+                            checked={provider}
+                            onChange={(e) => setProvider(e.target.checked)}
+                          />
+                          I am a professional spatial capture provider.
+                        </label>
+                        <label className="pilot-check">
+                          <input
+                            type="checkbox"
+                            required
+                            checked={ready}
+                            onChange={(e) => setReady(e.target.checked)}
+                          />
+                          I am ready to test a useful job workflow now.
+                        </label>
+                        <label className="pilot-check">
+                          <input
+                            type="checkbox"
+                            required
+                            checked={terms}
+                            onChange={(e) => setTerms(e.target.checked)}
+                          />
+                          I accept the free pilot terms (free-pilot-v2),
+                          including expiry and data handling described above.
+                        </label>
+                      </>
+                    )}
+                    <button
+                      className="purchase-primary"
+                      disabled={
+                        busy ||
+                        (canStart &&
+                          (!provider ||
+                            !form.contact ||
+                            !ready ||
+                            !terms ||
+                            !form.name.trim() ||
+                            !form.fit.trim()))
+                      }
+                    >
+                      {canStart ? "Start my free pilot" : "Register interest"}
                     </button>
                   </form>
                 )}
-                {data.state === "none" && !data.interestOpen && (
+                {canApply && !canStart && !data.interestOpen && (
                   <p>Interest registration is closed.</p>
                 )}
-                {["applied", "approved"].includes(data.state) && (
+                {["applied", "approved"].includes(data.state) && !canStart && (
                   <p>
-                    Your interest is recorded. Admission and invitation require
-                    owner review. No access has started and no approval date is
-                    guaranteed.
+                    Your interest is recorded.{" "}
+                    {data.admissionMode === "instant"
+                      ? "More pilot places are planned. No access has started and no opening date is guaranteed."
+                      : "Admission and invitation require owner review. No access has started and no approval date is guaranteed."}
                   </p>
                 )}
                 {data.state === "invited" && (
@@ -431,6 +585,13 @@ export default function FreePilot() {
                     <button onClick={() => list(0)}>Review applications</button>
                     {admin && (
                       <>
+                        <PilotControls
+                          available={admin.controlsAvailable === true}
+                          policy={admin.policy}
+                          counts={admin.counts}
+                          busy={busy}
+                          perform={perform}
+                        />
                         <p>
                           Applications: {admin.counts.applications} · Cumulative
                           admissions: {admin.counts.admissions || 0}/

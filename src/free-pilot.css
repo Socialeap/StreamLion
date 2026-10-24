@@ -58,3 +58,31 @@
 .free-pilot a {
   overflow-wrap: anywhere;
 }
+.free-pilot .pilot-controls {
+  padding: 1rem;
+  border: 1px solid #80958b;
+  border-radius: 0.5rem;
+}
+.pilot-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 0 1rem;
+}
+.pilot-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.pilot-controls details {
+  margin: 1rem 0;
+  border-top: 1px solid #80958b;
+  border-bottom: 1px solid #80958b;
+}
+.pilot-controls summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: list-item;
+  align-content: center;
+  font-weight: 600;
+}

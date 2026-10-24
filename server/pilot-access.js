@@ -8,11 +8,18 @@ export async function pilotHistory(env, subject) {
   )
     return null;
   try {
-    return await env.GOOGLE_SESSIONS.prepare(
-      "SELECT a.state,a.starts_at,a.ends_at FROM streamlion_free_pilot_accounts_v1 a JOIN streamlion_free_pilot_policy_v1 p ON p.mode=a.mode JOIN streamlion_free_pilot_schema_v1 s ON s.version=1 WHERE a.mode=? AND a.google_subject=? AND a.starts_at IS NOT NULL",
+    const row = await env.GOOGLE_SESSIONS.prepare(
+      "SELECT a.state,a.starts_at,a.ends_at,a.terms FROM streamlion_free_pilot_accounts_v1 a JOIN streamlion_free_pilot_policy_v1 p ON p.mode=a.mode JOIN streamlion_free_pilot_schema_v1 s ON s.version=1 WHERE a.mode=? AND a.google_subject=? AND a.starts_at IS NOT NULL",
     )
       .bind(paymentMode(env), subject)
       .first();
+    if (row?.terms === "free-pilot-v2") {
+      const marker = await env.GOOGLE_SESSIONS.prepare(
+        "SELECT version FROM streamlion_free_pilot_instant_schema_v1 WHERE version=1",
+      ).first();
+      if (!marker) return null;
+    }
+    return row;
   } catch {
     return null;
   }

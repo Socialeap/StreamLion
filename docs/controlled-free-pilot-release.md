@@ -1,5 +1,8 @@
 # Controlled free pilot and open interest list
 
+Original manual-mode implementation, disabled by default. A separate follow-up for review adds [instant admission and scheduled places](instant-pilot-release.md)
+without changing this historical 0023 release receipt.
+
 Status: implementation for review, disabled by default. This is StreamLion's
 standalone provider pilot. It is unrelated to the Frontiers|3D affiliate program.
 No admission, invitation delivery, migration, pilot deployment or public opening
