@@ -153,8 +153,10 @@ test("failure refunds once; provider reservation remains; completed answers cann
   sql.close();
 });
 test("daily budget, price changes, disabled wallets, rate limits and stale reservations fail safely", async () => {
+  // This assertion concerns one daily allowance; keep the five-minute expiry
+  // probe on that same UTC day even when the suite runs just before midnight.
   const { sql, db } = fixture(),
-    now = Date.now();
+    now = Date.UTC(2026, 9, 24, 12);
   sql.exec("UPDATE streamlion_ai_policy_v1 SET daily_budget_micros=6000");
   await assert.rejects(reserveTurn(db, "a", uuid, 1));
   await reserveTurn(db, "a", uuid, 12500, now);

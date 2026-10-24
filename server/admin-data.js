@@ -6,6 +6,13 @@ const zone = new Intl.DateTimeFormat("en-US", {
 });
 export const CREDIT_UNIT = 12500;
 export const OWNER_EMAIL = "shakoure@transcendencemedia.com";
+// Keep displayed identity and prefix search on the same mode-scoped sources.
+const effectiveName = "COALESCE(NULLIF(u.name,''),p.name,'')";
+const effectiveBusiness =
+  "CASE WHEN json_type(b.profile,'$.name')='text' THEN json_extract(b.profile,'$.name') ELSE COALESCE(p.business,'') END";
+const identityJoins = `LEFT JOIN streamlion_free_pilot_accounts_v1 p ON p.mode=a.mode AND p.google_subject=u.google_subject
+ LEFT JOIN streamlion_provider_branding_v1 b ON b.mode=a.mode AND b.google_subject=u.google_subject`;
+
 export async function adminInstalled(db) {
   if (
     !db ||
@@ -184,7 +191,7 @@ export async function usageReport(db, mode, subject, from, to) {
 async function hydratePage(db, page, mode, now, days) {
   if (!page.length) return [];
   const sql = `WITH q AS(SELECT ? mode,? at,? day7,? day30,? from_at,? month)
- SELECT u.google_subject,u.email,COALESCE(NULLIF(u.name,''),p.name,'') name,CASE WHEN json_type(b.profile,'$.name')='text' THEN json_extract(b.profile,'$.name') ELSE COALESCE(p.business,'') END business,u.first_known_at,u.signup_at,a.last_active_at,
+ SELECT u.google_subject,u.email,${effectiveName} name,${effectiveBusiness} business,u.first_known_at,u.signup_at,a.last_active_at,
  COALESCE(w.balance_micros,0) cash,COALESCE(s.balance_micros,0) starter,COALESCE((SELECT SUM(gb.remaining_micros) FROM streamlion_admin_grants_v1 gg JOIN streamlion_admin_grant_balances_v1 gb ON gb.grant_id=gg.id WHERE gg.mode=q.mode AND gg.google_subject=u.google_subject),0) goodwill,
  EXISTS(SELECT 1 FROM streamlion_purchases_v1 c WHERE c.mode=q.mode AND c.google_subject=u.google_subject AND c.status='paid') core_paid,
  EXISTS(SELECT 1 FROM streamlion_purchases_v1 c WHERE c.mode=q.mode AND c.google_subject=u.google_subject AND c.status='disputed') disputed,
@@ -202,8 +209,7 @@ async function hydratePage(db, page, mode, now, days) {
  FROM q JOIN streamlion_account_activity_v1 a ON a.mode=q.mode JOIN streamlion_accounts_v1 u USING(google_subject)
  LEFT JOIN streamlion_credit_wallets_v1 w ON w.mode=q.mode AND w.google_subject=u.google_subject
  LEFT JOIN streamlion_promotional_wallets_v1 s ON s.mode=q.mode AND s.google_subject=u.google_subject
- LEFT JOIN streamlion_free_pilot_accounts_v1 p ON p.mode=q.mode AND p.google_subject=u.google_subject
- LEFT JOIN streamlion_provider_branding_v1 b ON b.mode=q.mode AND b.google_subject=u.google_subject
+ ${identityJoins}
  WHERE u.google_subject IN (${page.map(() => "?").join(",")})`;
   const data = await rows(
     db,
@@ -283,6 +289,7 @@ export async function listUsers(db, mode, params, now) {
   const search = (params.get("search") || "").trim().toLowerCase();
   if (search.length > 120)
     throw Object.assign(Error("Search is too long."), { status: 400 });
+  const searchJoins = search ? identityJoins : "";
   const filter = params.get("filter") || "all";
   if (!["all", "paid", "pilot", "active", "inactive", "low"].includes(filter))
     throw Object.assign(Error("Invalid filter."), { status: 400 });
@@ -292,8 +299,7 @@ export async function listUsers(db, mode, params, now) {
   let where =
     "a.mode=? AND NOT EXISTS(SELECT 1 FROM streamlion_admin_owners_v1 o WHERE o.mode=a.mode AND o.google_subject=a.google_subject)";
   if (search) {
-    where +=
-      " AND (u.email LIKE ? ESCAPE '\\' COLLATE NOCASE OR u.name LIKE ? ESCAPE '\\' COLLATE NOCASE OR u.business LIKE ? ESCAPE '\\' COLLATE NOCASE)";
+    where += ` AND (u.email LIKE ? ESCAPE '\\' COLLATE NOCASE OR (${effectiveName}) LIKE ? ESCAPE '\\' COLLATE NOCASE OR (${effectiveBusiness}) LIKE ? ESCAPE '\\' COLLATE NOCASE)`;
     const prefix = search.replace(/[\\%_]/g, "\\$&") + "%";
     args.push(prefix, prefix, prefix);
   }
@@ -313,7 +319,7 @@ export async function listUsers(db, mode, params, now) {
       " AND COALESCE((SELECT balance_micros FROM streamlion_credit_wallets_v1 w WHERE w.mode=a.mode AND w.google_subject=a.google_subject),0)+COALESCE((SELECT balance_micros FROM streamlion_promotional_wallets_v1 w WHERE w.mode=a.mode AND w.google_subject=a.google_subject),0)+COALESCE((SELECT balance_micros FROM streamlion_goodwill_available_v1 w WHERE w.mode=a.mode AND w.google_subject=a.google_subject),0)<3000000";
   const total = await db
     .prepare(
-      `SELECT COUNT(*) n FROM streamlion_account_activity_v1 a JOIN streamlion_accounts_v1 u USING(google_subject) WHERE ${where}`,
+      `SELECT COUNT(*) n FROM streamlion_account_activity_v1 a JOIN streamlion_accounts_v1 u USING(google_subject) ${searchJoins} WHERE ${where}`,
     )
     .bind(...args)
     .first();
@@ -334,7 +340,7 @@ export async function listUsers(db, mode, params, now) {
   }
   const page = await rows(
     db,
-    `SELECT u.*,a.last_active_at FROM streamlion_account_activity_v1 a INDEXED BY streamlion_admin_active_v1 JOIN streamlion_accounts_v1 u USING(google_subject) WHERE ${where} ORDER BY a.last_active_at ${direction},a.google_subject ASC LIMIT ?`,
+    `SELECT u.*,a.last_active_at FROM streamlion_account_activity_v1 a INDEXED BY streamlion_admin_active_v1 JOIN streamlion_accounts_v1 u USING(google_subject) ${searchJoins} WHERE ${where} ORDER BY a.last_active_at ${direction},a.google_subject ASC LIMIT ?`,
     ...args,
     limit + 1,
   );

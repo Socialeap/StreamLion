@@ -35,3 +35,13 @@ All are **HOLD** pending separate owner authorization: approved PR merge; exact 
 Google OIDC assurance uses the documented auth_time/amr claims and nonce, with signature/issuer/audience/expiry/subject validation. Their availability and recent authentication must be verified against the actual Google project before writes can open. Missing proof remains read-only; no fallback passkey is enrolled. Reference: https://developers.google.com/identity/siwg/security-bundle
 
 See `docs/admin-portal-release.md` for ordered preflight, activation, rollback and receipt requirements. The initial reporting scope and follow-on UI refinements are explicit in the implementation plan.
+
+## PR #128 search review correction — 2026-10-24
+
+Search and identity hydration now share their exact name/business SQL expressions and mode-scoped pilot/branding joins. Filtered totals and cursor pages use the same predicate. Source precedence, email prefix matching and literal LIKE escaping remain consistent; unfiltered directory pages retain the activity-index path and three-statement bound. No migration, policy, authentication or live-state change is required by this correction.
+
+The regression failed before the fix (zero results for 30 displayed pilot identities) and passes afterwards. It covers 30-account pagination and counts, mixed case, pilot personal names, branding business names, hidden-source precedence, registry-name precedence, non-text branding fallback, email matching, wildcard literals and test/live isolation. The 1,000/10,000-account scale checks also passed.
+
+After incorporating main `782d7422b82fcd8bb77873f256ed68d8c0eab51d` (PR #127), the complete suite passed **1,117/1,117** with zero failed/skipped. App build, Pages Functions compilation and diff checks passed. One existing AI-pilot test was stabilized with a fixed midday timestamp: its five-minute probe must remain on the same UTC day rather than intermittently crossing midnight and resetting the daily allowance. Product billing behavior is unchanged.
+
+The concurrent remote main-update merge was preserved. All prior merge, activation, deployment and owner/device holds remain in force.
