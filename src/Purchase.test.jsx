@@ -381,3 +381,84 @@ test("a lost return URL retains the original business-review session for Check a
   assert.equal(window.location.search, "");
   cleanup();
 });
+
+test("active free pilot opens Core without a paid receipt; expiry closes it and keeps retrieval guidance", async (t) => {
+  let active = true;
+  const end = Date.now() + 60000;
+  t.mock.method(globalThis, "fetch", async (url) =>
+    String(url).includes("/api/free-pilot/")
+      ? response({
+          enabled: true,
+          active,
+          startsAt: Date.now() - 1000,
+          endsAt: active ? end : Date.now() - 1,
+          state: active ? "active" : "expired",
+        })
+      : response(
+          String(url).endsWith("/status")
+            ? {
+                enabled: true,
+                required: true,
+                purchased: false,
+                connected: false,
+                mode: "test",
+              }
+            : { ...config, enabled: false, checkoutMode: "paused" },
+        ),
+  );
+  t.after(cleanup);
+  const ui = render(
+    <LicenseGate>
+      <div>Free Core workspace</div>
+    </LicenseGate>,
+  );
+  await ui.findByText("Free Core workspace");
+  await ui.findByText(/Free pilot expires/);
+  active = false;
+  await act(async () => window.dispatchEvent(new window.Event("focus")));
+  await ui.findByText(/Your pilot access has ended/);
+  assert.equal(ui.queryByText("Free Core workspace"), null);
+  assert(ui.getByRole("link", { name: "Pilot status and work retrieval" }));
+});
+
+test("offline cold start restores the cached pilot expiry timer and stops local Core at the deadline", async (t) => {
+  const endsAt = Date.now() + 5000;
+  localStorage.setItem(
+    "streamlion-purchase-receipt-v1",
+    JSON.stringify({ pilot: true, expires: endsAt }),
+  );
+  const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
+  Object.defineProperty(navigator, "onLine", {
+    value: false,
+    configurable: true,
+  });
+  t.after(() => {
+    if (online) Object.defineProperty(navigator, "onLine", online);
+    else delete navigator.onLine;
+    cleanup();
+    localStorage.clear();
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("Offline");
+  });
+  const realTimeout = globalThis.setTimeout;
+  let expire = null;
+  t.mock.method(globalThis, "setTimeout", (fn, delay, ...args) => {
+    if (delay > 3000 && delay <= 5000) expire = fn;
+    return realTimeout(fn, delay, ...args);
+  });
+  const ui = render(
+    <LicenseGate>
+      <div>Offline pilot workspace</div>
+    </LicenseGate>,
+  );
+  await ui.findByText("Offline pilot workspace");
+  assert.equal(
+    typeof expire,
+    "function",
+    "An offline pilot must schedule its original expiry",
+  );
+  await act(async () => expire());
+  assert.equal(ui.queryByText("Offline pilot workspace"), null);
+  await ui.findByText(/Your pilot access has ended/);
+});

@@ -24,6 +24,7 @@ Named unfinished drafts appear in Projects on the device where they were started
 - [Current architecture and limits](docs/google-owned-plan.md)
 - [Field map](docs/field-map.md)
 - [JSON fixture](fixtures/project-intake.json)
+- [Controlled free pilot: held release and approval gates](docs/controlled-free-pilot-release.md)
 - [ChatGPT retirement and release gates](docs/chatgpt-retirement-release.md)
 
 Google access tokens stay in memory. Project drafts and the original local workspace stay on the device; browser storage is not a backup. Photos and voice memos up to 5 MB can be uploaded directly to the user's Drive. An optional dated workbook copy and waiting field records remain on the device. Browser storage can be evicted; export important originals.

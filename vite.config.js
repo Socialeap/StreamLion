@@ -11,6 +11,7 @@ export const navigationFallbackDenylist = [
   /^\/privacy(?:\.html)?(?:[/?]|$)/,
   /^\/release\.json(?:\?|$)/,
   /^\/welcome(?:\.html)?(?:[/?]|$)/,
+  /^\/pilot(?:[/?]|$)/,
   /^\/client(?:[/?]|$)/,
   /^\/coordination(?:[/?]|$)/,
 ];
@@ -19,6 +20,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         app: "index.html",
+        pilot: "pilot/index.html",
         welcome: "api/welcome.html",
         purchase: "api/purchase.html",
         credits: "api/credits.html",
@@ -81,6 +83,7 @@ export default defineConfig({
           "fonts/*.ttf",
         ],
         globIgnores: [
+          "pilot/index.html",
           "client/index.html",
           "coordination/index.html",
           "api/client-portal.html",
