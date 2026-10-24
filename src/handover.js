@@ -120,7 +120,7 @@ export function handoverMarkup(model, images = {}) {
     .map(escape)
     .join(" · ");
   return `<article class="handover-report">
-    <header class="report-brand"><span aria-hidden="true">🦁</span><div><strong>${text(p.providerName, "StreamLion")}</strong>${contact ? `<span class="report-contact">${contact}</span>` : ""}<small>Spatial capture · Job handover</small></div></header>
+    <header class="report-brand"><span aria-hidden="true">🦁</span><div><strong>${text(p.providerName, "StreamLion")}</strong>${contact ? `<span class="report-contact">${contact}</span>` : ""}<small>Spatial capture · Completion Brief</small></div></header>
     <div class="report-title"><p class="report-eyebrow">PROVIDER'S FIELD RECORD</p><h1>${text(p.title, "Untitled project")}</h1><p>${text(p.reference, "No customer reference")}${p.companyName ? ` · ${escape(p.companyName)}` : ""}</p></div>
     <dl class="report-facts"><div><dt>Site</dt><dd>${text(address)}</dd></div><div><dt>Visit</dt><dd>${text(p.startLocal?.replace("T", " at "))}${p.timeZone ? ` · ${escape(p.timeZone)}` : ""}</dd></div><div><dt>Record source</dt><dd>${text(model.origin)}${model.asOf ? ` · checked ${escape(date(model.asOf))}` : ""}</dd></div><div><dt>Report prepared</dt><dd>${escape(date(model.generatedAt))}</dd></div></dl>
     ${warnings.length || omitted ? `<section class="report-attention"><h2>Outstanding work / review</h2><ul>${warnings.map((item) => `<li><strong>${escape(item.label)}</strong> — ${escape(item.detail)}</li>`).join("")}${omitted ? `<li>${omitted} unchecked field record${omitted === 1 ? " is" : "s are"} omitted from the details below. Review in Field notes before sending.</li>` : ""}</ul></section>` : ""}
@@ -171,5 +171,5 @@ export const reportStyles = `
 @media print{@page{size:auto;margin:16mm}.handover-report{padding:0;font-size:10pt;max-width:none}.report-facts{grid-template-columns:1fr 1fr}.handover-report h1{font-size:23pt}.handover-report h2{break-after:avoid}.handover-report tr,.report-evidence img,.report-brand{break-inside:avoid}.report-evidence{break-inside:auto}.handover-report a{color:inherit}}
 `;
 export function handoverDocument(model, images) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>${escape(model.project.title)} · Job handover</title><style>${reportStyles}</style></head><body>${handoverMarkup(model, images)}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>${escape(model.project.title)} · Completion Brief</title><style>${reportStyles}</style></head><body>${handoverMarkup(model, images)}</body></html>`;
 }

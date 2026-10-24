@@ -10,6 +10,7 @@ export function requestProgress(job, link, activity = [], client = false) {
       "confirmed",
       "in_progress",
       "work_completed",
+      "delivery_pending",
       "delivered",
       "closed",
     ].includes(job.state),
@@ -38,7 +39,9 @@ export function requestProgress(job, link, activity = [], client = false) {
   const archived = job.state === "archived";
   const completed = Boolean(
     job.accepted &&
-    (["work_completed", "delivered", "closed"].includes(job.state) ||
+    (["work_completed", "delivery_pending", "delivered", "closed"].includes(
+      job.state,
+    ) ||
       (archived && job.workCompletedAt)),
   );
   const delivered = Boolean(

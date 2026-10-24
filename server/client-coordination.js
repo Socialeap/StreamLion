@@ -1,3 +1,7 @@
+import {
+  completionBrief,
+  verifiedCompletionBytes,
+} from "./completion-brief.js";
 import { coordinationReady } from "./coordination-readiness.js";
 export { coordinationReady };
 import { pricingProfiles } from "./provider-pricing.js";
@@ -826,6 +830,26 @@ export async function handleCoordination({ request, env, params = {} }) {
         ),
       );
     }
+    if (route === "provider/completion" && request.method === "GET") {
+      const jobId = new URL(request.url).searchParams.get("job");
+      const row = await env.GOOGLE_SESSIONS.prepare(
+        "SELECT id FROM streamlion_coordination_jobs_v1 WHERE id=? AND connection_id=?",
+      )
+        .bind(jobId, connection.id)
+        .first();
+      if (!row) throw new CoordinationError("Job unavailable.", 404);
+      const snapshot = await engine.google.snapshot();
+      const job = snapshot.heads.get(jobId);
+      if (!job) throw new CoordinationError("Job unavailable.", 404);
+      return json(
+        await completionBrief(
+          job,
+          snapshot,
+          connection.client_brand,
+          env.GOOGLE_AUTH_ORIGIN,
+        ),
+      );
+    }
     if (route === "provider/file" && request.method === "GET") {
       const query = new URL(request.url).searchParams;
       const row = await env.GOOGLE_SESSIONS.prepare(
@@ -1119,7 +1143,11 @@ export async function handleCoordination({ request, env, params = {} }) {
         await invite(env, row);
         return json({ queued: true });
       }
-      if (["archive", "activate", "attach"].includes(body.command?.action))
+      if (
+        ["archive", "activate", "attach", "settle_delivery"].includes(
+          body.command?.action,
+        )
+      )
         throw new CoordinationError("System action required.", 403);
       return json(
         await engine.command(body.operation, row.id, body.command, {
@@ -1167,6 +1195,7 @@ function activityFor(snapshot, jobId, clientOnly = false) {
     acknowledge: "Instructions acknowledged",
     attach: "Reference file added",
     progress: "Progress updated",
+    settle_delivery: "Completion Brief delivered",
     accept_delivery: "Delivery acknowledged",
     close: "Job closed",
     cancel: "Job cancelled",
@@ -1216,7 +1245,11 @@ async function download(env, engine, jobId, id, isClient) {
       attachment.driveId +
       "?alt=media",
   );
-  return new Response(response.body, {
+  const content =
+    attachment.kind === "completion"
+      ? await verifiedCompletionBytes(response, attachment)
+      : response.body;
+  return new Response(content, {
     headers: {
       "Content-Type": "application/octet-stream",
       "Content-Disposition":

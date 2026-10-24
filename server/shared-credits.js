@@ -79,7 +79,7 @@ export async function reserveProject(db, mode, subject, jobId, now) {
     .bind(mode, subject, id)
     .first();
   if (!spend)
-    throw new CoordinationError("Top up credits before confirming.", 402);
+    throw new CoordinationError("Top up credits before continuing.", 402);
   return spend;
 }
 export async function finishProject(db, mode, subject, jobId, state) {

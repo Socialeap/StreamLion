@@ -79,16 +79,16 @@ test("the guide explains each stage before cost, payment and the wallet, even wh
     [...table.querySelectorAll("thead th")].map((th) => th.textContent),
     ["Stage", "Non-Credit Option", "Credit-based Option"],
   );
-  assert.equal(table.querySelectorAll("tbody tr").length, 7);
+  assert.equal(table.querySelectorAll("tbody tr").length, 8);
   // Free stages show a dash and no price; the request itself is its own row.
-  for (const n of [1, 2, 3, 6])
+  for (const n of [1, 2, 3, 5, 6])
     assert.ok(within(stage(ui, n)).getByText("No credit-based option"));
   assert.match(stage(ui, 2).textContent, /Client sends a work-order request/);
   assert.match(
-    stage(ui, 5).querySelector(".credits-pill").textContent,
-    /^240 credits \| , USD.3\.00 per project$/,
+    stage(ui, 8).querySelector(".credits-pill").textContent,
+    /^240 credits \| , USD.3\.00 per completed delivery$/,
   );
-  assert.match(stage(ui, 5).textContent, /shared Coordination Brief/);
+  assert.match(stage(ui, 8).textContent, /protected client portal/);
   // Closed optional features never advertise a price.
   for (const n of [4, 7])
     assert.equal(
@@ -350,7 +350,7 @@ test("failed configuration removes stale purchase buttons and keeps the balance 
     ui = render(<Credits />);
   });
   assert.ok(ui.getByRole("button", { name: "800 credits for $10.00" }));
-  assert.match(stage(ui, 5).textContent, /USD.3\.00 per project/);
+  assert.match(stage(ui, 8).textContent, /USD.3\.00 per completed delivery/);
   fail = true;
   await act(async () =>
     fireEvent.click(
@@ -358,7 +358,7 @@ test("failed configuration removes stale purchase buttons and keeps the balance 
     ),
   );
   assert.equal(ui.queryByText("$10.00"), null);
-  assert.doesNotMatch(stage(ui, 5).textContent, /USD/);
+  assert.doesNotMatch(stage(ui, 8).textContent, /USD/);
   assert.ok(ui.getByText("800 credits available"));
   assert.ok(ui.getByRole("alert"));
 });
@@ -376,8 +376,8 @@ test("active 160-credit policy drives both displayed prices; missing policy has 
   const ui = render(<Credits />);
   await act(async () => {});
   assert.match(
-    stage(ui, 5).querySelector(".credits-pill").textContent,
-    /^160 credits \| , USD.2\.00 per project$/,
+    stage(ui, 8).querySelector(".credits-pill").textContent,
+    /^160 credits \| , USD.2\.00 per completed delivery$/,
   );
   assert.match(
     ui.getByRole("list", { name: "Credit packs" }).textContent,
@@ -390,7 +390,7 @@ test("active 160-credit policy drives both displayed prices; missing policy has 
     ),
   );
   assert.equal(
-    stage(ui, 5).querySelector(".credits-pill").textContent,
+    stage(ui, 8).querySelector(".credits-pill").textContent,
     "Not available yet",
   );
   // Packs stay listed without a coordination price; only coverage is omitted.
