@@ -2,6 +2,11 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 const normalize = (s) => s.replace(/;\s*$/, "").replace(/\s+/g, " ").trim();
+const optionalSavedCards = new Set([
+  "streamlion_credit_cards_v1",
+  "streamlion_credit_topups_v1",
+  "streamlion_credit_cards_schema_v1",
+]);
 export function expectedAdminSchema(after = true) {
   const db = new DatabaseSync(":memory:");
   try {
@@ -45,9 +50,16 @@ function classify(input, legacyProjection = false) {
     input.schema.some((r) => newNames.has(r.name)) ||
     input.stamps.streamlion_admin_schema_v1 !== undefined;
   const expected = present ? after : before;
+  // 0017 is independently held and is not used by 0025. As in the checkout
+  // preflight, only its wholly absent state is optional; any marker means the
+  // complete committed schema and version stamp must match.
+  const hasSavedCards =
+    input.schema.some((r) => optionalSavedCards.has(r.name)) ||
+    Object.hasOwn(input.stamps, "streamlion_credit_cards_schema_v1");
   if (legacyProjection && !present)
     throw Error("Legacy projection cannot authorize migration0025; STOP.");
   for (const r of expected.schema) {
+    if (!hasSavedCards && optionalSavedCards.has(r.name)) continue;
     // Old coordination collectors explicitly selected streamlion_% only.
     // This compatibility path can recognize an applied successor, never
     // approve applying 0025; the public admin preflight still requires all indexes.
@@ -61,9 +73,12 @@ function classify(input, legacyProjection = false) {
     )
       throw Error("Missing/altered schema " + r.name + "; STOP.");
   }
-  for (const [name, version] of Object.entries(expected.stamps))
+  for (const [name, version] of Object.entries(expected.stamps)) {
+    if (!hasSavedCards && name === "streamlion_credit_cards_schema_v1")
+      continue;
     if (input.stamps[name] !== version)
       throw Error("Missing/partial schema stamp " + name + "; STOP.");
+  }
   const expectedNames = new Set(expected.schema.map((r) => r.name));
   for (const r of input.schema) {
     if (r.type === "trigger" && !expectedNames.has(r.name))
