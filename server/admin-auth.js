@@ -24,7 +24,7 @@ export async function verifyOwnerClaims(
     at > now + 30000 ||
     at <= now - 300000 ||
     !Array.isArray(p.amr) ||
-    !p.amr.some((v) => ["pwd", "mfa", "hwk"].includes(v))
+    !p.amr.some((v) => ["pwd", "mfa", "hwk", "swk"].includes(v))
   )
     throw Error("admin_assurance");
   return at;

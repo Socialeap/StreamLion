@@ -280,3 +280,46 @@ test("global credit activity stays mode-scoped and overview includes first-known
     1,
   );
 });
+
+test("Google passkey assurance accepts swk only with a valid fresh owner-bound token", async () => {
+  const { verifyOwnerClaims } = await import("../../server/admin-auth.js");
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const now = ADMIN_NOW,
+    seconds = Math.floor(now / 1000);
+  const jwt = (extra) =>
+    new SignJWT({
+      sub: "owner",
+      nonce: "nonce",
+      auth_time: seconds,
+      amr: ["swk"],
+      ...extra,
+    })
+      .setProtectedHeader({ alg: "RS256" })
+      .setIssuer("https://accounts.google.com")
+      .setAudience("client")
+      .setIssuedAt(seconds)
+      .setExpirationTime(seconds + 600)
+      .sign(privateKey);
+  const context = {
+    subject: "owner",
+    nonce: "nonce",
+    clientId: "client",
+    now,
+    key: publicKey,
+  };
+  const valid = await jwt({});
+  assert.equal(await verifyOwnerClaims(valid, context), seconds * 1000);
+  for (const extra of [
+    { auth_time: seconds - 301 },
+    { nonce: "other" },
+    { sub: "other" },
+    { amr: ["sms"] },
+    { amr: [] },
+  ])
+    await assert.rejects(async () =>
+      verifyOwnerClaims(await jwt(extra), context),
+    );
+  await assert.rejects(() =>
+    verifyOwnerClaims(valid.slice(0, -12) + "aaaaaaaaaaaa", context),
+  );
+});
