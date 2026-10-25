@@ -407,6 +407,12 @@ export default function ProjectEditor({
                     Restore a StreamLion project export, then review its details
                     before saving.
                   </p>
+                  <p>
+                    Open a client project brief (JSON) using the same import
+                    below. It fills a local draft for your review; it does not
+                    automatically write to Google or approve the scope. Agree
+                    the details with your client before saving the project.
+                  </p>
                   <div className="brief-actions">
                     <button
                       type="button"
@@ -422,9 +428,10 @@ export default function ProjectEditor({
                   {importOpen && (
                     <div id="saved-project-import" className="brief-import">
                       <p>
-                        Choose a StreamLion .json project export. StreamLion
-                        will fill in the project steps for you to review before
-                        saving the project.
+                        Choose a StreamLion .json project export or a client
+                        project brief (JSON). StreamLion will fill in the
+                        project steps for you to review before saving the
+                        project.
                       </p>
                       <label className="file-label">
                         Choose project file (.json)
