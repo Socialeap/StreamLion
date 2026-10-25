@@ -1,3 +1,4 @@
+import { ADMIN_ENTRY_PATH } from "./admin-entry.js";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   Users,
@@ -32,7 +33,8 @@ const statusName = (v) =>
     disputed: "Disputed",
     credit_hold: "Credit hold",
   })[v] || v.replaceAll("_", " ");
-const signIn = "/api/google/start?returnTo=%2Fadmin%2F";
+const signIn =
+  "/api/google/start?returnTo=" + encodeURIComponent(ADMIN_ENTRY_PATH);
 const pendingKey = "streamlion:admin:pending-operation:v1";
 function readPending() {
   try {
@@ -815,7 +817,7 @@ export default function AdminPortal() {
         </div>
       ) : null}
       <aside className="admin-sidebar">
-        <a className="admin-brand" href="/admin/">
+        <a className="admin-brand" href={ADMIN_ENTRY_PATH}>
           <span>SL</span>StreamLion<small>ADMIN</small>
         </a>
         <nav aria-label="Admin views">

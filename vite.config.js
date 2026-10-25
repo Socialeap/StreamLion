@@ -22,6 +22,7 @@ export default defineConfig({
       input: {
         app: "index.html",
         admin: "admin/index.html",
+        adminPortal: "api/admin-portal.html",
         pilot: "pilot/index.html",
         welcome: "api/welcome.html",
         purchase: "api/purchase.html",
@@ -86,6 +87,7 @@ export default defineConfig({
         ],
         globIgnores: [
           "admin/index.html",
+          "api/admin-portal.html",
           "pilot/index.html",
           "client/index.html",
           "coordination/index.html",

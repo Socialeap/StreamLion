@@ -1,3 +1,4 @@
+import { ADMIN_ENTRY_PATH } from "../src/admin-entry.js";
 import { observeAccount } from "./admin-data.js";
 import { completeAdminSignin } from "./admin-auth.js";
 import { base64url as b64, base64urlBytes as unb64 } from "./base64.js";
@@ -397,7 +398,8 @@ export async function handleGoogle({ request, env, params }) {
       const verifier = random(),
         state = random();
       const adminNonce =
-        googleReturnPath(url.searchParams.get("returnTo"), env) === "/admin/"
+        googleReturnPath(url.searchParams.get("returnTo"), env) ===
+        ADMIN_ENTRY_PATH
           ? random()
           : null;
       const flow = await seal(
@@ -864,7 +866,8 @@ export async function handleGoogle({ request, env, params }) {
 // destinations retain the existing PWA/purchase behavior; no open redirects.
 export function googleReturnPath(value, env) {
   if (value === "purchase" || value === "/api/purchase") return "/api/purchase";
-  if (value === "/admin/") return "/admin/";
+  if (value === "/admin/" || value === ADMIN_ENTRY_PATH)
+    return ADMIN_ENTRY_PATH;
   if (value === "/pilot/") return "/pilot/";
   if (value === "credits" || value === "/api/credits") return "/api/credits";
   if (value === "/api/client-requests") return "/api/client-requests";

@@ -1068,3 +1068,76 @@ for (const scenario of [
     }
   });
 }
+
+for (const entry of ["/admin/", "/api/admin-portal"]) {
+  test(`admin OAuth from ${entry} keeps nonce assurance and returns outside the old PWA fallback`, async (t) => {
+    const f = fixture();
+    t.after(() => f.db.close());
+    const start = await handleGoogle({
+      env: f.env,
+      params: { path: ["start"] },
+      request: new Request(
+        "https://app.example/api/google/start?returnTo=" +
+          encodeURIComponent(entry),
+        { headers: { Origin: "https://app.example" } },
+      ),
+    });
+    assert.equal(start.status, 303);
+    const location = new URL(start.headers.get("Location"));
+    const cookie = start.headers.getSetCookie()[0].split(";")[0];
+    const flow = await unseal(
+      f.env,
+      cookie.slice(cookie.indexOf("=") + 1),
+      "oauth-flow",
+    );
+    assert.ok(
+      flow.adminNonce,
+      "admin continuation must request nonce-bound assurance",
+    );
+    assert.equal(location.searchParams.get("nonce"), flow.adminNonce);
+    assert.deepEqual(JSON.parse(location.searchParams.get("claims")), {
+      id_token: { auth_time: { essential: true }, amr: { essential: true } },
+    });
+    assert.equal(flow.returnTo, "/api/admin-portal");
+    t.mock.method(globalThis, "fetch", async (url) => {
+      assert.ok(
+        String(url).startsWith("https://oauth2.googleapis.com/token") ||
+          String(url).startsWith(
+            "https://openidconnect.googleapis.com/v1/userinfo",
+          ),
+      );
+      return new Response(
+        JSON.stringify(
+          String(url).includes("/token")
+            ? {
+                access_token: "synthetic-access",
+                refresh_token: "synthetic-refresh",
+                expires_in: 3600,
+                scope:
+                  "openid email https://www.googleapis.com/auth/drive.file",
+              }
+            : {
+                sub: "owner",
+                email: "shakoure@transcendencemedia.com",
+                email_verified: true,
+              },
+        ),
+      );
+    });
+    const result = await handleGoogle({
+      env: f.env,
+      params: { path: ["callback"] },
+      request: new Request(
+        "https://app.example/api/google/callback?state=" +
+          flow.state +
+          "&code=synthetic",
+        { headers: { Cookie: cookie } },
+      ),
+    });
+    assert.equal(result.status, 303);
+    assert.equal(
+      new URL(result.headers.get("Location")).pathname,
+      "/api/admin-portal",
+    );
+  });
+}
