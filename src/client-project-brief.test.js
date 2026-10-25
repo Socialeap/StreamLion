@@ -78,11 +78,16 @@ test("the client entry names the browser brief and preserves the provider entry"
     .textContent.replace(/\s+/g, " ");
   assert.match(faq, /free in your browser, with no signup or AI/);
   assert.match(faq, /explicitly save on this device or download a copy/);
-  assert.match(faq, /Review the copy before sharing/);
+  assert.match(faq, /review the exact snapshot and selected recipient/);
   assert.match(faq, /No exact address or access codes/);
   assert.match(faq, /local draft to review together, not an approved scope/);
   assert.match(faq, /does not automatically write to Google/);
   const workflow = document.querySelector("#workflow").textContent.replace(/\s+/g, " ");
-  assert.match(workflow, /provider directory is preparing to launch/);
+  assert.match(workflow, /opted-in F3D listing/);
+  assert.match(faq, /provider must verify their email and enroll free on F3D/);
+  assert.match(faq, /No Core purchase is required/);
+  assert.match(faq, /no email is sent automatically/);
+  assert.match(faq, /Clients can revoke access or delete the stored brief and reply/);
+  assert.match(faq, /Downloaded or shared copies cannot be revoked/);
   assert.doesNotMatch(workflow, /A client finds you through/);
 });
