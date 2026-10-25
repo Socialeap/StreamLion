@@ -45,3 +45,9 @@ The regression failed before the fix (zero results for 30 displayed pilot identi
 After incorporating main `782d7422b82fcd8bb77873f256ed68d8c0eab51d` (PR #127), the complete suite passed **1,117/1,117** with zero failed/skipped. App build, Pages Functions compilation and diff checks passed. One existing AI-pilot test was stabilized with a fixed midday timestamp: its five-minute probe must remain on the same UTC day rather than intermittently crossing midnight and resetting the daily allowance. Product billing behavior is unchanged.
 
 The concurrent remote main-update merge was preserved. All prior merge, activation, deployment and owner/device holds remain in force.
+
+## CI hosted-speech clock correction — 2026-10-25 UTC
+
+GitHub run `40144855496`, head `e29f8d2`, failed only the hosted-speech budget test at `hosted-speech.test.js:419`. It ran at 23:59:11 UTC; adding 61 seconds crossed midnight. The production guard correctly allowed a new daily budget, while the test incorrectly expected the previous day's limit. Reproduced the exact failure with a synthetic frozen 23:59:11 clock before editing.
+
+The same-day test now uses fixed UTC noon. A separate regression explicitly checks midnight renewal, retained cumulative provider cost after failed attempts, and restoration of customer credits. Both tests pass under the original failing clock. The full local suite passed **1,118/1,118**, zero failed/skipped; diff check passed. Only tests and validation documentation changed; product billing, schema, configuration and all activation holds are unchanged. The pushed head must receive a separate successful GitHub verify receipt before CI is called passing.
