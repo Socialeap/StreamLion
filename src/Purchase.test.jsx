@@ -17,7 +17,7 @@ Object.defineProperty(globalThis, "navigator", {
   value: dom.window.navigator,
   configurable: true,
 });
-const { render, fireEvent, act, cleanup } =
+const { render, fireEvent, act, cleanup, waitFor } =
   await import("@testing-library/react");
 const { default: Purchase } = await import("./Purchase.jsx");
 const { default: LicenseGate } = await import("./LicenseGate.jsx");
@@ -422,7 +422,9 @@ test("active free pilot opens Core without a paid receipt; expiry closes it and 
 });
 
 test("offline cold start restores the cached pilot expiry timer and stops local Core at the deadline", async (t) => {
-  const endsAt = Date.now() + 5000;
+  const now = 1800000000000;
+  t.mock.method(Date, "now", () => now);
+  const endsAt = now + 5000;
   localStorage.setItem(
     "streamlion-purchase-receipt-v1",
     JSON.stringify({ pilot: true, expires: endsAt }),
@@ -443,8 +445,12 @@ test("offline cold start restores the cached pilot expiry timer and stops local 
   });
   const realTimeout = globalThis.setTimeout;
   let expire = null;
+  let expiryDelay = null;
   t.mock.method(globalThis, "setTimeout", (fn, delay, ...args) => {
-    if (delay > 3000 && delay <= 5000) expire = fn;
+    if (delay > 3000 && delay <= 5000) {
+      expire = fn;
+      expiryDelay = delay;
+    }
     return realTimeout(fn, delay, ...args);
   });
   const ui = render(
@@ -453,10 +459,18 @@ test("offline cold start restores the cached pilot expiry timer and stops local 
     </LicenseGate>,
   );
   await ui.findByText("Offline pilot workspace");
+  // A DOM commit can precede the passive effect that registers this timer.
+  await waitFor(() =>
+    assert.equal(
+      typeof expire,
+      "function",
+      "An offline pilot must schedule its original expiry",
+    ),
+  );
   assert.equal(
-    typeof expire,
-    "function",
-    "An offline pilot must schedule its original expiry",
+    now + expiryDelay,
+    endsAt,
+    "The timer must keep the cached original deadline",
   );
   await act(async () => expire());
   assert.equal(ui.queryByText("Offline pilot workspace"), null);
