@@ -1,4 +1,20 @@
+import { observeActivity } from "./admin-data.js";
 import { CoordinationError } from "../src/client-workflow.js";
+export async function goodwillBalance(db, mode, subject) {
+  const marker = await db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='view' AND name='streamlion_goodwill_available_v1'",
+    )
+    .first();
+  if (!marker) return 0;
+  const row = await db
+    .prepare(
+      "SELECT balance_micros FROM streamlion_goodwill_available_v1 WHERE mode=? AND google_subject=?",
+    )
+    .bind(mode, subject)
+    .first();
+  return row?.balance_micros || 0;
+}
 export async function sharedWallet(db, mode, subject) {
   const cash = await db
     .prepare(
@@ -19,13 +35,16 @@ export async function sharedWallet(db, mode, subject) {
         .bind(mode, subject)
         .first()
     : null;
+  const goodwill = await goodwillBalance(db, mode, subject);
   return {
+    goodwill,
     purchased: cash?.balance_micros || 0,
-    promotional: promo?.balance_micros || 0,
+    promotional: (promo?.balance_micros || 0) + goodwill,
+    starter: promo?.balance_micros || 0,
     available:
       (cash?.balance_micros || 0) < 0
         ? 0
-        : (cash?.balance_micros || 0) + (promo?.balance_micros || 0),
+        : (cash?.balance_micros || 0) + (promo?.balance_micros || 0) + goodwill,
     hold: (cash?.balance_micros || 0) < 0,
   };
 }
@@ -53,13 +72,21 @@ export async function reserveProject(db, mode, subject, jobId, now) {
       );
     return existing;
   }
+  const hasGoodwill = await db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE name='streamlion_goodwill_available_v1'",
+    )
+    .first();
+  const promoFunds = hasGoodwill
+    ? "(COALESCE(p.balance_micros,0)+COALESCE((SELECT balance_micros FROM streamlion_goodwill_available_v1 WHERE mode=w.mode AND google_subject=w.google_subject),0))"
+    : "COALESCE(p.balance_micros,0)";
   try {
     await db
       .prepare(
         `INSERT INTO streamlion_shared_spends_v1
       SELECT ?,?,?,'coordination',c.project_micros,
-      MIN(c.project_micros,COALESCE(p.balance_micros,0)),
-      c.project_micros-MIN(c.project_micros,COALESCE(p.balance_micros,0)),'reserved',?
+      MIN(c.project_micros,${promoFunds}),
+      c.project_micros-MIN(c.project_micros,${promoFunds}),'reserved',?
       FROM streamlion_coordination_policy_v1 c JOIN streamlion_credit_wallets_v1 w ON w.mode=c.mode AND w.google_subject=?
       LEFT JOIN streamlion_promotional_wallets_v1 p ON p.mode=w.mode AND p.google_subject=w.google_subject
       WHERE c.mode=? AND NOT EXISTS(SELECT 1 FROM streamlion_shared_spends_v1 WHERE mode=? AND google_subject=? AND id=?)`,
@@ -85,10 +112,18 @@ export async function reserveProject(db, mode, subject, jobId, now) {
 export async function finishProject(db, mode, subject, jobId, state) {
   if (!["complete", "failed"].includes(state))
     throw new Error("credit_transition");
-  await db
+  const result = await db
     .prepare(
       "UPDATE streamlion_shared_spends_v1 SET state=? WHERE mode=? AND google_subject=? AND id=? AND state='reserved'",
     )
     .bind(state, mode, subject, "job:" + jobId)
     .run();
+  if (state === "complete") {
+    try {
+      await observeActivity(db, mode, subject);
+    } catch {
+      /* reporting must not change an already-committed charge */
+    }
+  }
+  return result;
 }

@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 export const navigationFallbackDenylist = [
+  /^\/admin(?:[/?]|$)/,
   /^\/assets(?:[/?]|$)/,
   /^\/api(?:[/?]|$)/,
   /^\/mcp(?:[/?]|$)/,
@@ -20,6 +21,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         app: "index.html",
+        admin: "admin/index.html",
         pilot: "pilot/index.html",
         welcome: "api/welcome.html",
         purchase: "api/purchase.html",
@@ -83,6 +85,7 @@ export default defineConfig({
           "fonts/*.ttf",
         ],
         globIgnores: [
+          "admin/index.html",
           "pilot/index.html",
           "client/index.html",
           "coordination/index.html",

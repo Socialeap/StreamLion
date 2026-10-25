@@ -1,3 +1,5 @@
+import { observeActivity } from "./admin-data.js";
+import { goodwillBalance } from "./shared-credits.js";
 import { getSession, hash, seal, unseal } from "./google-auth.js";
 import { hasPurchase, paymentMode } from "./purchase-access.js";
 import { getExtensionProject } from "./extension-workbook.js";
@@ -82,12 +84,20 @@ export async function reserveSpeech(
     .run();
 }
 export async function finishSpeech(db, subject, id, state) {
-  return db
+  const result = await db
     .prepare(
       "UPDATE streamlion_speech_turns_v1 SET state=? WHERE mode='live' AND google_subject=? AND request_id=? AND state='reserved'",
     )
     .bind(state, subject, id)
     .run();
+  if (state === "complete") {
+    try {
+      await observeActivity(db, "live", subject);
+    } catch {
+      /* reporting must not change an already-committed charge */
+    }
+  }
+  return result;
 }
 export async function expireSpeech(db, subject, now) {
   return db
@@ -260,12 +270,17 @@ export async function handleSpeech({ request, env }, dependencies = {}) {
       )
       .bind(subject)
       .first();
+    const goodwill = await goodwillBalance(db, "live", subject);
+    const speechBalance =
+      (wallet?.balance_micros || 0) < 0
+        ? 0
+        : (wallet?.balance_micros || 0) + goodwill;
     if (route === "config")
       return reply({
         enabled: true,
         scope,
         priceMicros: price,
-        balanceMicros: Math.max(0, wallet?.balance_micros || 0),
+        balanceMicros: speechBalance,
         maxChars: SPEECH_LIMITS.chars,
       });
     if (!request.headers.get("Content-Type")?.startsWith("application/json"))
@@ -366,7 +381,7 @@ export async function handleSpeech({ request, env }, dependencies = {}) {
         quoteToken,
         text,
         priceMicros: price,
-        balanceMicros: Math.max(0, wallet?.balance_micros || 0),
+        balanceMicros: speechBalance,
         expiresAt,
       });
     }

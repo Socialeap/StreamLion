@@ -391,10 +391,44 @@ test("access, repeated codes, arbitrary instructions and oversized answers stay 
   );
 });
 
+test("speech daily allowance resets at UTC midnight while failed attempts retain cumulative cost", async (t) => {
+  const f = await fixture(t),
+    db = f.env.GOOGLE_SESSIONS;
+  const before = Date.UTC(2026, 9, 24, 23, 59, 11);
+  const reserve = (request, now) =>
+    reserveSpeech(db, "account-a", request, "scope", "hash", 12500, 1000, now);
+  f.db.exec(
+    "UPDATE streamlion_speech_policy_v1 SET daily_budget_micros=1000,total_budget_micros=2000 WHERE mode='live'",
+  );
+  await reserve("before-midnight", before);
+  await finishSpeech(db, "account-a", "before-midnight", "failed");
+  await assert.rejects(reserve("same-day", before + 1000), /speech_capacity/);
+  await reserve("after-midnight", before + 61000);
+  await finishSpeech(db, "account-a", "after-midnight", "failed");
+  await assert.rejects(
+    reserve("cumulative-exhausted", before + 86400000 + 61000),
+    /speech_capacity/,
+  );
+  assert.equal(
+    f.db
+      .prepare("SELECT sum(reserve_micros) n FROM streamlion_speech_turns_v1")
+      .get().n,
+    2000,
+  );
+  assert.equal(
+    f.db
+      .prepare(
+        "SELECT balance_micros n FROM streamlion_credit_wallets_v1 WHERE mode='live' AND google_subject='account-a'",
+      )
+      .get().n,
+    100000,
+  );
+});
 test("budget caps retain failed attempts, rate limits and price checks are enforced atomically", async (t) => {
+  // The 61-second probes test one daily allowance, not UTC day rollover.
   const f = await fixture(t),
     db = f.env.GOOGLE_SESSIONS,
-    now = Date.now();
+    now = Date.UTC(2026, 9, 24, 12);
   f.db.exec(
     "UPDATE streamlion_speech_policy_v1 SET total_budget_micros=1000 WHERE mode='live'",
   );

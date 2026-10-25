@@ -1,3 +1,4 @@
+import { observeActivity } from "./admin-data.js";
 import { AI_LIMITS } from "./ai-providers.js";
 import { sharedWallet } from "./shared-credits.js";
 export const paidCreditMode = (env) =>
@@ -62,10 +63,18 @@ export async function reserveCreditTurn(
     .run();
 }
 export async function finishCreditTurn(db, mode, subject, id, state) {
-  return db
+  const result = await db
     .prepare(
       "UPDATE streamlion_credit_turns_v1 SET state=? WHERE mode=? AND google_subject=? AND request_id=? AND state='reserved'",
     )
     .bind(state, mode, subject, id)
     .run();
+  if (state === "complete") {
+    try {
+      await observeActivity(db, mode, subject);
+    } catch {
+      /* reporting must not change an already-committed charge */
+    }
+  }
+  return result;
 }

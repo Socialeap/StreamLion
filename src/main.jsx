@@ -1,3 +1,4 @@
+import { startAccountActivity } from "./account-activity.js";
 import "./provider-pricing.css";
 import "./provider-branding.css";
 import React from "react";
@@ -22,3 +23,5 @@ const updateSW = registerSW({
   },
 });
 createRoot(document.getElementById("root")).render(<App />);
+
+startAccountActivity();
