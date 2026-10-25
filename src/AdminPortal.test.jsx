@@ -141,7 +141,11 @@ test("owner can inspect account and must review exact credits/recipient/reason b
 test("non-owner cannot see user data or mutation forms", async (t) => {
   setup(t, { denied: true, session: { error: "Owner access required." } });
   const ui = render(<Admin />);
-  await ui.findByRole("link", { name: "Sign in with Google" });
+  const signIn = await ui.findByRole("link", { name: "Sign in with Google" });
+  assert.equal(
+    new URL(signIn.href).searchParams.get("returnTo"),
+    "/api/admin-portal",
+  );
   assert.equal(ui.queryByText("Jamie Field"), null);
   assert.equal(ui.queryByRole("button", { name: "Add free credits" }), null);
 });

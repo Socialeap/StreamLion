@@ -20,6 +20,9 @@ test("the installed PWA sends sign-in and policy navigation to their real routes
     "/api/google/start",
     "/api/google/callback?state=synthetic",
     "/api/health",
+    "/admin/",
+    "/api/admin-portal",
+    "/api/admin-portal.html",
     "/client/?job=synthetic",
     "/coordination/",
     "/api/client-portal?job=synthetic",
@@ -49,7 +52,7 @@ test("the installed PWA sends sign-in and policy navigation to their real routes
 
 // Navigation contract shipped before the landing page (main ea002ab).
 // Exercise that worker, rather than assuming users already received the new one.
-test("the public landing entry bypasses the previously deployed worker on its first visit", async () => {
+test("landing and admin network entries bypass the previously deployed worker on their first visit", async () => {
   globalThis.self = { __WB_DISABLE_DEV_LOGS: true };
   const { NavigationRoute } =
     await import("workbox-routing/NavigationRoute.js");
@@ -71,6 +74,9 @@ test("the public landing entry bypasses the previously deployed worker on its fi
     "/api/welcome.html",
     "/api/welcome?source=launch",
     "/api/welcome.html?source=launch",
+    "/api/admin-portal",
+    "/api/admin-portal.html",
+    "/api/admin-portal?google=connected",
     "/api/privacy",
     "/api/privacy.html",
     "/api/terms",
@@ -81,6 +87,11 @@ test("the public landing entry bypasses the previously deployed worker on its fi
     matches("/welcome"),
     true,
     "old worker reproduces the reported interception",
+  );
+  assert.equal(
+    matches("/admin/"),
+    true,
+    "old worker intercepts the original admin entry before current code can run",
   );
   assert.equal(matches("/"), true, "workspace remains available offline");
 });

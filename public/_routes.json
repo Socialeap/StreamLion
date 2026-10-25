@@ -13,6 +13,9 @@
     "/extension.html/"
   ],
   "exclude": [
+    "/api/admin-portal",
+    "/api/admin-portal/",
+    "/api/admin-portal.html",
     "/api/welcome",
     "/api/welcome/",
     "/api/welcome.html",

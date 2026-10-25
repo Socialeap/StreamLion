@@ -215,9 +215,17 @@ test("mutation freshness requires a signed nonce-bound Google auth_time rather t
     }),
   );
 });
-test("Google sign-in can return only to the exact admin path", async () => {
+test("Google sign-in accepts only exact admin entries and returns to the network entry", async () => {
   const { googleReturnPath } = await import("../../server/google-auth.js");
-  assert.equal(googleReturnPath("/admin/", {}), "/admin/");
+  assert.equal(googleReturnPath("/admin/", {}), "/api/admin-portal");
+  assert.equal(googleReturnPath("/api/admin-portal", {}), "/api/admin-portal");
+  for (const path of [
+    "/api/admin-portal/",
+    "/api/admin-portal?next=https://evil.example",
+    "/api/admin-portal/https://evil.example",
+    "//evil.example/api/admin-portal",
+  ])
+    assert.equal(googleReturnPath(path, {}), "/");
   assert.equal(googleReturnPath("/admin/https://evil.example", {}), "/");
 });
 test("unused fractional AI credit remainder can be corrected exactly", async (t) => {
