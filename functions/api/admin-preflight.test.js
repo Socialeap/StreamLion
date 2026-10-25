@@ -201,3 +201,106 @@ test("owner recovery rolls back on audit failure and exact replay retains one di
     /admin_operator_replay/,
   );
 });
+
+test("admin preflight accepts wholly absent optional saved-card schema before and after 0025", async () => {
+  const { expectedAdminSchema, adminPreflight } =
+    await import("../../scripts/preflight-admin.mjs");
+  const optional = new Set([
+    "streamlion_credit_cards_v1",
+    "streamlion_credit_topups_v1",
+    "streamlion_credit_cards_schema_v1",
+  ]);
+  for (const after of [false, true]) {
+    const input = expectedAdminSchema(after);
+    input.schema = input.schema.filter((r) => !optional.has(r.name));
+    delete input.stamps.streamlion_credit_cards_schema_v1;
+    assert.equal(
+      adminPreflight(input).migration,
+      after ? "already_applied" : "pending",
+    );
+  }
+});
+
+test("any optional saved-card object or stamp requires the exact complete 0017 schema", async () => {
+  const { expectedAdminSchema, adminPreflight } =
+    await import("../../scripts/preflight-admin.mjs");
+  const names = [
+    "streamlion_credit_cards_v1",
+    "streamlion_credit_topups_v1",
+    "streamlion_credit_cards_schema_v1",
+  ];
+  for (const after of [false, true]) {
+    for (let mask = 1; mask < 8; mask++) {
+      const input = expectedAdminSchema(after);
+      input.schema = input.schema.filter(
+        (r) =>
+          !names.includes(r.name) ||
+          Boolean(mask & (1 << names.indexOf(r.name))),
+      );
+      if (!(mask & 4)) delete input.stamps.streamlion_credit_cards_schema_v1;
+      if (mask === 7) assert.doesNotThrow(() => adminPreflight(input));
+      else assert.throws(() => adminPreflight(input), /STOP/);
+    }
+    const stray = expectedAdminSchema(after);
+    stray.schema = stray.schema.filter((r) => !names.includes(r.name));
+    assert.throws(() => adminPreflight(stray), /STOP/);
+    const altered = expectedAdminSchema(after);
+    altered.schema.find((r) => r.name === names[0]).sql += " /* drift */";
+    assert.throws(() => adminPreflight(altered), /STOP/);
+    const wrongStamp = expectedAdminSchema(after);
+    wrongStamp.stamps.streamlion_credit_cards_schema_v1 = 2;
+    assert.throws(() => adminPreflight(wrongStamp), /STOP/);
+  }
+});
+
+test("0025 installs with 0017 absent without creating saved-card objects", async () => {
+  const { adminPreflight } = await import("../../scripts/preflight-admin.mjs");
+  const db = new DatabaseSync(":memory:");
+  try {
+    const dir = new URL("../../migrations/", import.meta.url);
+    for (const file of readdirSync(dir)
+      .filter(
+        (f) =>
+          f.endsWith(".sql") &&
+          f <= "0025_admin_portal.sql" &&
+          !f.startsWith("0017"),
+      )
+      .sort())
+      db.exec(readFileSync(new URL(file, dir), "utf8"));
+    const schema = db
+      .prepare(
+        "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'",
+      )
+      .all();
+    const stamps = Object.fromEntries(
+      schema
+        .filter((r) => r.type === "table" && r.name.endsWith("schema_v1"))
+        .map((r) => [
+          r.name,
+          db.prepare("SELECT version FROM " + r.name).get().version,
+        ]),
+    );
+    assert.equal(
+      adminPreflight({ schema, stamps }).migration,
+      "already_applied",
+    );
+    assert.equal(
+      db
+        .prepare(
+          "SELECT count(*) n FROM sqlite_master WHERE name IN ('streamlion_credit_cards_v1','streamlion_credit_topups_v1','streamlion_credit_cards_schema_v1')",
+        )
+        .get().n,
+      0,
+    );
+    assert.equal(
+      db
+        .prepare(
+          "SELECT sum(enabled+grants_enabled) n FROM streamlion_admin_policy_v1",
+        )
+        .get().n,
+      0,
+    );
+  } finally {
+    db.close();
+  }
+});
