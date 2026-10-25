@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "kind": "streamlion.project",
+  "fields": {
+    "title": "Community gallery capture",
+    "propertySizeSqFt": "2400",
+    "city": "Asheville",
+    "region": "North Carolina",
+    "scope": "Space type: Gallery\nIntended use: Help visitors plan an accessible visit.",
+    "deliverables": "3D virtual tour\nStill photographs",
+    "proposedTimes": "Weekday mornings next month; to be agreed with the provider.",
+    "notes": "General notes: Include the public exhibition rooms.\nQuestions to agree with the provider: Confirm coverage, deliverable formats, timing and price before work begins."
+  }
+}
