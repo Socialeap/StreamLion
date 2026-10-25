@@ -96,3 +96,39 @@ test("a late preview cannot authorize delivery after the job revision changes", 
   assert.equal(ui.queryByTitle("Completion Brief preview"), null);
   assert.equal(ui.queryByRole("checkbox"), null);
 });
+
+test("correction delivery shows no new fee while retaining review and the server settlement contract", async (t) => {
+  t.after(cleanup);
+  const corrected = {
+    ...job,
+    revision: 20,
+    completion: { attachmentId: "original-delivery", hash: "b".repeat(64) },
+  };
+  const sent = [];
+  const ui = render(
+    <CompletionDelivery
+      job={corrected}
+      busy={false}
+      command={(...args) => sent.push(args)}
+      prepareCompletion={async () => brief}
+    />,
+  );
+  await act(async () =>
+    fireEvent.click(
+      ui.getByRole("button", { name: "Prepare Completion Brief" }),
+    ),
+  );
+  const send = ui.getByRole("button", {
+    name: "Deliver corrected Completion Brief · no additional credits",
+  });
+  assert.equal(send.disabled, true);
+  assert.match(
+    ui.getByRole("checkbox").parentElement.textContent,
+    /adds no project fee/,
+  );
+  fireEvent.click(ui.getByRole("checkbox"));
+  fireEvent.click(send);
+  assert.equal(sent[0][2].authorizedMicros, 3000000);
+  assert.equal(sent[0][2].completionHash, brief.hash);
+  assert.equal(sent[0][2].completionReviewed, true);
+});

@@ -1,3 +1,5 @@
+import { observeAccount } from "./admin-data.js";
+import { completeAdminSignin } from "./admin-auth.js";
 import { base64url as b64, base64urlBytes as unb64 } from "./base64.js";
 import { FOLDER_MIME } from "../src/drive-folders.js";
 import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
@@ -394,11 +396,16 @@ export async function handleGoogle({ request, env, params }) {
         return json({ error: "Open StreamLion to connect." }, 403);
       const verifier = random(),
         state = random();
+      const adminNonce =
+        googleReturnPath(url.searchParams.get("returnTo"), env) === "/admin/"
+          ? random()
+          : null;
       const flow = await seal(
         env,
         {
           verifier,
           state,
+          adminNonce,
           expiresAt: Date.now() + 600000,
           returnTo: googleReturnPath(url.searchParams.get("returnTo"), env),
         },
@@ -415,6 +422,17 @@ export async function handleGoogle({ request, env, params }) {
         state,
         code_challenge: await hash(verifier),
         code_challenge_method: "S256",
+        ...(adminNonce
+          ? {
+              nonce: adminNonce,
+              claims: JSON.stringify({
+                id_token: {
+                  auth_time: { essential: true },
+                  amr: { essential: true },
+                },
+              }),
+            }
+          : {}),
       }).toString();
       return redirect(target.toString(), [setCookie(FLOW, flow, 600)]);
     }
@@ -539,6 +557,30 @@ export async function handleGoogle({ request, env, params }) {
           ).bind(previous.session_hash),
         );
       await env.GOOGLE_SESSIONS.batch(statements);
+      // Operational metadata never breaks ordinary sign-in; absent migration is a no-op.
+      try {
+        await observeAccount(
+          env.GOOGLE_SESSIONS,
+          identity,
+          env.STREAMLION_PAYMENTS_MODE,
+          Date.now(),
+        );
+      } catch {
+        /* report coverage remains qualified */
+      }
+      if (flow.adminNonce) {
+        try {
+          await completeAdminSignin(
+            env,
+            sessionHash,
+            identity,
+            tokens.id_token,
+            flow.adminNonce,
+          );
+        } catch {
+          /* admin requests fail closed without a window */
+        }
+      }
       const returnPath = googleReturnPath(flow.returnTo, env);
       return redirect(
         origin(env) +
@@ -822,6 +864,7 @@ export async function handleGoogle({ request, env, params }) {
 // destinations retain the existing PWA/purchase behavior; no open redirects.
 export function googleReturnPath(value, env) {
   if (value === "purchase" || value === "/api/purchase") return "/api/purchase";
+  if (value === "/admin/") return "/admin/";
   if (value === "/pilot/") return "/pilot/";
   if (value === "credits" || value === "/api/credits") return "/api/credits";
   if (value === "/api/client-requests") return "/api/client-requests";
