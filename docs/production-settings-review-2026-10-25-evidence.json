@@ -1,0 +1,90 @@
+{
+  "checkedAt": "2026-10-26T00:02:21.597Z",
+  "project": "streamlion",
+  "productionBranch": "main",
+  "production": {
+    "STREAMLION_REQUIRE_LICENSE": {
+      "type": "secret_text",
+      "value": "REDACTED_OR_NOT_RETURNED"
+    },
+    "STREAMLION_REFUND_DAYS": {
+      "type": "secret_text",
+      "value": "REDACTED_OR_NOT_RETURNED"
+    },
+    "ENABLE_FREE_PILOT": {
+      "present": false
+    },
+    "ENABLE_CHATGPT_EXTENSION": {
+      "type": "plain_text",
+      "value": "false"
+    },
+    "STREAMLION_PAYMENTS_MODE": {
+      "type": "secret_text",
+      "value": "REDACTED_OR_NOT_RETURNED"
+    },
+    "STREAMLION_CHECKOUT_MODE": {
+      "type": "secret_text",
+      "value": "REDACTED_OR_NOT_RETURNED"
+    }
+  },
+  "canonicalDeployment": {
+    "id": "02ccccb5-ae68-40d9-967c-40acc30c6d5e",
+    "environment": "production",
+    "url": "https://02ccccb5.streamlion.pages.dev",
+    "stage": "deploy",
+    "status": "success",
+    "sha": "a872c25d317d0b06cf8b9de0c484f73e934c35e8",
+    "createdOn": "2026-10-25T03:45:04.938658Z",
+    "variables": {
+      "STREAMLION_REQUIRE_LICENSE": {
+        "type": "secret_text",
+        "value": "REDACTED_OR_NOT_RETURNED"
+      },
+      "STREAMLION_REFUND_DAYS": {
+        "type": "secret_text",
+        "value": "REDACTED_OR_NOT_RETURNED"
+      },
+      "ENABLE_FREE_PILOT": {
+        "present": false
+      },
+      "ENABLE_CHATGPT_EXTENSION": {
+        "type": "plain_text",
+        "value": "false"
+      },
+      "STREAMLION_PAYMENTS_MODE": {
+        "type": "secret_text",
+        "value": "REDACTED_OR_NOT_RETURNED"
+      },
+      "STREAMLION_CHECKOUT_MODE": {
+        "type": "secret_text",
+        "value": "REDACTED_OR_NOT_RETURNED"
+      }
+    }
+  },
+  "recordedAt": "2026-10-26T00:07:19.848276+00:00",
+  "effectiveRuntime": {
+    "purchaseStatus": {
+      "enabled": true,
+      "required": true,
+      "mode": "live",
+      "connected": false,
+      "purchased": false
+    },
+    "purchaseConfig": {
+      "enabled": false,
+      "checkoutMode": "paused",
+      "required": true,
+      "mode": "live",
+      "refundDays": 7
+    },
+    "freePilotConfig": {
+      "enabled": false
+    },
+    "health": {
+      "status": "ready",
+      "upstreamsChecked": false
+    },
+    "releaseRevision": "a872c25d317d0b06cf8b9de0c484f73e934c35e8"
+  },
+  "method": "Existing authorized Cloudflare OAuth, GET project only; filtered encrypted values withheld. Anonymous GET status/config/health/release/free-pilot config. Purchase-config GET performs normal internal quote throttling and Stripe catalog reads; no checkout creation, reservation, purchase, refund, policy mutation or paid AI invocation."
+}
