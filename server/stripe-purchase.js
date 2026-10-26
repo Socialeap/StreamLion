@@ -5,6 +5,7 @@ import {
   businessReview,
 } from "./checkout-business.js";
 import Stripe from "stripe";
+import { coreRefundRequestText } from "../src/refund-policy.js";
 import {
   checkoutTaxMode,
   taxSchemaReady,
@@ -437,7 +438,7 @@ async function createCheckout(env, stripe, identity, config, body) {
         message: `I agree to the [StreamLion purchase terms](${config.origin}/api/terms).`,
       },
       submit: {
-        message: `One-time StreamLion purchase. No subscription. Request a full refund within ${config.refundDays} days of purchase: info@transcendencemedia.com. Use the same Google account to restore access.`,
+        message: `One-time StreamLion purchase. No subscription. ${coreRefundRequestText(config.refundDays)} Email info@transcendencemedia.com with your receipt. Use the same Google account to restore access.`,
       },
     },
   };

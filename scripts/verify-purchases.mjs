@@ -1,7 +1,17 @@
-const [origin, expectedMode = "test"] = process.argv.slice(2);
-if (!origin || !["test", "live"].includes(expectedMode))
+const [
+  origin,
+  expectedMode = "test",
+  refundDays = "14",
+  checkoutMode = "paused",
+] = process.argv.slice(2);
+if (
+  !origin ||
+  !["test", "live"].includes(expectedMode) ||
+  !["7", "14", "30"].includes(refundDays) ||
+  !["paused", "open"].includes(checkoutMode)
+)
   throw new Error(
-    "Usage: node scripts/verify-purchases.mjs HTTPS_ORIGIN test|live",
+    "Usage: node scripts/verify-purchases.mjs HTTPS_ORIGIN test|live [7|14|30] [paused|open]",
   );
 const url = new URL(origin);
 if (url.protocol !== "https:" || url.origin !== origin)
@@ -24,12 +34,13 @@ const [config, status, release] = await Promise.all([
   read("/release.json"),
 ]);
 if (
-  !config.enabled ||
+  config.checkoutMode !== checkoutMode ||
+  config.enabled !== (checkoutMode === "open") ||
   config.mode !== expectedMode ||
   !Number.isSafeInteger(config.amount) ||
   config.amount <= 0 ||
   config.currency !== "usd" ||
-  config.refundDays !== 7 ||
+  config.refundDays !== Number(refundDays) ||
   config.launchCapacity !== 200
 )
   throw new Error("Purchase configuration mismatch.");
@@ -51,6 +62,7 @@ console.log(
       amount: config.amount,
       currency: config.currency,
       refundDays: config.refundDays,
+      checkoutMode: config.checkoutMode,
       unauthenticatedAccess: false,
       check: "PASS",
     },

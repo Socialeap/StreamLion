@@ -9,7 +9,7 @@ The credits page previously described only AI answers, although the existing sha
 - `server/client-coordination.js` records the selected private workspace's one-year background grant. Revoking client coordination clears that grant's credentials and revokes its client sessions. `server/google-auth.js` also revokes coordination grants/client sessions for the Google account when Core disconnects. Other devices retain their separate Core sign-in sessions; their coordination grants are still revoked.
 - Client records and file access remain scoped to the verified job. Early archive ends access; recovery preserves the source and leaves the job archived. Reopening an archived job requires fresh client verification. Signed manifests depend on retained private Drive originals; external reference links are not file backups.
 
-The terms retain the existing one-time Core prices, seven-day app guarantee, prepaid credit purchase/refund rules and 30% AI-cost markup. The existing `#ai-credits` anchor stays valid. Both privacy URLs have identical content. The new wording describes current behavior; live tax, commercial policy, AI-cost approval and paid-public activation remain separate owner decisions.
+The terms retain the existing one-time Core prices, 14-day app guarantee ending at first project delivery through StreamLion for new purchases (earlier purchase terms preserved), prepaid credit purchase/refund rules and 30% AI-cost markup. The existing `#ai-credits` anchor stays valid. Both privacy URLs have identical content. The new wording describes current behavior; live tax, commercial policy, AI-cost approval and paid-public activation remain separate owner decisions.
 
 ## Validation
 

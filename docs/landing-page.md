@@ -8,7 +8,7 @@ The requested offer is **$39.95 USD one-time**, **$29.96 for the first 200 launc
 
 **Purchase Now!** links directly to `/api/purchase`, with or without landing-page JavaScript. The purchase page rechecks account, price and availability before creating hosted Stripe Checkout. Default payments remain disabled; this change does not enable live charges. A valid live configuration updates displayed prices, discount and refund period; an exhausted promotion removes its discount and comparison. See [Stripe activation](stripe-activation.md) before public promotion.
 
-The requested **seven-day money-back guarantee** is a request window from payment, not a bank-settlement deadline. Requests go to `info@transcendencemedia.com` with the receipt. The owner processes refunds in Stripe; the app's key does not need refund-write permission. Earlier, longer refund rights remain intact. Purchase terms and hosted Checkout describe the same policy.
+The approved **14-day money-back guarantee** covers requests within 14 days of purchase and before the first successful project delivery through StreamLion, including a Completion Brief. It is a request window, not a bank-settlement deadline. Requests go to `info@transcendencemedia.com` with the receipt. The owner processes refunds in Stripe; the app's key does not need refund-write permission. Earlier purchase terms remain intact; do not retrospectively impose the first-delivery condition. Purchase terms and hosted Checkout describe the same policy.
 
 ## Demonstrations and copy
 
@@ -23,6 +23,8 @@ Samples stay in the page and do not read/write Google. The landing does not load
 
 ## Release classification and acceptance
 
-**Frontend + backend + durable purchase state + refund configuration.** This includes `0005_streamlion_launch_200.sql` after the original `0004` purchase schema. Existing financial rows and uniqueness rules are preserved. The new backend requires the v2 stamp before quote/checkout, and `STREAMLION_REFUND_DAYS=7` is the offer's activation setting. No Google/provider credentials are changed here.
+**Frontend + backend + durable purchase state + refund configuration.** This includes `0005_streamlion_launch_200.sql` after the original `0004` purchase schema. Existing financial rows and uniqueness rules are preserved. The new backend requires the v2 stamp before quote/checkout, and `STREAMLION_REFUND_DAYS=14` (held pending coordinated copy/configuration/deployment approval) is the offer's activation setting. No Google/provider credentials are changed here.
 
 **No Lovable action is required.** StreamLion uses repository/GitHub, Cloudflare and Google Cloud. Follow the idempotent D1 preflight in [Stripe activation](stripe-activation.md) after PR merge, then deploy the approved merged main's Pages assets and Functions. Do not promote the new public offer before Stripe test acceptance and separate live activation approval. Browser viewport checks do not replace physical Android checkout/restore testing or a production deployment receipt.
+
+2026-10-25 wording follow-up: keep checkout paused and Cloudflare settings/deployment unchanged during review; see `refund-policy-14-day-release.md`. No new schema or payment activation is needed for this wording change.

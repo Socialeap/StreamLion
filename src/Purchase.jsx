@@ -5,6 +5,7 @@ import BusinessPurchaseConsent, {
 import { useEffect, useRef, useState } from "react";
 import { AppHeader, BottomNavigation } from "./AppNavigation.jsx";
 import { purchaseRequest } from "./purchase-api.js";
+import { coreRefundRequestText } from "./refund-policy.js";
 export default function Purchase({ onPurchased }) {
   const [config, setConfig] = useState(null),
     [account, setAccount] = useState(null);
@@ -245,8 +246,8 @@ export default function Purchase({ onPurchased }) {
                     </p>
                   )}
                   <p>
-                    {config.refundDays}-day money-back guarantee. Request a full
-                    refund within {config.refundDays} days of purchase.{" "}
+                    {config.refundDays}-day money-back guarantee.{" "}
+                    {coreRefundRequestText(config.refundDays)}{" "}
                     <a href="/api/terms" target="_blank" rel="noreferrer">
                       Purchase terms
                     </a>{" "}

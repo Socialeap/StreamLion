@@ -175,3 +175,39 @@ test("equation preserves the entered rate and fractional minutes before rounding
     assert.equal(formatTimeValueEquation(minutes, rate, perJob), expected);
   }
 });
+
+test("landing fallbacks, purchase terms and support disclose the coordinated 14-day delivery limit", () => {
+  const landing = new JSDOM(
+    readFileSync(new URL("../api/welcome.html", import.meta.url), "utf8"),
+  ).window.document;
+  const labels = [...landing.querySelectorAll("[data-refund-days]")];
+  assert.equal(labels.length, 2);
+  for (const label of labels) {
+    assert.match(label.textContent, /14-day money-back guarantee/);
+    assert.match(
+      label.closest("p").textContent.replace(/\s+/g, " "),
+      /before your first project delivery through StreamLion/,
+    );
+  }
+  const terms = new JSDOM(
+    readFileSync(new URL("../public/api/terms.html", import.meta.url), "utf8"),
+  ).window.document.body.textContent;
+  assert.match(terms, /14-day money-back guarantee/);
+  assert.match(terms, /before your first project delivery through StreamLion/);
+  assert.match(
+    terms,
+    /do not retrospectively impose the first-delivery condition/,
+  );
+  assert.match(terms, /mandatory consumer rights/);
+  const support = new JSDOM(
+    readFileSync(
+      new URL("../public/api/support.html", import.meta.url),
+      "utf8",
+    ),
+  ).window.document.body.textContent;
+  assert.match(support, /14-day money-back guarantee/);
+  assert.match(
+    support,
+    /before your first project delivery through StreamLion/,
+  );
+});
