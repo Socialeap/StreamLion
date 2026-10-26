@@ -44,6 +44,14 @@ if (
   config.launchCapacity !== 200
 )
   throw new Error("Purchase configuration mismatch.");
+if (
+  typeof config.required !== "boolean" ||
+  status.required !== config.required ||
+  (expectedMode === "live" && config.required !== true)
+)
+  throw new Error(
+    "Purchase license enforcement is missing, inconsistent or disabled in live mode.",
+  );
 if (status.mode !== expectedMode || status.connected || status.purchased)
   throw new Error("Unauthenticated purchase status is incorrect.");
 if (

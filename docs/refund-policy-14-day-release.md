@@ -45,3 +45,5 @@ If the coordinated rollout fails, keep checkout paused, restore the exact pre-ch
 ## Validation
 
 Focused tests exercise the 14-day purchase disclosure, first-delivery language in both landing fallbacks/terms/support, and quoted/hosted Checkout messages for 7/14/30 days. The read-only readiness checker is tested with mocked fetch responses for paused 14-day success, stale 7-day rejection, unexpected checkout opening, and explicitly selected older offers. Full-suite/build/Functions results are recorded in the PR; no live configuration/deployment test is performed during implementation.
+
+The readiness checker requires matching boolean `required` values from purchase config and status. In `live` mode both must be `true`; a missing value, a string, disagreement or disabled enforcement fails the check. Deliberately disabled enforcement remains verifiable in `test` mode. This check supports the configuration receipt; it does not replace authenticated paid/unpaid account QA or the separate exact-SHA release check.
