@@ -476,3 +476,24 @@ test("offline cold start restores the cached pilot expiry timer and stops local 
   assert.equal(ui.queryByText("Offline pilot workspace"), null);
   await ui.findByText(/Your pilot access has ended/);
 });
+
+test("the 14-day purchase guarantee discloses first delivery before a buyer continues", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url) =>
+    response(
+      url.endsWith("config")
+        ? { ...config, refundDays: 14 }
+        : { enabled: true, required: true, connected: false, purchased: false },
+    ),
+  );
+  const ui = render(<Purchase />);
+  try {
+    await waitFor(() => assert.ok(ui.getByText(/14-day money-back guarantee/)));
+    assert.ok(
+      ui.getByText(/before your first project delivery through StreamLion/),
+    );
+    assert.ok(ui.getByRole("link", { name: "Purchase terms" }));
+    assert.ok(ui.getByRole("link", { name: "Continue with Google" }));
+  } finally {
+    cleanup();
+  }
+});

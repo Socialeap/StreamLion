@@ -1347,3 +1347,20 @@ test("Stripe tax-ID verification recovers a pending business receipt without ano
   assert.equal((await (await confirm()).json()).purchased, true);
   assert.equal(f.creates, 1);
 });
+
+for (const days of [7, 14, 30])
+  test(`Core ${days}-day quote and Checkout state the first-delivery limit`, async (t) => {
+    const f = fixture(t);
+    f.env.STREAMLION_REFUND_DAYS = String(days);
+    const quote = await (await f.request("config")).json();
+    assert.equal(quote.refundDays, days);
+    await f.checkout();
+    const submit = f.created.at(-1).get("custom_text[submit][message]");
+    assert.match(submit, new RegExp(`within ${days} days of purchase`));
+    assert.match(
+      submit,
+      /before your first project delivery through StreamLion/,
+    );
+    assert.match(submit, /info@transcendencemedia\.com/);
+    assert.equal(f.creates, 1);
+  });
