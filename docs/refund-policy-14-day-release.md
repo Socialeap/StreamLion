@@ -16,6 +16,8 @@ The proposed offer is a full Core app refund requested within 14 days of purchas
 
 Refund requests remain manual via info@transcendencemedia.com. This change neither automates refund approval/denial nor adds a delivery-history entitlement gate. The reviewer must check the purchase receipt/terms and reliable delivery evidence; a failed or pending delivery is not proof of a first successful delivery. Record the policy effective date and the reason for each decision in the existing support process. Do not retrospectively apply the new condition to older purchases. Stripe's resulting full-refund events continue to reconcile access through the existing webhook.
 
+Before opening checkout, review the [manual evidence checklist and fictional rehearsal](manual-core-refund-review.md). The current deliveredAt field or a planned delivery timestamp alone cannot establish the first successful delivery. The rehearsal requires no real purchase, refund, email or customer lookup and does not replace live acceptance.
+
 ## Changes for review
 
 - `src/refund-policy.js` supplies the same request condition to the React purchase page and hosted Stripe Checkout message.
