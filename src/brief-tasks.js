@@ -101,56 +101,116 @@ function fromPassage(source) {
     .replace(/[.!?]$/, "");
   const make = (label, kind = "review", area = "", reading) => ({
     id: crypto.randomUUID(),
-    label,
+    label: label.length > 500 ? `${label.slice(0, 499)}…` : label,
     kind,
     area,
     ...(reading ? { reading } : {}),
     source,
     selected: true,
   });
-  // Never turn a prohibition or conditional request into positive capture work.
-  if (
-    /\b(?:not|no|exclude[ds]?|except|unless|if|optional|do not|don't|without)\b/i.test(
-      text,
-    )
-  )
-    return [make(`Review limitation: ${text}`)];
-  const measurement = text.match(
-    new RegExp(
-      `^(?:measure|check|verify|record)\\s+(?:the\\s+)?(.+?)\\s+(${READINGS.join("|")})\\b(.*)$`,
-      "i",
-    ),
-  );
-  if (measurement) {
-    const area = measurement[1].trim();
-    const tail = `${measurement[2]}${measurement[3]}`;
-    const labels = READINGS.filter((name) =>
-      new RegExp(`\\b${name}\\b`, "i").test(tail),
-    );
-    return labels.map((reading) =>
-      make(
-        `Check ${area} ${reading.toLowerCase()} against the tape`,
-        "measurement",
-        area,
-        reading,
+  const limitation =
+    /\b(?:not|no|never|exclud(?:e[ds]?|ing)|except|unless|if|when|only|optional|don['’]t|isn['’]t|aren['’]t|can['’]t|without|skip|omit|avoid|out of scope|pending|subject to|provided that)\b/i;
+  const action =
+    "(?:capture|scan|photograph|take photos? of|measure|check|verify|record|send|deliver|provide|upload)";
+  const clean = (part) =>
+    part
+      .trim()
+      .replace(/^(?:hi|hello|hey)(?:\s+team)?[,!]\s*/i, "")
+      .replace(/^(?:(?:could|can|would) you\s+)?please\s+/i, "")
+      .replace(/^(?:could|can|would) you\s+/i, "")
+      .replace(
+        /^(?:(?:our|the) client needs|we need|we require)\s+(?:a\s+)?/i,
+        "",
+      )
+      .replace(/^3d walkthrough of\s+/i, "Scan ")
+      .replace(/^photos? of\s+/i, "Take photos of ");
+  // A condition may qualify several actions. Keep the whole passage unresolved
+  // rather than splitting it into unconditional positive work.
+  if (limitation.test(text)) return [make(`Review limitation: ${text}`)];
+  const parts = text
+    .split(
+      new RegExp(
+        `;\\s*|,?\\s+plus\\s+(?=photos? of\\b)|,?\\s+(?:and|then)\\s+(?=(?:please\\s+)?${action}\\b)|,\\s*(?=(?:please\\s+)?${action}\\b)`,
+        "i",
       ),
+    )
+    .filter((part) => part.trim());
+  return parts.flatMap((part) => {
+    const request = clean(part);
+    if (!request) return [];
+    const measurement = request.match(
+      /^(?:measure|check|verify|record)\s+(?:the\s+)?(.+)$/i,
     );
-  }
-  const capture = text.match(
-    /^(?:capture|scan|photograph)\s+(?:the\s+)?(.+)$/i,
-  );
-  if (
-    capture &&
-    !/\b(?:then|including|with|using|as well|and)\b/i.test(capture[1])
-  ) {
-    const rooms = capture[1].split(/\s*[,+;]\s*/).filter(Boolean);
-    return rooms.map((area) =>
-      make(`${text.split(/\s/)[0]} ${area}`, "capture", area),
+    if (measurement) {
+      const dimension = `(?:ceiling height|${READINGS.join("|")})`;
+      const dimensionList = `${dimension}(?:\\s*(?:,|and|&|\\+)\\s*(?:the\\s+)?${dimension})*`;
+      const dimensionFirst = measurement[1].match(
+        new RegExp(
+          `^(${dimensionList})\\s+(?:of|in|for)\\s+(?:the\\s+)?(.+)$`,
+          "i",
+        ),
+      );
+      const areaFirst = measurement[1].match(
+        new RegExp(`^(.+?)\\s+(${dimensionList})$`, "i"),
+      );
+      const area = (dimensionFirst?.[2] || areaFirst?.[1] || "").trim();
+      const dimensions = dimensionFirst?.[1] || areaFirst?.[2];
+      if (
+        area &&
+        area.length <= 200 &&
+        dimensions &&
+        !new RegExp(`\\b(?:${READINGS.join("|")}|and|or)\\b|[,+&]`, "i").test(
+          area,
+        ) &&
+        !new RegExp(`\\b${action}\\b`, "i").test(area)
+      ) {
+        const names = dimensions.replace(/ceiling height/gi, "Height");
+        return READINGS.filter((reading) =>
+          new RegExp(`\\b${reading}\\b`, "i").test(names),
+        ).map((reading) =>
+          make(
+            `Check ${area} ${reading.toLowerCase()} against the tape`,
+            "measurement",
+            area,
+            reading,
+          ),
+        );
+      }
+      return [make(`Confirm measurement: ${request}`)];
+    }
+    const capture = request.match(
+      /^(capture|scan|photograph|take photos? of)\s+(?:the\s+)?(.+)$/i,
     );
-  }
-  if (/^(?:send|deliver|provide|upload)\b/i.test(text))
-    return [make(text, "delivery")];
-  return [make(text)];
+    if (
+      capture &&
+      !/\b(?:then|including|with|using|as well|plus|but|before|after|or|by|at|on)\b/i.test(
+        capture[2],
+      )
+    ) {
+      const rooms = capture[2]
+        .split(/\s*(?:,|\+|\band\b|&)\s*/i)
+        .map((room) => room.trim().replace(/^the\s+/i, ""))
+        .filter(Boolean);
+      if (
+        rooms.length &&
+        rooms.every(
+          (room) =>
+            room.length <= 200 &&
+            !new RegExp(`\\b${action}\\b`, "i").test(room),
+        )
+      )
+        return rooms.map((area) =>
+          make(
+            `${capture[1][0].toUpperCase()}${capture[1].slice(1)} ${area}`,
+            "capture",
+            area,
+          ),
+        );
+    }
+    if (/^(?:send|deliver|provide|upload)\b/i.test(request))
+      return [make(request, "delivery")];
+    return [make(request)];
+  });
 }
 
 export function suggestTasks({

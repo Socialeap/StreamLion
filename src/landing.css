@@ -3148,3 +3148,108 @@ dialog .small {
     flex: 1 1 220px;
   }
 }
+.free-brief {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 40px;
+  padding-top: 72px;
+  padding-bottom: 72px;
+  scroll-margin-top: 24px;
+}
+.free-brief-intro {
+  align-self: start;
+}
+.free-brief-intro h2 {
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1.1;
+}
+.free-brief-intro p {
+  line-height: 1.7;
+}
+.free-brief-workspace {
+  min-width: 0;
+  border: 1px solid #bed8cb;
+  border-radius: 20px;
+  padding: 24px;
+  background: #f6faf7;
+}
+.free-brief label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.free-brief input:not([type="checkbox"]),
+.free-brief select,
+.free-brief textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #9bb8a8;
+  border-radius: 8px;
+  padding: 10px;
+  background: white;
+  color: #173e30;
+  font: inherit;
+  margin-top: 6px;
+}
+.free-brief textarea {
+  resize: vertical;
+  min-height: 160px;
+}
+.free-brief-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.free-brief button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.free-task {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid #bed8cb;
+  border-radius: 12px;
+  background: white;
+}
+.free-task h4 {
+  margin: 10px 0;
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.free-task summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0;
+}
+.free-task blockquote {
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 3px solid #7ca78f;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.free-brief .demo-review {
+  margin-top: 18px;
+  line-height: 1.6;
+}
+@media (max-width: 760px) {
+  .free-brief {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding-top: 40px;
+    padding-bottom: 40px;
+  }
+  .free-brief-workspace {
+    padding: 18px;
+  }
+  .free-brief-actions .button {
+    flex: 1 1 160px;
+  }
+}

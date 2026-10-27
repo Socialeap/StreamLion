@@ -51,6 +51,7 @@
         ><img src="/lion-mint.png" alt="" width="44" height="44" />StreamLion</a
       >
       <nav aria-label="Main navigation">
+        <a href="#free-brief">Free brief organizer</a>
         <a href="#workflow">How it works</a
         ><a href="#coordination">Client &amp; provider</a
         ><a href="#voice">Voice answers</a><a href="#pricing">Pricing</a
@@ -69,11 +70,14 @@
             >
           </p>
           <p class="hero-support">
-            Turn a client brief or branded share link into an agreed
-            Project Brief. Capture with the right instructions, keep your client
+            Turn a client brief or branded share link into an agreed Project
+            Brief. Capture with the right instructions, keep your client
             informed, and hand over a Completion Brief that shows the work.
           </p>
           <div class="hero-actions">
+            <a class="button button-outline" href="#free-brief"
+              >Turn your brief into tasks — free</a
+            >
             <a class="button" href="/api/client-requests"
               >I’m a capture provider</a
             ><a
@@ -86,8 +90,8 @@
             Have a project in mind? Create a free brief in your browser with no
             signup or AI. Save or download locally, or sign in free to store a
             reviewed private invitation for one provider. That provider verifies
-            their email and enrolls free on F3D before opening or replying.
-            You copy and send the link yourself. Omit confidential details.
+            their email and enrolls free on F3D before opening or replying. You
+            copy and send the link yourself. Omit confidential details.
           </p>
           <p class="ownership">
             Discovery → Agreed scope → Field assistant → Completion Brief
@@ -121,8 +125,8 @@
                   Keep the client’s scope beside the site tasks. Check required
                   outputs, access and measurements before confirming the visit.
                 </p>
-                <a class="text-link" href="#demo" data-step="prepare"
-                  >Try the brief → tasks demo →</a
+                <a class="text-link" href="#free-brief"
+                  >Organize your brief for free →</a
                 >
               </div>
               <div
@@ -224,6 +228,100 @@
         </figure>
       </section>
       <section
+        id="free-brief"
+        class="shell free-brief"
+        aria-labelledby="free-brief-title"
+      >
+        <div class="free-brief-intro">
+          <p class="eyebrow">Free tool · No account needed</p>
+          <h2 id="free-brief-title">
+            Your client brief.<br />A clearer task list.
+          </h2>
+          <p>
+            Paste the requested work, review the suggestions beside the original
+            wording, then copy or download your checklist.
+          </p>
+          <p class="small">
+            This organizer runs on your device. Your pasted brief is not sent to
+            StreamLion or an AI provider, and is not saved by this tool.
+            Reloading clears it. No AI credits are used.
+          </p>
+          <p class="small">
+            Suggestions can miss or misread work. Check rooms, measurements,
+            exclusions and conditions. Keep unclear requests marked for
+            clarification until the client confirms them.
+          </p>
+        </div>
+        <div class="free-brief-workspace">
+          <label for="free-brief-input">Client’s requested work</label>
+          <textarea
+            id="free-brief-input"
+            rows="7"
+            aria-describedby="free-brief-limits"
+            placeholder="Please scan the lobby and kitchen. Measure the length and width of the kitchen. Do not scan the office. Send the tour link by Friday."
+          ></textarea>
+          <p class="small" id="free-brief-limits">
+            Paste text only: up to 6,000 characters, 1,000 per passage and 40
+            suggestions. Split longer briefs into sections.
+          </p>
+          <div class="free-brief-actions">
+            <button type="button" class="button" id="free-brief-organize">
+              Organize my brief
+            </button>
+            <button
+              type="button"
+              class="button secondary"
+              id="free-brief-clear"
+            >
+              Clear brief
+            </button>
+          </div>
+          <p
+            id="free-brief-status"
+            class="small"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <div id="free-brief-results" hidden>
+            <h3 tabindex="-1">Review your checklist</h3>
+            <p class="small">
+              Correct the task type, room and dimension. Use “Add another task
+              from this passage” to split a request or add missed work. Uncheck
+              anything that is not requested.
+            </p>
+            <div id="free-brief-tasks"></div>
+            <label class="demo-review"
+              ><input type="checkbox" id="free-brief-reviewed" /> I checked
+              every selected task against the client’s wording, including
+              exclusions and conditions.</label
+            >
+            <div class="free-brief-actions">
+              <button
+                type="button"
+                class="button"
+                id="free-brief-copy"
+                disabled
+              >
+                Copy checklist
+              </button>
+              <button
+                type="button"
+                class="button secondary"
+                id="free-brief-download"
+                disabled
+              >
+                Download checklist
+              </button>
+            </div>
+            <p class="small">
+              Want to carry an agreed brief through the visit and client
+              handover?
+              <a href="#workflow">Explore the StreamLion workflow →</a>
+            </p>
+          </div>
+        </div>
+      </section>
+      <section
         id="workflow"
         class="workflow-section shell"
         aria-labelledby="workflow-title"
@@ -249,8 +347,8 @@
               and invite a provider by email or choose an opted-in F3D listing.
               Private invitations require verified free F3D accounts and free
               provider enrollment; a listing does not guarantee availability.
-              Your existing StreamLion branded share link remains a separate
-              way to introduce your business and service form.
+              Your existing StreamLion branded share link remains a separate way
+              to introduce your business and service form.
             </p>
             <a class="text-link" href="#coordination"
               >Try both sides of a request →</a
@@ -452,7 +550,7 @@ Capture the living room and kitchen.</textarea>
               ><span class="demo-area" id="demo-area">Job brief</span>
             </div>
             <div data-demo-panel="prepare">
-              <h3>Your uploaded content converts to a briefing checklist.</h3>
+              <h3>Try a sample briefing checklist.</h3>
               <p class="small">
                 Review the sample tasks beside the request that produced them.
               </p>
@@ -1118,8 +1216,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
             <p class="purchase-guarantee" hidden>
               <strong data-refund-days>14-day money-back guarantee</strong
               ><br />Explore the workflow. Request a full refund within
-              <span data-refund-period>14 days</span> of purchase and before your
-              first project delivery through StreamLion.
+              <span data-refund-period>14 days</span> of purchase and before
+              your first project delivery through StreamLion.
             </p>
             <p class="small" data-checkout-note>
               Sales are not open yet. Explore the sample job while checkout is
@@ -1188,8 +1286,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
             an hourly scheduled purge; minimal abuse-prevention metadata is kept
             for up to seven days after deletion. Downloaded or shared copies
             cannot be revoked. Editing a local draft does not change an existing
-            invitation: revoke it and create a fresh snapshot. On another device,
-            providers should reopen the original invitation link.
+            invitation: revoke it and create a fresh snapshot. On another
+            device, providers should reopen the original invitation link.
           </p>
           <p>
             A provider can open the downloaded JSON in StreamLion using
@@ -1319,8 +1417,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
           <p>
             Yes. Your purchase includes a
             <strong data-refund-days>14-day money-back guarantee</strong>. Try
-            preparing a project before you deliver it. To request a full
-            refund, email
+            preparing a project before you deliver it. To request a full refund,
+            email
             <a href="mailto:info@transcendencemedia.com"
               >info@transcendencemedia.com</a
             >
@@ -1328,8 +1426,8 @@ Length 12 feet 4 and a half inches. Width 10 feet 2 inches.</textarea>
             <span data-refund-period>14 days</span> of purchase and before your
             first project delivery through StreamLion. The guarantee ends at
             first delivery. Your Google project files remain yours. Earlier
-            purchase terms and mandatory consumer rights are preserved; see
-            the <a href="/api/terms">purchase terms</a>.
+            purchase terms and mandatory consumer rights are preserved; see the
+            <a href="/api/terms">purchase terms</a>.
           </p>
         </details>
       </section>
