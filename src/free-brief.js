@@ -1,4 +1,17 @@
-import { suggestTasks, appendReviewedTasks, READINGS } from "./brief-tasks.js";
+import {
+  suggestTasks,
+  validateBriefDraft,
+  validateTaskDetails,
+  READINGS,
+} from "./brief-tasks.js";
+
+// Standalone, in-memory export capacity; never passed to saved-project validation.
+export const FREE_BRIEF_LIMITS = Object.freeze({
+  text: 30000,
+  suggestions: 300,
+  passage: 4000,
+});
+export const FREE_BRIEF_PAGE_SIZE = 20;
 
 export function organizeFreeBrief(text) {
   if (!text.trim())
@@ -7,16 +20,33 @@ export function organizeFreeBrief(text) {
     text,
     sourceName: "Your pasted brief",
     reviewed: false,
-    suggestions: suggestTasks({
-      project: {},
-      text,
-      sourceName: "Your pasted brief",
-    }),
+    suggestions: suggestTasks(
+      {
+        project: {},
+        text,
+        sourceName: "Your pasted brief",
+      },
+      FREE_BRIEF_LIMITS,
+    ),
   };
 }
 
 export function checklistText(draft) {
-  const tasks = appendReviewedTasks([], draft);
+  validateBriefDraft(draft, FREE_BRIEF_LIMITS);
+  if (!draft.reviewed)
+    throw new Error(
+      "Review the suggested tasks against the source before exporting.",
+    );
+  const tasks = draft.suggestions.filter((item) => item.selected);
+  if (!tasks.length)
+    throw new Error("Select at least one requirement to export.");
+  for (const task of tasks) {
+    if (!task.label.trim())
+      throw new Error("Give each selected requirement a clear name.");
+    if (!task.source)
+      throw new Error("Keep a valid source passage with each task.");
+    validateTaskDetails(task, FREE_BRIEF_LIMITS);
+  }
   return [
     "StreamLion · Reviewed brief checklist",
     "Prepared from your wording. Confirm unresolved requests before doing the work.",
@@ -27,6 +57,9 @@ export function checklistText(draft) {
       `   Source: ${task.source.quote}`,
       "",
     ]),
+    "Original client brief — kept in full for context:",
+    draft.text,
+    "",
     "Prepared with StreamLion · https://streamlion.transcendencemedia.com/api/welcome#free-brief",
     "",
   ].join("\n");
@@ -42,6 +75,12 @@ export function initializeFreeBrief(document, win = document.defaultView) {
   const status = root.querySelector("#free-brief-status");
   const copy = root.querySelector("#free-brief-copy");
   const download = root.querySelector("#free-brief-download");
+  const pager = root.querySelector("#free-brief-pages");
+  const previous = root.querySelector("#free-brief-previous");
+  const next = root.querySelector("#free-brief-next");
+  const pageStatus = root.querySelector("#free-brief-page-status");
+  const visitedPages = new Set();
+  let page = 0;
   let draft;
   let revision = 0;
   function invalidate() {
@@ -57,7 +96,20 @@ export function initializeFreeBrief(document, win = document.defaultView) {
   }
   function render() {
     list.replaceChildren();
-    for (const item of draft.suggestions) {
+    const pageCount = Math.ceil(
+      draft.suggestions.length / FREE_BRIEF_PAGE_SIZE,
+    );
+    page = Math.min(page, pageCount - 1);
+    visitedPages.add(page);
+    const start = page * FREE_BRIEF_PAGE_SIZE;
+    pager.hidden = pageCount <= 1;
+    previous.disabled = page === 0;
+    next.disabled = page === pageCount - 1;
+    pageStatus.textContent = `Showing ${start + 1}–${Math.min(start + FREE_BRIEF_PAGE_SIZE, draft.suggestions.length)} of ${draft.suggestions.length} suggestions · Page ${page + 1} of ${pageCount}`;
+    for (const item of draft.suggestions.slice(
+      start,
+      start + FREE_BRIEF_PAGE_SIZE,
+    )) {
       const card = element("article");
       card.className = "free-task";
       const includeLabel = element("label", "Include this task ");
@@ -156,9 +208,8 @@ export function initializeFreeBrief(document, win = document.defaultView) {
       split.type = "button";
       split.className = "button secondary";
       split.addEventListener("click", () => {
-        if (draft.suggestions.length >= 40) {
-          status.textContent =
-            "A checklist supports up to 40 suggestions. Organize a smaller brief.";
+        if (draft.suggestions.length >= FREE_BRIEF_LIMITS.suggestions) {
+          status.textContent = `This tool supports up to ${FREE_BRIEF_LIMITS.suggestions} suggestions. Your existing work is kept; organize any remaining scope separately.`;
           return;
         }
         const added = {
@@ -171,13 +222,16 @@ export function initializeFreeBrief(document, win = document.defaultView) {
         };
         delete added.reading;
         draft.suggestions.splice(draft.suggestions.indexOf(item) + 1, 0, added);
+        page = Math.floor(
+          draft.suggestions.indexOf(added) / FREE_BRIEF_PAGE_SIZE,
+        );
         invalidate();
         render();
         list
           .querySelectorAll("article")
-          [draft.suggestions.indexOf(added)].querySelector(
-            'input:not([type="checkbox"])',
-          )
+          [
+            draft.suggestions.indexOf(added) % FREE_BRIEF_PAGE_SIZE
+          ].querySelector('input:not([type="checkbox"])')
           .focus();
       });
       editor.append(split);
@@ -185,8 +239,17 @@ export function initializeFreeBrief(document, win = document.defaultView) {
     }
     results.hidden = false;
   }
+  function changePage(delta) {
+    page += delta;
+    render();
+    results.querySelector("h3").focus();
+  }
+  previous.addEventListener("click", () => changePage(-1));
+  next.addEventListener("click", () => changePage(1));
   input.addEventListener("input", () => {
     draft = undefined;
+    visitedPages.clear();
+    page = 0;
     list.replaceChildren();
     results.hidden = true;
     invalidate();
@@ -199,11 +262,13 @@ export function initializeFreeBrief(document, win = document.defaultView) {
     invalidate();
     try {
       draft = organizeFreeBrief(input.value);
+      visitedPages.clear();
+      page = 0;
       render();
       const uncertain = draft.suggestions.filter(
         (item) => item.kind === "review",
       ).length;
-      status.textContent = `${draft.suggestions.length} suggestions. ${uncertain} ${uncertain === 1 ? "needs" : "need"} clarification or manual organization. Check every task, room and exclusion.`;
+      status.textContent = `${draft.suggestions.length} ${draft.suggestions.length === 1 ? "suggestion" : "suggestions"}. ${uncertain} ${uncertain === 1 ? "needs" : "need"} clarification or manual organization. Check every task, room and exclusion.${draft.suggestions.length > FREE_BRIEF_PAGE_SIZE ? " Review every page before exporting; the export includes all selected tasks." : ""}`;
       results.querySelector("h3").focus();
     } catch (error) {
       status.textContent = error.message;
@@ -213,6 +278,13 @@ export function initializeFreeBrief(document, win = document.defaultView) {
     copy.disabled = download.disabled = true;
     if (!reviewed.checked || !draft) return;
     try {
+      const remaining =
+        Math.ceil(draft.suggestions.length / FREE_BRIEF_PAGE_SIZE) -
+        visitedPages.size;
+      if (remaining > 0)
+        throw new Error(
+          `Review the remaining ${remaining} ${remaining === 1 ? "page" : "pages"} of suggestions before confirming the checklist.`,
+        );
       checklistText({ ...draft, reviewed: true });
       copy.disabled = download.disabled = false;
       status.textContent =
@@ -257,6 +329,8 @@ export function initializeFreeBrief(document, win = document.defaultView) {
   });
   root.querySelector("#free-brief-clear").addEventListener("click", () => {
     draft = undefined;
+    visitedPages.clear();
+    page = 0;
     input.value = "";
     list.replaceChildren();
     results.hidden = true;

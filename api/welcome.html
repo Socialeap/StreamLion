@@ -261,8 +261,9 @@
             placeholder="Please scan the lobby and kitchen. Measure the length and width of the kitchen. Do not scan the office. Send the tour link by Friday."
           ></textarea>
           <p class="small" id="free-brief-limits">
-            Paste text only: up to 6,000 characters, 1,000 per passage and 40
-            suggestions. Split longer briefs into sections.
+            Paste the full scope: up to 30,000 characters, 4,000 per passage and
+            300 suggestions. Long checklists appear in pages of 20; copy and
+            download include every selected task and the original brief.
           </p>
           <div class="free-brief-actions">
             <button type="button" class="button" id="free-brief-organize">
@@ -290,6 +291,33 @@
               anything that is not requested.
             </p>
             <div id="free-brief-tasks"></div>
+            <nav
+              id="free-brief-pages"
+              class="free-brief-actions"
+              aria-label="Checklist pages"
+              hidden
+            >
+              <button
+                type="button"
+                class="button secondary"
+                id="free-brief-previous"
+              >
+                Previous tasks
+              </button>
+              <span
+                id="free-brief-page-status"
+                class="small"
+                role="status"
+                aria-live="polite"
+              ></span>
+              <button
+                type="button"
+                class="button secondary"
+                id="free-brief-next"
+              >
+                Next tasks
+              </button>
+            </nav>
             <label class="demo-review"
               ><input type="checkbox" id="free-brief-reviewed" /> I checked
               every selected task against the client’s wording, including

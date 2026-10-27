@@ -4,8 +4,13 @@ export const TASK_KINDS = ["capture", "measurement", "delivery", "review"];
 import { MEASUREMENT_LABELS } from "./measurements.js";
 export const READINGS = MEASUREMENT_LABELS;
 const normalized = (value) => value.trim().toLowerCase().replace(/\s+/g, " ");
+export const PROJECT_BRIEF_LIMITS = Object.freeze({
+  text: 6000,
+  suggestions: 40,
+  passage: 1000,
+});
 
-export function validateTaskDetails(item) {
+export function validateTaskDetails(item, limits = PROJECT_BRIEF_LIMITS) {
   if (item.kind !== undefined && !TASK_KINDS.includes(item.kind))
     throw new Error("Choose a supported work requirement.");
   if (item.reading !== undefined && !READINGS.includes(item.reading))
@@ -21,7 +26,7 @@ export function validateTaskDetails(item) {
       !["scope", "deliverables", "brief"].includes(source.field) ||
       typeof source.quote !== "string" ||
       !source.quote.trim() ||
-      source.quote.length > 1000 ||
+      source.quote.length > limits.passage ||
       typeof source.name !== "string" ||
       source.name.length > 200 ||
       (source.page !== undefined &&
@@ -32,16 +37,16 @@ export function validateTaskDetails(item) {
   return item;
 }
 
-export function validateBriefDraft(value) {
+export function validateBriefDraft(value, limits = PROJECT_BRIEF_LIMITS) {
   if (
     !value ||
     typeof value.text !== "string" ||
-    value.text.length > 6000 ||
+    value.text.length > limits.text ||
     typeof value.sourceName !== "string" ||
     value.sourceName.length > 200 ||
     typeof value.reviewed !== "boolean" ||
     !Array.isArray(value.suggestions) ||
-    value.suggestions.length > 40
+    value.suggestions.length > limits.suggestions
   )
     throw new Error(
       "This brief review draft cannot be read. Keep its original text.",
@@ -63,16 +68,19 @@ export function validateBriefDraft(value) {
       (item.reading !== undefined && !READINGS.includes(item.reading))
     )
       throw new Error("Invalid suggested work requirement.");
-    validateTaskDetails({
-      ...item,
-      kind: item.kind === "measurement" ? "review" : item.kind,
-    });
+    validateTaskDetails(
+      {
+        ...item,
+        kind: item.kind === "measurement" ? "review" : item.kind,
+      },
+      limits,
+    );
     ids.add(item.id);
   }
   return value;
 }
 
-function passages(text, field, name) {
+function passages(text, field, name, limits) {
   let page;
   const result = [];
   for (const line of text.split(/\r?\n/)) {
@@ -85,7 +93,7 @@ function passages(text, field, name) {
       .split(/(?<=[.!?])\s+(?=[A-Z])/)
       .map((part) => part.trim())
       .filter(Boolean)) {
-      if (quote.length > 1000)
+      if (quote.length > limits.passage)
         throw new Error(
           "Split long brief passages into shorter requests before organizing them.",
         );
@@ -127,6 +135,15 @@ function fromPassage(source) {
   // A condition may qualify several actions. Keep the whole passage unresolved
   // rather than splitting it into unconditional positive work.
   if (limitation.test(text)) return [make(`Review limitation: ${text}`)];
+  // A leading location can qualify the following action. Do not detach it and
+  // invent a generic space such as "room" for a measurement.
+  if (
+    new RegExp(
+      `^(?:for|in|at|on|within|inside)\\b.+,\\s*(?:please\\s+)?${action}\\b`,
+      "i",
+    ).test(text)
+  )
+    return [make(text)];
   const parts = text
     .split(
       new RegExp(
@@ -213,35 +230,38 @@ function fromPassage(source) {
   });
 }
 
-export function suggestTasks({
-  project,
-  text = "",
-  sourceName = "Pasted brief",
-}) {
-  if (text.length > 6000)
+export function suggestTasks(
+  { project, text = "", sourceName = "Pasted brief" },
+  limits = PROJECT_BRIEF_LIMITS,
+) {
+  if (text.length > limits.text)
     throw new Error(
-      "Use a brief up to 6,000 characters, or organize it in smaller sections.",
+      `Use a brief up to ${limits.text.toLocaleString("en-US")} characters, or organize it in smaller sections.`,
     );
   const sources = text.trim()
-    ? passages(text, "brief", sourceName)
+    ? passages(text, "brief", sourceName, limits)
     : [
-        ...passages(project.scope || "", "scope", "Project scope"),
+        ...passages(project.scope || "", "scope", "Project scope", limits),
         ...passages(
           project.deliverables || "",
           "deliverables",
           "Requested outputs",
+          limits,
         ),
       ];
   const suggestions = sources.flatMap(fromPassage);
-  if (suggestions.length > 40)
+  if (suggestions.length > limits.suggestions)
     throw new Error(
-      "Organize a smaller section of this brief. A checklist supports up to 40 requirements.",
+      `Organize a smaller section of this brief. A checklist supports up to ${limits.suggestions} requirements.`,
     );
   if (!suggestions.length)
     throw new Error(
       "Add the requested work to the project, or paste a brief here first.",
     );
-  validateBriefDraft({ text, sourceName, suggestions, reviewed: false });
+  validateBriefDraft(
+    { text, sourceName, suggestions, reviewed: false },
+    limits,
+  );
   return suggestions;
 }
 
@@ -285,7 +305,7 @@ export function appendReviewedTasks(requirements, draft) {
       keys.add(key(item));
     }
   }
-  if (requirements.length + additions.length > 40)
+  if (requirements.length + additions.length > PROJECT_BRIEF_LIMITS.suggestions)
     throw new Error(
       "This would exceed 40 requirements. Nothing has been replaced.",
     );
