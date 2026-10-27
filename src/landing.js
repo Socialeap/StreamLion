@@ -1,4 +1,5 @@
 import "./landing.css";
+import { initializeFreeBrief } from "./free-brief.js";
 import {
   initializeCoordinationSample,
   coordinationAvailability,
@@ -23,6 +24,7 @@ import {
   sampleLockedRoom,
   syncSampleDeliveryTasks,
 } from "./landing-job.js";
+initializeFreeBrief(document);
 initializeCoordinationSample();
 fetch("/api/coordination/availability", {
   credentials: "omit",
