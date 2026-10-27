@@ -61,14 +61,25 @@ test("the client entry names the browser brief and preserves the provider entry"
     readFileSync(new URL("../api/welcome.html", import.meta.url), "utf8"),
   ).window.document;
   const actions = [...document.querySelectorAll(".hero-actions a")];
-  assert.equal(actions.length, 2);
-  assert.equal(actions[0].getAttribute("href"), "/api/client-requests");
-  assert.match(actions[0].textContent, /I’m a capture provider/);
+  assert.ok(
+    actions.some((link) => link.getAttribute("href") === "#free-brief"),
+  );
+  const provider = actions.find(
+    (link) => link.getAttribute("href") === "/api/client-requests",
+  );
+  assert.ok(provider);
+  assert.match(provider.textContent, /I’m a capture provider/);
+  const client = actions.find(
+    (link) =>
+      link.getAttribute("href") ===
+      "https://www.frontiers3d.com/directory#project-brief",
+  );
+  assert.ok(client);
   assert.equal(
-    actions[1].getAttribute("href"),
+    client.getAttribute("href"),
     "https://www.frontiers3d.com/directory#project-brief",
   );
-  assert.match(actions[1].textContent, /Plan your capture project/);
+  assert.match(client.textContent, /Plan your capture project/);
   const faq = [...document.querySelectorAll("#questions details")]
     .find((item) =>
       item
@@ -82,12 +93,17 @@ test("the client entry names the browser brief and preserves the provider entry"
   assert.match(faq, /No exact address or access codes/);
   assert.match(faq, /local draft to review together, not an approved scope/);
   assert.match(faq, /does not automatically write to Google/);
-  const workflow = document.querySelector("#workflow").textContent.replace(/\s+/g, " ");
+  const workflow = document
+    .querySelector("#workflow")
+    .textContent.replace(/\s+/g, " ");
   assert.match(workflow, /opted-in F3D listing/);
   assert.match(faq, /provider must verify their email and enroll free on F3D/);
   assert.match(faq, /No Core purchase is required/);
   assert.match(faq, /no email is sent automatically/);
-  assert.match(faq, /Clients can revoke access or delete the stored brief and reply/);
+  assert.match(
+    faq,
+    /Clients can revoke access or delete the stored brief and reply/,
+  );
   assert.match(faq, /Downloaded or shared copies cannot be revoked/);
   assert.doesNotMatch(workflow, /A client finds you through/);
 });
