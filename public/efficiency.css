@@ -1,0 +1,261 @@
+@font-face {
+  font-family: Manrope;
+  src: url("/fonts/manrope-400.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: Manrope;
+  src: url("/fonts/manrope-600.ttf") format("truetype");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: Manrope;
+  src: url("/fonts/manrope-800.ttf") format("truetype");
+  font-weight: 800;
+  font-display: swap;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  background: #fff;
+  color: #173e31;
+  font-family: Manrope, system-ui, sans-serif;
+}
+a {
+  color: inherit;
+  text-underline-offset: 4px;
+}
+a:focus-visible {
+  outline: 2px solid #21816d;
+  outline-offset: 5px;
+}
+.skip-link {
+  position: absolute;
+  left: 20px;
+  top: -100px;
+}
+.skip-link:focus {
+  top: 16px;
+  background: white;
+  padding: 16px;
+}
+.paper-header {
+  max-width: 1120px;
+  margin: auto;
+  padding: 28px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  font-size: 12px;
+  border-bottom: 1px solid #e0e6dc;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 20px;
+  text-decoration: none;
+}
+main {
+  max-width: 760px;
+  padding: 64px 32px 80px;
+  margin: auto;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: #4d715d;
+}
+h1 {
+  font-size: clamp(42px, 7vw, 68px);
+  letter-spacing: -0.06em;
+  line-height: 1.06;
+  margin: 20px 0 28px;
+}
+p {
+  font-size: 16px;
+  line-height: 1.85;
+  color: #4c5f55;
+}
+.standfirst {
+  font-size: 21px;
+  line-height: 1.6;
+  color: #304f3e;
+}
+.paper-meta {
+  font-size: 12px;
+  color: #64766b;
+  margin: 26px 0 0;
+}
+.key-finding {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 28px 30px;
+  background: #f0f5e9;
+  border-radius: 16px;
+  margin: 40px 0 48px;
+}
+.key-finding strong {
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+}
+.key-finding p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0;
+}
+section {
+  margin-top: 44px;
+}
+h2 {
+  font-size: 26px;
+  line-height: 1.25;
+  letter-spacing: -0.035em;
+  margin: 0 0 18px;
+}
+h3 {
+  font-size: 18px;
+  line-height: 1.5;
+  margin: 30px 0 10px;
+}
+section p {
+  margin: 0 0 18px;
+}
+.table-wrap {
+  margin: 28px 0 34px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+caption {
+  text-align: left;
+  font-size: 12px;
+  color: #64766b;
+  padding-bottom: 14px;
+}
+th,
+td {
+  padding: 14px 8px;
+  border-bottom: 1px solid #dce5d7;
+}
+th:first-child {
+  text-align: left;
+}
+thead th {
+  font-size: 11px;
+  color: #4c5f55;
+}
+tfoot {
+  background: #f0f5e9;
+  font-weight: 800;
+}
+.method {
+  border-block: 1px solid #dce5d7;
+  padding: 32px 0;
+}
+.method p {
+  font-size: 14px;
+}
+.method .eyebrow {
+  font-size: 11px;
+}
+.paper-button {
+  display: inline-block;
+  margin-top: 12px;
+  background: #173e31;
+  border-radius: 8px;
+  padding: 16px 20px;
+  color: white;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+footer {
+  border-top: 1px solid #e0e6dc;
+  padding: 32px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 2;
+  color: #64766b;
+}
+@media (max-width: 540px) {
+  main {
+    padding: 42px 22px 56px;
+  }
+  .paper-header {
+    padding: 20px 22px;
+  }
+  .paper-header > a:last-child {
+    max-width: 125px;
+    text-align: right;
+  }
+  .key-finding {
+    display: block;
+    padding: 24px;
+  }
+  .key-finding p {
+    margin-top: 14px;
+  }
+  th,
+  td {
+    padding: 12px 5px;
+  }
+  table {
+    font-size: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+@media print {
+  .paper-header > a:last-child,
+  .paper-button,
+  .skip-link,
+  footer a {
+    display: none;
+  }
+  main {
+    max-width: none;
+    padding: 24px 0;
+  }
+  body {
+    font-size: 11pt;
+  }
+  h1 {
+    font-size: 36pt;
+  }
+  p {
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+  section {
+    break-inside: avoid;
+  }
+  .key-finding {
+    border: 1px solid #ccc;
+    margin: 24px 0;
+  }
+  a {
+    text-decoration: none;
+  }
+}

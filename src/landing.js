@@ -1,4 +1,5 @@
 import "./landing.css";
+import { initializeEfficiency } from "./landing-efficiency.js";
 import { initializeFreeBrief } from "./free-brief.js";
 import {
   initializeCoordinationSample,
@@ -24,6 +25,7 @@ import {
   sampleLockedRoom,
   syncSampleDeliveryTasks,
 } from "./landing-job.js";
+initializeEfficiency(document);
 initializeFreeBrief(document);
 initializeCoordinationSample();
 fetch("/api/coordination/availability", {
