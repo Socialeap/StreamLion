@@ -27,7 +27,7 @@
     "requests": 24,
     "complete": false
   },
-  "decision": "HOLD \u2014 P95 and P99 exceed 10 ms; no production scale acceptance or reliable live improvement percentage",
+  "decision": "HOLD — P95 and P99 exceed 10 ms; no production scale acceptance or reliable live improvement percentage",
   "sourceSHA256": {
     "server/coordination-google.js": "9193ea9e3385274acb087b5ee62a8d18d208d8d56916259a79679a90779e9646",
     "server/coordination-maintenance.js": "804bc55461ce9ebdc1a2d40fa569d5cd332aae7455ec98ee0aa653fd328ef59e",
@@ -38,5 +38,10 @@
     "temporaryWorkerDeleted": true,
     "syntheticDatabaseDeleted": true,
     "localQAKeyDeleted": true
+  },
+  "bundleEquivalence": {
+    "normalizedSHA256": "e8f18108853461853eb83e7e99ae8f1a3e7911d9afd217d654ae7a4c9b910c53",
+    "equal": true,
+    "note": "Final formatting and Wrangler temporary route-module comment differ; esbuild whitespace-normalized executable output is identical."
   }
 }
