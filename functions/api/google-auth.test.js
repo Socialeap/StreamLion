@@ -1141,3 +1141,66 @@ for (const entry of ["/admin/", "/api/admin-portal"]) {
     );
   });
 }
+
+test("temporary owner workspace QA allows Picker access only while its server grant and owner role remain valid", async (t) => {
+  const f = fixture();
+  t.after(() => f.db.close());
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("No external call allowed");
+  });
+  const cookie = await f.session(),
+    now = Date.now(),
+    origin = "https://streamlion.transcendencemedia.com";
+  f.db.exec(
+    "CREATE TABLE streamlion_purchases_v1(order_id TEXT,mode TEXT,google_subject TEXT,status TEXT); CREATE TABLE streamlion_admin_policy_v1(mode TEXT,enabled INTEGER); CREATE TABLE streamlion_admin_owners_v1(mode TEXT,google_subject TEXT,email TEXT,enabled INTEGER); INSERT INTO streamlion_admin_policy_v1 VALUES('live',1); INSERT INTO streamlion_admin_owners_v1 VALUES('live','account-a','shakoure@transcendencemedia.com',1); UPDATE streamlion_google_sessions_v1 SET email='shakoure@transcendencemedia.com'",
+  );
+  Object.assign(f.env, {
+    GOOGLE_AUTH_ORIGIN: origin,
+    STREAMLION_REQUIRE_LICENSE: "true",
+    STREAMLION_PAYMENTS_MODE: "live",
+    STREAMLION_CHECKOUT_MODE: "paused",
+  });
+  const grant = {
+    version: 1,
+    scope: "google-workspace",
+    mode: "live",
+    origin,
+    subject: "account-a",
+    issuedAt: now,
+    expiresAt: now + 3600000,
+    reason: "Owner workbook QA",
+  };
+  const read = () =>
+    handleGoogle({
+      env: f.env,
+      params: { path: ["picker-token"] },
+      request: new Request(origin + "/api/google/picker-token", {
+        method: "POST",
+        headers: {
+          Cookie: "__Host-streamlion-session=" + cookie,
+          Origin: origin,
+          "Content-Type": "application/json",
+          "X-StreamLion-Account": "account-a",
+        },
+        body: "{}",
+      }),
+    });
+  assert.equal((await read()).status, 402);
+  f.env.STREAMLION_OWNER_CORE_QA_LICENSE = JSON.stringify(grant);
+  const allowed = await read();
+  assert.equal(allowed.status, 200);
+  assert.deepEqual(await allowed.json(), { accessToken: "synthetic-access" });
+  f.env.STREAMLION_OWNER_CORE_QA_LICENSE = JSON.stringify({
+    ...grant,
+    issuedAt: now - 2000,
+    expiresAt: now - 1,
+  });
+  assert.equal((await read()).status, 402);
+  f.env.STREAMLION_OWNER_CORE_QA_LICENSE = JSON.stringify(grant);
+  f.db.exec("UPDATE streamlion_admin_owners_v1 SET enabled=0");
+  assert.equal((await read()).status, 402);
+  assert.equal(
+    f.db.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    0,
+  );
+});

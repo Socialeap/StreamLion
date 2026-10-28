@@ -497,3 +497,130 @@ test("the 14-day purchase guarantee discloses first delivery before a buyer cont
     cleanup();
   }
 });
+
+test("temporary owner QA opens only the online workspace and never persists an offline licence", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  localStorage.setItem(
+    "streamlion-purchase-receipt-v1",
+    JSON.stringify({ expires: Date.now() + 86400000 }),
+  );
+  const expiresAt = Date.now() + 60000;
+  t.mock.method(globalThis, "fetch", async (url) =>
+    response(
+      url.endsWith("/api/purchase/status")
+        ? {
+            enabled: true,
+            required: true,
+            purchased: false,
+            connected: true,
+            ownerQa: { scope: "google-workspace", expiresAt },
+          }
+        : {
+            enabled: false,
+            required: true,
+            purchased: false,
+            checkoutMode: "paused",
+          },
+    ),
+  );
+  const ui = render(
+    <LicenseGate>
+      <div>Owner QA workspace</div>
+    </LicenseGate>,
+  );
+  await act(async () => {});
+  assert.ok(ui.getByText("Owner QA workspace"));
+  assert.match(ui.getByRole("status").textContent, /QA/);
+  assert.equal(localStorage.getItem("streamlion-purchase-receipt-v1"), null);
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("offline");
+  });
+  Object.defineProperty(navigator, "onLine", {
+    value: false,
+    configurable: true,
+  });
+  await act(async () => window.dispatchEvent(new window.Event("offline")));
+  assert.equal(ui.queryByText("Owner QA workspace"), null);
+  t.mock.method(globalThis, "fetch", async (url) =>
+    response(
+      url.endsWith("/api/purchase/status")
+        ? {
+            enabled: true,
+            required: true,
+            purchased: false,
+            connected: true,
+            ownerQa: { scope: "google-workspace", expiresAt },
+          }
+        : {
+            enabled: false,
+            required: true,
+            purchased: false,
+            checkoutMode: "paused",
+          },
+    ),
+  );
+  await act(async () => window.dispatchEvent(new window.Event("focus")));
+  assert.equal(
+    ui.queryByText("Owner QA workspace"),
+    null,
+    "a stale successful status cannot reopen QA while offline",
+  );
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("offline");
+  });
+  cleanup();
+  const offline = render(
+    <LicenseGate>
+      <div>Owner QA workspace</div>
+    </LicenseGate>,
+  );
+  await act(async () => {});
+  assert.equal(offline.queryByText("Owner QA workspace"), null);
+  Object.defineProperty(navigator, "onLine", {
+    value: true,
+    configurable: true,
+  });
+});
+
+test("owner QA expiry closes the workspace at its original deadline", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const now = 1800000000000,
+    expiresAt = now + 5000;
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "fetch", async (url) =>
+    response(
+      url.endsWith("/api/purchase/status")
+        ? {
+            enabled: true,
+            required: true,
+            purchased: false,
+            connected: true,
+            ownerQa: { scope: "google-workspace", expiresAt },
+          }
+        : {
+            enabled: false,
+            required: true,
+            purchased: false,
+            checkoutMode: "paused",
+          },
+    ),
+  );
+  const timeout = globalThis.setTimeout;
+  let expire;
+  t.mock.method(globalThis, "setTimeout", (fn, delay, ...args) => {
+    if (delay === 5000) expire = fn;
+    return timeout(fn, delay, ...args);
+  });
+  const ui = render(
+    <LicenseGate>
+      <div>Temporary QA workspace</div>
+    </LicenseGate>,
+  );
+  await act(async () => {});
+  assert.ok(ui.getByText("Temporary QA workspace"));
+  await waitFor(() => assert.equal(typeof expire, "function"));
+  await act(async () => expire());
+  assert.equal(ui.queryByText("Temporary QA workspace"), null);
+});

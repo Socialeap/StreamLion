@@ -1364,3 +1364,61 @@ for (const days of [7, 14, 30])
     assert.match(submit, /info@transcendencemedia\.com/);
     assert.equal(f.creates, 1);
   });
+
+test("owner workspace QA status remains unpaid and checkout paused", async (t) => {
+  const f = fixture(t, { mode: "live" }),
+    cookie = await f.login();
+  const now = Date.now(),
+    origin = "https://streamlion.transcendencemedia.com";
+  Object.assign(f.env, {
+    GOOGLE_AUTH_ORIGIN: origin,
+    STREAMLION_CHECKOUT_MODE: "paused",
+    STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify({
+      version: 1,
+      scope: "google-workspace",
+      mode: "live",
+      origin,
+      subject: "account-a",
+      issuedAt: now,
+      expiresAt: now + 3600000,
+      reason: "Owner Google integration QA",
+    }),
+  });
+  f.sql.exec(
+    "CREATE TABLE streamlion_admin_policy_v1(mode TEXT,enabled INTEGER); CREATE TABLE streamlion_admin_owners_v1(mode TEXT,google_subject TEXT,email TEXT,enabled INTEGER); INSERT INTO streamlion_admin_policy_v1 VALUES('live',1); INSERT INTO streamlion_admin_owners_v1 VALUES('live','account-a','shakoure@transcendencemedia.com',1); UPDATE streamlion_google_sessions_v1 SET email='shakoure@transcendencemedia.com'",
+  );
+  const status = await handlePurchase({
+    env: f.env,
+    params: { path: ["status"] },
+    request: new Request(origin + "/api/purchase/status", {
+      headers: { Cookie: "__Host-streamlion-session=" + cookie },
+    }),
+  });
+  assert.equal(status.status, 200);
+  const receipt = await status.json();
+  assert.equal(receipt.purchased, false);
+  assert.deepEqual(receipt.ownerQa, {
+    scope: "google-workspace",
+    expiresAt: now + 3600000,
+  });
+  assert.equal(await hasPurchase(f.env, "account-a"), false);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    0,
+  );
+  const checkout = await handlePurchase({
+    env: f.env,
+    params: { path: ["checkout"] },
+    request: new Request(origin + "/api/purchase/checkout", {
+      method: "POST",
+      headers: {
+        Cookie: "__Host-streamlion-session=" + cookie,
+        Origin: origin,
+        "X-StreamLion-Account": "account-a",
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    }),
+  });
+  assert.equal(checkout.status, 403);
+});

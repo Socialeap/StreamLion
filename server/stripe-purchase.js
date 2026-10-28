@@ -5,6 +5,7 @@ import {
   businessReview,
 } from "./checkout-business.js";
 import Stripe from "stripe";
+import { ownerWorkspaceQa } from "./owner-core-qa.js";
 import { coreRefundRequestText } from "../src/refund-policy.js";
 import {
   checkoutTaxMode,
@@ -640,6 +641,11 @@ export async function handlePurchase({ request, env, params }) {
     }
     if (path === "status" && request.method === "GET") {
       const identity = await getSession(request, env);
+      const purchased = identity
+        ? await hasPurchase(env, identity.google_subject)
+        : false;
+      const ownerQa =
+        !purchased && identity ? await ownerWorkspaceQa(env, identity) : null;
       return json({
         enabled: true,
         required,
@@ -648,9 +654,8 @@ export async function handlePurchase({ request, env, params }) {
         ...(identity
           ? { account: identity.email, subject: identity.google_subject }
           : {}),
-        purchased: identity
-          ? await hasPurchase(env, identity.google_subject)
-          : false,
+        purchased,
+        ...(ownerQa ? { ownerQa } : {}),
       });
     }
     if (path === "webhook" && request.method === "POST")
