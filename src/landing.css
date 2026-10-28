@@ -3256,3 +3256,192 @@ dialog .small {
     flex: 1 1 160px;
   }
 }
+
+/* The phase comparison bridges the shared workflow and personal ROI estimate. */
+.efficiency-section {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  align-items: center;
+  gap: clamp(32px, 5vw, 72px);
+  padding-block: 80px;
+  border-top: 1px solid var(--line);
+}
+.efficiency-intro h2 {
+  font-size: clamp(32px, 3.5vw, 48px);
+  line-height: 1.14;
+  letter-spacing: -0.055em;
+}
+.efficiency-intro h2 em {
+  color: #347052;
+  font-style: normal;
+}
+.efficiency-intro > p:not(.eyebrow) {
+  max-width: 420px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.efficiency-intro .button {
+  margin-top: 12px;
+}
+.efficiency-intro .efficiency-caveat {
+  font-size: 12px;
+  margin-top: 18px;
+}
+.efficiency-chart {
+  margin: 0;
+  padding: clamp(20px, 3vw, 32px);
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+}
+.efficiency-chart figcaption {
+  font-size: 15px;
+  font-weight: 600;
+}
+.efficiency-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 22px 0;
+}
+.efficiency-summary strong {
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.05em;
+  line-height: 1.1;
+}
+.efficiency-summary strong span,
+.efficiency-summary small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+  margin-top: 7px;
+}
+.efficiency-summary > span {
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+}
+.efficiency-legend {
+  display: flex;
+  gap: 18px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.efficiency-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.efficiency-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.efficiency-before {
+  background: #849093;
+}
+.efficiency-after {
+  background: #21816d;
+}
+.efficiency-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  padding: 14px 8px;
+  border: 0;
+  border-top: 1px solid #e9eee8;
+  border-radius: 6px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.efficiency-row:hover,
+.efficiency-row[aria-pressed="true"] {
+  background: #f1f6ed;
+}
+.efficiency-row:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 2px;
+}
+.efficiency-phase {
+  font-size: 12px;
+  font-weight: 600;
+  align-self: center;
+}
+.efficiency-phase > span {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.efficiency-bars {
+  display: grid;
+  gap: 6px;
+  padding-right: 49px;
+  align-content: center;
+}
+.efficiency-bar {
+  display: block;
+  position: relative;
+  width: var(--bar);
+  height: 12px;
+  border-radius: 0 3px 3px 0;
+}
+.efficiency-bar b {
+  position: absolute;
+  left: calc(100% + 7px);
+  top: -2px;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.efficiency-detail {
+  min-height: 58px;
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 16px 0 0;
+  color: var(--forest);
+}
+.efficiency-method {
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+@media (max-width: 900px) {
+  .efficiency-section {
+    grid-template-columns: 1fr;
+    padding-block: 48px;
+  }
+  .efficiency-intro > p:not(.eyebrow) {
+    max-width: 560px;
+  }
+}
+@media (max-width: 420px) {
+  .efficiency-row {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 8px;
+    padding-inline: 4px;
+  }
+  .efficiency-chart {
+    padding: 20px 16px;
+  }
+  .efficiency-phase {
+    font-size: 11px;
+  }
+  .efficiency-summary > span {
+    font-size: 12px;
+  }
+  .efficiency-detail {
+    min-height: 80px;
+  }
+}

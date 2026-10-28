@@ -9,6 +9,7 @@ export const navigationFallbackDenylist = [
   /^\/mcp-extension(?:[/?]|$)/,
   /^\/\.well-known\//,
   /^\/extension\.html(?:[?]|$)/,
+  /^\/efficiency(?:\.html)?(?:[/?]|$)/,
   /^\/privacy(?:\.html)?(?:[/?]|$)/,
   /^\/release\.json(?:\?|$)/,
   /^\/welcome(?:\.html)?(?:[/?]|$)/,
@@ -98,6 +99,7 @@ export default defineConfig({
           "api/terms.html",
           "api/privacy.html",
           "privacy.html",
+          "efficiency.html",
         ],
         // Sign-in redirects and standalone policy/release pages must reach their
         // actual routes rather than receiving the offline workspace shell.
