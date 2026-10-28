@@ -6,7 +6,18 @@ import {
   organizeFreeBrief,
   checklistText,
   initializeFreeBrief,
+  FREE_BRIEF_LIMITS,
 } from "./free-brief.js";
+import {
+  suggestTasks,
+  validateBriefDraft,
+  appendReviewedTasks,
+} from "./brief-tasks.js";
+
+const commercialBrief = readFileSync(
+  new URL("./fixtures/riverside-commercial-brief.txt", import.meta.url),
+  "utf8",
+);
 
 const fixtures = [
   {
@@ -160,13 +171,16 @@ test("restrictions, unknown measurements and contractions fail conservatively", 
 
 test("empty, oversized and over-capacity briefs cannot fall back to sample work", () => {
   assert.throws(() => organizeFreeBrief("   "), /Paste/);
-  assert.throws(() => organizeFreeBrief("x".repeat(6001)), /6,000/);
   assert.throws(
-    () => organizeFreeBrief("x".repeat(1001)),
+    () => organizeFreeBrief("x".repeat(FREE_BRIEF_LIMITS.text + 1)),
+    /30,000/,
+  );
+  assert.throws(
+    () => organizeFreeBrief("x".repeat(FREE_BRIEF_LIMITS.passage + 1)),
     /long brief passages/,
   );
   assert.throws(
-    () => organizeFreeBrief(Array(41).fill("Scan lobby").join("\n")),
+    () => organizeFreeBrief(Array(301).fill("Scan lobby").join("\n")),
     /smaller section/,
   );
   const draft = organizeFreeBrief("Scan lobby");
@@ -275,9 +289,154 @@ test("HTML-like client text stays text, stale results disappear, clipboard failu
   change(get("input"), "Scan another room");
   assert.equal(get("results").hidden, true);
   assert.equal(get("tasks").children.length, 0);
-  organize("x".repeat(6001));
+  organize("x".repeat(FREE_BRIEF_LIMITS.text + 1));
   assert.equal(get("results").hidden, true);
-  assert.match(get("status").textContent, /6,000/);
+  assert.match(get("status").textContent, /30,000/);
+});
+
+test("the full commercial email organizes and exports without the project checklist ceiling", () => {
+  assert.throws(
+    () => suggestTasks({ project: {}, text: commercialBrief }),
+    /40 requirements/,
+  );
+  const draft = organizeFreeBrief(commercialBrief);
+  assert.ok(draft.suggestions.length > 40);
+  assert.ok(
+    draft.suggestions.every((item) =>
+      commercialBrief.includes(item.source.quote),
+    ),
+  );
+  assert.ok(
+    draft.suggestions
+      .filter((item) => item.source.quote.startsWith("For Cedar and Maple"))
+      .every((item) => item.kind === "review"),
+  );
+  const output = checklistText({ ...draft, reviewed: true });
+  assert.ok(
+    output.includes(commercialBrief),
+    "keep the complete original, including headings and sign-off",
+  );
+  for (const phrase of [
+    "server room and electrical cupboard",
+    "normally locked",
+    "Thursday afternoon",
+    "window dimensions",
+    "not be publicly listed",
+  ])
+    assert.ok(output.includes(phrase), phrase);
+  assert.throws(() => validateBriefDraft(draft), /cannot be read/);
+  assert.throws(
+    () => appendReviewedTasks([], { ...draft, reviewed: true }),
+    /cannot be read/,
+  );
+});
+
+test("large free scopes keep every task beyond 40 while default project limits stay strict", () => {
+  const text = Array.from(
+    { length: 120 },
+    (_, i) => `Capture Level ${Math.floor(i / 30) + 1} room ${i + 1}.`,
+  ).join("\n");
+  const draft = organizeFreeBrief(text);
+  assert.equal(draft.suggestions.length, 120);
+  const output = checklistText({ ...draft, reviewed: true });
+  assert.match(output, /120\. \[ \] Capture Level 4 room 120/);
+  assert.throws(
+    () => suggestTasks({ project: {}, text, limits: FREE_BRIEF_LIMITS }),
+    /40 requirements/,
+  );
+  assert.throws(
+    () => validateBriefDraft({ ...draft, limits: FREE_BRIEF_LIMITS }),
+    /cannot be read/,
+  );
+  const paragraph =
+    "Additional site access information: " +
+    "Keep the rear delivery route clear during capture, ".repeat(30);
+  assert.ok(paragraph.length > 1000 && paragraph.length < 4000);
+  const longDraft = organizeFreeBrief(paragraph);
+  assert.ok(
+    checklistText({ ...longDraft, reviewed: true }).includes(paragraph),
+  );
+});
+
+test("standalone export retains repeated task names from separate floor scopes", () => {
+  const text = "LEVEL 1\nCapture corridor.\nLEVEL 2\nCapture corridor.";
+  const draft = organizeFreeBrief(text);
+  const output = checklistText({ ...draft, reviewed: true });
+  assert.equal((output.match(/\[ \] Capture corridor/g) || []).length, 2);
+  assert.ok(output.includes(text));
+});
+
+test("commercial scope pages preserve edits and export all pages after review", async (t) => {
+  const { dom, get, change, organize } = setup(t);
+  let copied;
+  Object.defineProperty(dom.window.navigator, "clipboard", {
+    value: {
+      writeText: async (text) => {
+        copied = text;
+      },
+    },
+  });
+  organize(commercialBrief);
+  const total = organizeFreeBrief(commercialBrief).suggestions.length;
+  assert.equal(get("tasks").children.length, 20);
+  assert.match(
+    get("page-status").textContent,
+    new RegExp(`of ${total} suggestions`),
+  );
+  get("reviewed").click();
+  assert.equal(get("copy").disabled, true);
+  assert.match(get("status").textContent, /remaining .* pages/);
+  change(
+    get("tasks").querySelector('input:not([type="checkbox"])'),
+    "Confirm overall capture scope with client",
+  );
+  get("tasks").querySelector('input[type="checkbox"]').click();
+  while (!get("next").disabled) get("next").click();
+  assert.ok(get("tasks").children.length <= 20);
+  get("reviewed").click();
+  assert.equal(get("copy").disabled, false);
+  get("copy").click();
+  await Promise.resolve();
+  assert.ok(copied.includes(commercialBrief));
+  assert.match(copied, /Thursday afternoon/);
+  assert.doesNotMatch(
+    copied,
+    /\[ \] Confirm overall capture scope with client/,
+  );
+  get("previous").click();
+  get("previous").click();
+  get("previous").click();
+  assert.equal(
+    get("tasks").querySelector('input:not([type="checkbox"])').value,
+    "Confirm overall capture scope with client",
+  );
+  assert.equal(
+    get("tasks").querySelector('input[type="checkbox"]').checked,
+    false,
+  );
+  get("clear").click();
+  organize("Scan lobby");
+  assert.equal(get("pages").hidden, true);
+});
+
+test("adding a task at a page boundary focuses the new task and keeps review gated", (t) => {
+  const { get, change, organize } = setup(t);
+  organize(
+    Array.from({ length: 40 }, (_, i) => `Capture Room ${i + 1}.`).join("\n"),
+  );
+  get("tasks").lastElementChild.querySelector("button").click();
+  assert.match(get("page-status").textContent, /Page 2 of 3/);
+  change(
+    get("tasks").firstElementChild.querySelector(
+      'input:not([type="checkbox"])',
+    ),
+    "Confirm extra room access",
+  );
+  get("reviewed").click();
+  assert.equal(get("copy").disabled, true);
+  get("next").click();
+  get("reviewed").click();
+  assert.equal(get("copy").disabled, false);
 });
 
 test("a delayed clipboard response cannot replace the clear confirmation", async (t) => {

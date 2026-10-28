@@ -3204,6 +3204,9 @@ dialog .small {
   gap: 10px;
   margin-top: 16px;
 }
+.free-brief-actions[hidden] {
+  display: none;
+}
 .free-brief button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
