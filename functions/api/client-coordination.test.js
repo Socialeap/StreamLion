@@ -1126,7 +1126,7 @@ test("public readiness coalesces visitors but never caches a private authorizati
       params: { path: [path] },
     });
   const responses = await Promise.all(Array.from({ length: 20 }, () => read()));
-  assert.equal(queries, 4);
+  assert.equal(queries, 1);
   for (const response of responses)
     assert.equal((await response.json()).status, "pilot");
   sql.exec(

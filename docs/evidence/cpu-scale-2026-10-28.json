@@ -1,0 +1,168 @@
+{
+  "dateUTC": "2026-10-28",
+  "productionBase": "a2ee50619a164aca4fe7f1ce0c875cb7e52ac7a8",
+  "scaleGate": "HOLD",
+  "checkout": "paused",
+  "planUpgraded": false,
+  "productionDeployed": false,
+  "changes": [
+    "Defer reporting-only Intl formatter initialization",
+    "Replace four readiness reads with one fresh fail-closed SQLite statement"
+  ],
+  "validation": {
+    "unitAndIntegrationTests": 1167,
+    "failures": 0,
+    "build": "PASS",
+    "standaloneWorkload": {
+      "passed": true,
+      "runtime": "local workerd and real isolated D1",
+      "externalProviderCalls": 0,
+      "syntheticProxyCalls": {
+        "google": 9,
+        "stripe": 3
+      },
+      "workload": {
+        "providers": 4,
+        "jobsPerProvider": 20,
+        "signedEventsPerWorkbook": 60,
+        "independentClientViewers": 4,
+        "checkout": "paused",
+        "signatureTamperRejected": true,
+        "maintenanceReplayRejected": true,
+        "unchangedPollAvoidsGoogle": true
+      },
+      "scenarios": [
+        {
+          "name": "cold-health",
+          "requests": 1,
+          "maxConcurrency": 1,
+          "p50WallMs": 20.35,
+          "p95WallMs": 20.35,
+          "responseBytesMax": 188,
+          "sampledCpuTotalMs": 15.35,
+          "workerHeapUsedMiB": 4.91
+        },
+        {
+          "name": "warm-health",
+          "requests": 12,
+          "maxConcurrency": 4,
+          "p50WallMs": 3.69,
+          "p95WallMs": 5.85,
+          "responseBytesMax": 188,
+          "sampledCpuTotalMs": 13.12,
+          "workerHeapUsedMiB": 5.08
+        },
+        {
+          "name": "paused-checkout",
+          "requests": 4,
+          "maxConcurrency": 4,
+          "p50WallMs": 12.95,
+          "p95WallMs": 12.97,
+          "responseBytesMax": 116,
+          "sampledCpuTotalMs": 12.29,
+          "workerHeapUsedMiB": 6.4
+        },
+        {
+          "name": "four-providers-signed-history",
+          "requests": 4,
+          "maxConcurrency": 4,
+          "p50WallMs": 62.13,
+          "p95WallMs": 62.66,
+          "responseBytesMax": 86501,
+          "sampledCpuTotalMs": 59.07,
+          "workerHeapUsedMiB": 11.12
+        },
+        {
+          "name": "authorized-unchanged-poll",
+          "requests": 4,
+          "maxConcurrency": 4,
+          "p50WallMs": 10.76,
+          "p95WallMs": 17.97,
+          "responseBytesMax": 156,
+          "sampledCpuTotalMs": 14.51,
+          "workerHeapUsedMiB": 12.31
+        },
+        {
+          "name": "four-client-viewers",
+          "requests": 4,
+          "maxConcurrency": 4,
+          "p50WallMs": 22.97,
+          "p95WallMs": 30.88,
+          "responseBytesMax": 4464,
+          "sampledCpuTotalMs": 29.07,
+          "workerHeapUsedMiB": 11.4
+        },
+        {
+          "name": "signed-idle-maintenance",
+          "requests": 1,
+          "maxConcurrency": 1,
+          "p50WallMs": 6.8,
+          "p95WallMs": 6.8,
+          "responseBytesMax": 87,
+          "sampledCpuTotalMs": 7,
+          "workerHeapUsedMiB": 12.77
+        }
+      ],
+      "limitation": "Local Workers CPU sampling and heap usage are diagnostic estimates, not production CPU quantiles or full isolate memory. Stubbed Google/Stripe calls exercise serialization and authorization but exclude real provider latency/quotas. Does not certify production scale, concurrent-user maxima, plan eligibility or a full-day error window."
+    }
+  },
+  "isolatedCloudflare": {
+    "worker": "streamlion-cpu-qa-20261028",
+    "databaseId": "179fc9b0-f33d-475d-8efb-659fa8047b9e",
+    "syntheticOnly": true,
+    "outboundProviderCalls": 0,
+    "functionalRequestsPerRun": 29,
+    "functionalAssertionFailures": 0,
+    "traceEventsReceivedLastRun": 11,
+    "completePerRouteTraceAcceptance": false,
+    "aggregateWindow": {
+      "startUTC": "2026-10-28T06:17:00Z",
+      "endUTC": "2026-10-28T06:25:08.221018+00:00",
+      "production": false,
+      "limitation": "Aggregate adaptive analytics for isolated optimized QA Worker; includes multiple bounded test runs and trace overhead. Requests may be estimated. Not per-scenario paired performance or production capacity proof. CPU quantile units microseconds.",
+      "response": {
+        "data": {
+          "viewer": {
+            "accounts": [
+              {
+                "statuses": [
+                  {
+                    "dimensions": {
+                      "status": "success"
+                    },
+                    "sum": {
+                      "errors": 0,
+                      "requests": 57
+                    }
+                  }
+                ],
+                "summary": [
+                  {
+                    "quantiles": {
+                      "cpuTimeP50": 13071,
+                      "cpuTimeP95": 37433,
+                      "cpuTimeP99": 45383
+                    },
+                    "sum": {
+                      "errors": 0,
+                      "requests": 57
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "errors": null
+      }
+    },
+    "workerDeleted": true,
+    "databaseDeleted": true
+  },
+  "limitations": [
+    "Local CPU sampling and heap measurements are diagnostic, not Cloudflare capacity accounting.",
+    "Live edge tail delivery was incomplete; do not infer missing errors are zero or claim paired per-route CPU improvement.",
+    "Aggregate QA analytics cover repeated bounded synthetic runs and tracing, not production normal use or provider latency/quotas.",
+    "Production acceptance requires approved merge/release and subsequent representative normal-use observation."
+  ]
+}

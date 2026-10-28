@@ -1,7 +1,5 @@
 import { googleConfigurationReady } from "./google-auth.js";
 import { paymentMode } from "./purchase-access.js";
-import { notificationsSchema } from "./coordination-notifications.js";
-import { efficiencySchema } from "./coordination-runtime.js";
 
 // Shared read-only eligibility. Never grants access, writes records or calls providers.
 export async function coordinationReady(env) {
@@ -13,20 +11,19 @@ export async function coordinationReady(env) {
   )
     return false;
   try {
-    const schema = await env.GOOGLE_SESSIONS.prepare(
-      "SELECT version FROM streamlion_coordination_schema_v1 WHERE version=1",
-    ).first();
-    const policy = await env.GOOGLE_SESSIONS.prepare(
-      "SELECT active FROM streamlion_coordination_policy_v1 WHERE mode=?",
+    // One fresh SQLite snapshot replaces four serial binding round trips.
+    // Do not cache eligibility: policy revocation must affect the next call.
+    const result = await env.GOOGLE_SESSIONS.prepare(
+      `SELECT
+        EXISTS(SELECT 1 FROM streamlion_coordination_schema_v1 WHERE version=1)
+        AND EXISTS(SELECT 1 FROM streamlion_coordination_policy_v1 WHERE mode=? AND active=1)
+        AND EXISTS(SELECT 1 FROM streamlion_coordination_notifications_schema_v1 WHERE version=1)
+        AND EXISTS(SELECT 1 FROM streamlion_coordination_efficiency_schema_v1 WHERE version=1)
+        AS ready`,
     )
       .bind(paymentMode(env))
       .first();
-    return Boolean(
-      schema &&
-      policy?.active === 1 &&
-      (await notificationsSchema(env)) &&
-      (await efficiencySchema(env)),
-    );
+    return result?.ready === 1;
   } catch {
     return false;
   }

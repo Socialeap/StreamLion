@@ -1,9 +1,15 @@
-const zone = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
+// google-auth imports this module for account observation. Most requests do
+// not use reporting dates, so avoid paying Intl's native initialization cost
+// on every cold health, scheduler or authentication isolate.
+let zone;
+function reportingZone() {
+  return (zone ||= new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }));
+}
 export const CREDIT_UNIT = 12500;
 export const OWNER_EMAIL = "shakoure@transcendencemedia.com";
 // Keep displayed identity and prefix search on the same mode-scoped sources.
@@ -35,7 +41,9 @@ export async function adminInstalled(db) {
 }
 export function localDate(time) {
   const p = Object.fromEntries(
-    zone.formatToParts(new Date(time)).map((x) => [x.type, x.value]),
+    reportingZone()
+      .formatToParts(new Date(time))
+      .map((x) => [x.type, x.value]),
   );
   return `${p.year}-${p.month}-${p.day}`;
 }

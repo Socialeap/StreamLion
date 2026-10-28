@@ -15,7 +15,8 @@
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
     "smoke:extension": "node scripts/smoke-extension.mjs",
     "verify:capacity": "node scripts/verify-capacity.mjs",
-    "verify:cpu": "node scripts/verify-worker-cpu.mjs"
+    "verify:cpu": "node scripts/verify-worker-cpu.mjs",
+    "verify:scale": "node scripts/verify-scale.mjs"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "2.0.0",
