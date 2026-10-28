@@ -6,6 +6,7 @@ import { AppHeader, BottomNavigation } from "./AppNavigation.jsx";
 const KEY = "streamlion-purchase-receipt-v1";
 export default function LicenseGate({ children }) {
   const [pilot, setPilot] = useState(null);
+  const [ownerQa, setOwnerQa] = useState(null);
   const [allowed, setAllowed] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
@@ -14,8 +15,19 @@ export default function LicenseGate({ children }) {
     setError("");
     try {
       const receipt = await purchaseRequest("status");
+      const qa =
+        navigator.onLine &&
+        receipt.connected === true &&
+        !receipt.purchased &&
+        receipt.ownerQa?.scope === "google-workspace" &&
+        Number.isSafeInteger(receipt.ownerQa.expiresAt) &&
+        receipt.ownerQa.expiresAt > Date.now() &&
+        receipt.ownerQa.expiresAt <= Date.now() + 86400000
+          ? receipt.ownerQa
+          : null;
+      setOwnerQa(qa);
       let free = null;
-      if (receipt.required && !receipt.purchased) {
+      if (receipt.required && !receipt.purchased && !qa) {
         try {
           const status = await pilotRequest("status");
           setPilot(status.enabled ? status : null);
@@ -24,12 +36,13 @@ export default function LicenseGate({ children }) {
           setPilot(null);
         }
       } else setPilot(null);
-      setAllowed(!receipt.required || receipt.purchased || !!free);
+      setAllowed(!receipt.required || receipt.purchased || !!free || !!qa);
       // A bounded device cache permits paid or unexpired pilot local work offline.
       // This is not an authorization credential: server Google routes always
       // verify the account's durable purchase; browser storage grants no API access.
       try {
-        if (!receipt.required || receipt.purchased || free)
+        if (qa) localStorage.removeItem(KEY);
+        else if (!receipt.required || receipt.purchased || free)
           localStorage.setItem(
             KEY,
             JSON.stringify(free || { expires: Date.now() + 7 * 86400000 }),
@@ -60,6 +73,32 @@ export default function LicenseGate({ children }) {
   useEffect(() => {
     check();
   }, []);
+  useEffect(() => {
+    if (!ownerQa) return;
+    const refresh = () => check(true);
+    const offline = () => {
+      setAllowed(false);
+      setError("Owner QA access requires an internet connection.");
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    window.addEventListener("offline", offline);
+    const interval = setInterval(refresh, 60000);
+    const timeout = setTimeout(
+      () => {
+        setAllowed(false);
+        setOwnerQa(null);
+      },
+      Math.max(0, ownerQa.expiresAt - Date.now()),
+    );
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      window.removeEventListener("offline", offline);
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [ownerQa?.expiresAt]);
   useEffect(() => {
     if (!pilot?.enabled) return;
     const refresh = () => check(true);
@@ -105,6 +144,12 @@ export default function LicenseGate({ children }) {
   if (allowed)
     return (
       <>
+        {ownerQa && (
+          <aside className="pilot-banner" role="status">
+            Owner QA workspace access expires {pilotDate(ownerQa.expiresAt)}.
+            Online access only.
+          </aside>
+        )}
         {pilotNotice}
         {children}
       </>

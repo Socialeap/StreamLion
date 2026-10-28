@@ -6,6 +6,7 @@ import { FOLDER_MIME } from "../src/drive-folders.js";
 import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
 import { pilotAccess, pilotHistory } from "./pilot-access.js";
+import { ownerWorkspaceQa } from "./owner-core-qa.js";
 import { managedAppend } from "./coordination-engine.js";
 const SESSION = "__Host-streamlion-session";
 const WORKSPACE = "__Host-streamlion-workspace";
@@ -685,6 +686,7 @@ export async function handleGoogle({ request, env, params }) {
     if (
       licenseRequired(env) &&
       !(await hasPurchase(env, row.google_subject)) &&
+      !(await ownerWorkspaceQa(env, row)) &&
       !(await pilotAccess(env, row.google_subject)) &&
       !(
         request.method === "GET" &&
