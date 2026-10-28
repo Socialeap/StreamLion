@@ -1,5 +1,5 @@
 import { googleFetch, seal, unseal } from "./google-auth.js";
-import { base64Bytes } from "./base64.js";
+import { base64Bytes, base64url, base64urlBytes } from "./base64.js";
 import { reserveGoogleRequest } from "./google-limits.js";
 import { boundedText, boundedBytes } from "./request-body.js";
 import {
@@ -281,9 +281,10 @@ export class CoordinationGoogle {
         action: r[6],
         job: JSON.parse(r[7]),
       };
-      const signed = stableJSON(event) + "." + r[8];
+      const body = this.#signatureBody(event);
+      const signed = body + "." + r[8];
       if (this.verifiedEvents.get(event.id) !== signed) {
-        if (!(await this.signature(event, r[8])))
+        if (!(await this.#authenticateBody(body, r[8], true)))
           throw new CoordinationError(
             "Coordination history signature is invalid. Preserve the workbook for review.",
             409,
@@ -565,7 +566,23 @@ export class CoordinationGoogle {
         503,
       );
   }
+  #signatureBody(event) {
+    return stableJSON({
+      domain: "streamlion.coordination.v1",
+      workbook: this.connection.workbook_id,
+      provider: this.connection.google_subject,
+      mode: this.connection.mode,
+      event,
+    });
+  }
   async signature(event, signature) {
+    return this.#authenticateBody(
+      this.#signatureBody(event),
+      signature,
+      arguments.length > 1,
+    );
+  }
+  async #authenticateBody(serialized, signature, verify) {
     if (!this.env.GOOGLE_TOKEN_ENCRYPTION_KEY)
       throw new CoordinationError(
         "Coordination signing configuration is unavailable.",
@@ -579,35 +596,19 @@ export class CoordinationGoogle {
       ["sign", "verify"],
     );
     const key = await this.signingKey;
-    const body = new TextEncoder().encode(
-      stableJSON({
-        domain: "streamlion.coordination.v1",
-        workbook: this.connection.workbook_id,
-        provider: this.connection.google_subject,
-        mode: this.connection.mode,
-        event,
-      }),
-    );
-    if (arguments.length > 1) {
+    const body = new TextEncoder().encode(serialized);
+    if (verify) {
       if (
         typeof signature !== "string" ||
         !/^[A-Za-z0-9_-]{43}$/.test(signature)
       )
         return false;
-      const bytes = Uint8Array.from(
-        atob(signature.replaceAll("-", "+").replaceAll("_", "/")),
-        (c) => c.charCodeAt(0),
-      );
+      const bytes = base64urlBytes(signature);
       return crypto.subtle.verify("HMAC", key, bytes, body);
     }
-    return btoa(
-      String.fromCharCode(
-        ...new Uint8Array(await crypto.subtle.sign("HMAC", key, body)),
-      ),
-    )
-      .replaceAll("+", "-")
-      .replaceAll("/", "_")
-      .replaceAll("=", "");
+    return base64url(
+      new Uint8Array(await crypto.subtle.sign("HMAC", key, body)),
+    );
   }
   async privateFolder() {
     const folder = await this.json(

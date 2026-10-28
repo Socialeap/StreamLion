@@ -1345,6 +1345,25 @@ test("change markers cannot hide a mutation concurrent with a full read", async 
     60000,
   );
 });
+test("maintenance checks optional schema markers in one fresh read per invocation", async (t) => {
+  const f = fixture(t);
+  delete f.env.COORDINATION_MAILER;
+  const prepare = f.db.prepare;
+  let markerReads = 0;
+  f.db.prepare = (query) => {
+    if (/streamlion_(prospect|public_intake)_schema_v1/.test(query))
+      markerReads++;
+    return prepare(query);
+  };
+  await maintainCoordination(f.env);
+  assert.equal(markerReads, 1);
+  await maintainCoordination(f.env);
+  assert.equal(
+    markerReads,
+    2,
+    "schema availability is never reused across requests",
+  );
+});
 test("idle maintenance avoids Google and cleans hourly; failed recovery backs off without releasing its writer", async (t) => {
   const f = fixture(t);
   delete f.env.COORDINATION_MAILER;
@@ -3786,7 +3805,13 @@ test("maintenance expires unconfirmed public drafts and clears temporary persona
   assert.equal(f.google.heads.size, 0);
 });
 
-for (const mode of ["disconnected", "refunded", "grant-expired", "paused"]) {
+for (const mode of [
+  "disconnected",
+  "refunded",
+  "grant-expired",
+  "paused",
+  "missing-prospect-schema",
+]) {
   test(`unconfirmed public privacy cleanup survives ${mode}`, async (t) => {
     const f = await publicFixture(t, true);
     await f.submit(publicBody(f, "privacy-" + mode, "client@example.com"));
@@ -3798,6 +3823,8 @@ for (const mode of ["disconnected", "refunded", "grant-expired", "paused"]) {
       f.sql.exec(
         "UPDATE streamlion_coordination_connections_v1 SET expires_at=1",
       );
+    if (mode === "missing-prospect-schema")
+      f.sql.exec("DROP TABLE streamlion_prospect_schema_v1");
     if (mode === "paused") {
       f.env.ENABLE_CLIENT_COORDINATION = "false";
       const hour = Math.floor((Date.now() + 31 * 86400000) / 3600000);

@@ -11,6 +11,27 @@ import {
   deferWork,
   completeWork,
 } from "./coordination-runtime.js";
+
+async function intakeSchemas(env) {
+  try {
+    const row = await env.GOOGLE_SESSIONS.prepare(
+      `SELECT
+        EXISTS(SELECT 1 FROM streamlion_prospect_schema_v1 WHERE version=1) AS prospects,
+        EXISTS(SELECT 1 FROM streamlion_public_intake_schema_v1 WHERE version=1) AS publicIntake`,
+    ).first();
+    return {
+      hasProspects: row?.prospects === 1,
+      hasPublic: row?.publicIntake === 1,
+    };
+  } catch {
+    // During rolling migrations one optional table may be absent. Its absence
+    // must not suppress privacy cleanup supported by the other schema.
+    return {
+      hasProspects: await prospectSchema(env),
+      hasPublic: await publicIntakeSchema(env),
+    };
+  }
+}
 export async function maintainCoordination(env, now = Date.now()) {
   const counts = {
     recovered: 0,
@@ -23,8 +44,7 @@ export async function maintainCoordination(env, now = Date.now()) {
   };
   const db = env.GOOGLE_SESSIONS;
   const started = Date.now();
-  const hasProspects = await prospectSchema(env);
-  const hasPublic = await publicIntakeSchema(env);
+  const { hasProspects, hasPublic } = await intakeSchemas(env);
   // Privacy cleanup is D1-only: entitlement and Google availability cannot
   // extend an unaccepted request's retention period. Pending journals are
   // preserved until their authoritative agreement outcome is known.

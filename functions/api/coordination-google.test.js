@@ -30,6 +30,80 @@ const job = () => ({
   closedAt: 2,
   archiveAt: 3,
 });
+test("history serializes each signed event once and binds reused verification to its workbook", async (t) => {
+  const google = new CoordinationGoogle(
+    { GOOGLE_TOKEN_ENCRYPTION_KEY: "synthetic-signing-key" },
+    { ...connection },
+  );
+  const event = {
+    id: "event",
+    jobId: "job-a",
+    revision: 0,
+    parent: -1,
+    at: 1,
+    actor: "provider",
+    action: "create",
+    job: job(),
+  };
+  // Independent construction preserves the pre-optimization wire format.
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode("synthetic-signing-key"),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const expected = Buffer.from(
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(
+        stableJSON({
+          domain: "streamlion.coordination.v1",
+          workbook: "book",
+          provider: "a",
+          mode: "test",
+          event,
+        }),
+      ),
+    ),
+  ).toString("base64url");
+  assert.equal(await google.signature(event), expected);
+  const rows = [
+    [PROJECT_HEADERS],
+    [NOTE_HEADERS],
+    [
+      EVENT_HEADERS,
+      [
+        event.id,
+        event.jobId,
+        0,
+        -1,
+        1,
+        "provider",
+        "create",
+        stableJSON(event.job),
+        expected,
+      ],
+    ],
+    [ARCHIVE_HEADERS],
+  ];
+  const stringify = JSON.stringify;
+  let serializations = 0;
+  t.mock.method(JSON, "stringify", function (value, ...args) {
+    if (value?.event?.id === event.id || value?.id === event.id)
+      serializations++;
+    return stringify(value, ...args);
+  });
+  assert.equal((await google.parseSnapshot(rows)).heads.size, 1);
+  assert.equal(
+    serializations,
+    1,
+    "one canonical traversal per fresh signed row",
+  );
+  google.connection.workbook_id = "another-book";
+  await assert.rejects(() => google.parseSnapshot(rows), /signature/);
+});
 test("coordination history accepts identical retries but rejects forks and another provider", async () => {
   const google = new CoordinationGoogle(
       { GOOGLE_TOKEN_ENCRYPTION_KEY: "synthetic-signing-key" },

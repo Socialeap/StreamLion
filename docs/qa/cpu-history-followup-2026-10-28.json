@@ -1,0 +1,47 @@
+{
+  "baseSHA": "9ebdce291aecdada16db3efebd37bbac4583be00",
+  "qaWorkerVersion": "1c2fa0f5-ab97-4013-af6c-ee6db51d0c46",
+  "windowUTC": [
+    "2026-10-28T19:35:30Z",
+    "2026-10-28T19:37:10Z"
+  ],
+  "production": false,
+  "database": "synthetic-only isolated D1",
+  "providerCalls": 0,
+  "planChanged": false,
+  "checkout": "paused",
+  "requests": 24,
+  "executionErrors": 0,
+  "averageSampleInterval": 1,
+  "cpuMs": {
+    "cpuTimeP50": 9.283,
+    "cpuTimeP95": 20.382,
+    "cpuTimeP99": 39.241
+  },
+  "tests": {
+    "passed": 1181,
+    "failed": 0
+  },
+  "tailRecords": {
+    "received": 15,
+    "requests": 24,
+    "complete": false
+  },
+  "decision": "HOLD — P95 and P99 exceed 10 ms; no production scale acceptance or reliable live improvement percentage",
+  "sourceSHA256": {
+    "server/coordination-google.js": "9193ea9e3385274acb087b5ee62a8d18d208d8d56916259a79679a90779e9646",
+    "server/coordination-maintenance.js": "804bc55461ce9ebdc1a2d40fa569d5cd332aae7455ec98ee0aa653fd328ef59e",
+    "src/coordination-contract.js": "9c3f915b76d3903a2766c0adffc441b9101004079335e686b5ee9a700b3f8ffd"
+  },
+  "measuredFunctionsBundleSHA256": "82bf70d5bff7069d18c505ac281eb2c933b581420a2cf9bbf72654a868c56a20",
+  "cleanup": {
+    "temporaryWorkerDeleted": true,
+    "syntheticDatabaseDeleted": true,
+    "localQAKeyDeleted": true
+  },
+  "bundleEquivalence": {
+    "normalizedSHA256": "e8f18108853461853eb83e7e99ae8f1a3e7911d9afd217d654ae7a4c9b910c53",
+    "equal": true,
+    "note": "Final formatting and Wrangler temporary route-module comment differ; esbuild whitespace-normalized executable output is identical."
+  }
+}
