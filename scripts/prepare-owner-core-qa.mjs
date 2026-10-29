@@ -4,7 +4,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
 const { values } = parseArgs({
-  options: { "identity-file": { type: "string" }, out: { type: "string" } },
+  options: {
+    "identity-file": { type: "string" },
+    out: { type: "string" },
+    coordination: { type: "boolean", default: false },
+  },
 });
 try {
   if (!values["identity-file"] || !values.out)
@@ -24,13 +28,17 @@ try {
   const issuedAt = Date.now();
   const grant = {
     version: 1,
-    scope: "google-workspace",
+    scope: values.coordination
+      ? "google-workspace-and-coordination"
+      : "google-workspace",
     mode: "live",
     origin: "https://streamlion.transcendencemedia.com",
     subject: identity.google_subject,
     issuedAt,
     expiresAt: issuedAt + 7200000,
-    reason: "Owner-only production Google workspace QA",
+    reason: values.coordination
+      ? "Owner-only production Core and client coordination QA"
+      : "Owner-only production Google workspace QA",
   };
   await writeFile(values.out, JSON.stringify(grant) + "\n", {
     flag: "wx",

@@ -47,6 +47,7 @@ async function fixture(t) {
     },
   };
   const env = {
+    STREAMLION_PAYMENTS_MODE: "test",
     GOOGLE_SESSIONS: db,
     GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64url"),
     GOOGLE_AUTH_ORIGIN: "https://app.example",

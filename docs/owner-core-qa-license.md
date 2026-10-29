@@ -6,6 +6,10 @@ purchase, pilot admission, credit grant or permission to test paid client
 coordination, AI, speech, email or push. Those existing eligibility and spend
 checks remain unchanged.
 
+For the separately scoped Core plus coordination test, see
+[owner-coordination-qa-license.md](owner-coordination-qa-license.md). The original
+`google-workspace` grant retains the restrictions below.
+
 ## Behaviour and constraints
 
 - Default closed. The optional server-only encrypted Cloudflare binding
