@@ -42,7 +42,8 @@
 .payment-facts div { border: 1px solid var(--line); padding: 16px; border-radius: 8px; }
 .payment-facts dt { text-transform: capitalize; color: var(--muted); font-size: 13px; }
 .payment-facts dd { margin: 8px 0 0; font-weight: 650; overflow-wrap: anywhere; }
-.checklist-save { position: sticky; bottom: 16px; z-index: 4; margin-top: 20px; padding: 16px 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 5px 20px #17251b14; }
+/* Keep save actions above the fixed navigation at desktop and phone widths. */
+.checklist-save { position: sticky; bottom: calc(90px + env(safe-area-inset-bottom)); z-index: 4; margin-top: 20px; padding: 16px 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 5px 20px #17251b14; }
 .checklist-save.saved { position: static; box-shadow: none; }
 .checklist-save .actions { margin: 10px 0 0; }
 .outbox-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; padding: 16px; background: var(--warning-soft); border: 1px solid var(--warning-line); border-radius: 8px; }
@@ -125,7 +126,7 @@
   .wizard-starting .intake-choices section > p { margin: 6px 0 16px; }
   .wizard .mobile-section-picker { display: block; }
   .wizard .wizard-progress { display: none; }
-  .checklist-save { bottom: 86px; padding: 14px; }
+  .checklist-save { padding: 14px; }
   .home-section .actions { gap: 8px; }
 }
 * {
