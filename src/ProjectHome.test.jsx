@@ -163,10 +163,10 @@ test("oversized task additions preserve the reviewed brief and allow a smaller s
     title: "Capacity QA",
     deviceOnly: true,
   };
-  const text = Array.from(
-    { length: 35 },
-    (_, i) => `Capture room ${i + 1} ${"x".repeat(100)}`,
-  ).join("\n");
+  const text =
+    "Capture " +
+    Array.from({ length: 90 }, (_, i) => `room ${i + 1}`).join(", ") +
+    ".";
   let saved;
   const props = {
     project,
@@ -196,7 +196,7 @@ test("oversized task additions preserve the reviewed brief and allow a smaller s
   assert.equal(retained.requirements.length, 0);
   assert.equal(retained.briefDraft.text, text);
   assert.equal(retained.briefDraft.reviewed, true);
-  assert.equal(retained.briefDraft.suggestions.length, 35);
+  assert.equal(retained.briefDraft.suggestions.length, 90);
   cleanup();
   ui = render(<ProjectHome {...props} />);
   const selections = ui.getAllByLabelText("Include this task");

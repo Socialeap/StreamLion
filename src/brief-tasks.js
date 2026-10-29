@@ -1,3 +1,4 @@
+import { CHECKLIST_MAX_TASKS } from "./checklist-limits.js";
 // Local, conservative suggestions. Source wording always travels with the task;
 // a provider reviews the suggestions before they become the working checklist.
 export const TASK_KINDS = ["capture", "measurement", "delivery", "review"];
@@ -6,7 +7,7 @@ export const READINGS = MEASUREMENT_LABELS;
 const normalized = (value) => value.trim().toLowerCase().replace(/\s+/g, " ");
 export const PROJECT_BRIEF_LIMITS = Object.freeze({
   text: 6000,
-  suggestions: 40,
+  suggestions: CHECKLIST_MAX_TASKS,
   passage: 1000,
 });
 
@@ -307,7 +308,7 @@ export function appendReviewedTasks(requirements, draft) {
   }
   if (requirements.length + additions.length > PROJECT_BRIEF_LIMITS.suggestions)
     throw new Error(
-      "This would exceed 40 requirements. Nothing has been replaced.",
+      `This would exceed ${CHECKLIST_MAX_TASKS} requirements. Nothing has been replaced.`,
     );
   return [...requirements, ...additions];
 }

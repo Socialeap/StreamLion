@@ -50,7 +50,7 @@ test("checklist retains requests, requires exception reasons, and warns when the
   assert.throws(
     () =>
       requirementsFromBrief({
-        deliverables: Array(41).fill("Room").join("\n"),
+        deliverables: Array(121).fill("Room").join("\n"),
       }),
     /shorter checklist/,
   );

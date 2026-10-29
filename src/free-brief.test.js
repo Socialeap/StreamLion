@@ -295,10 +295,7 @@ test("HTML-like client text stays text, stale results disappear, clipboard failu
 });
 
 test("the full commercial email organizes and exports without the project checklist ceiling", () => {
-  assert.throws(
-    () => suggestTasks({ project: {}, text: commercialBrief }),
-    /40 requirements/,
-  );
+  assert.ok(suggestTasks({ project: {}, text: commercialBrief }).length > 40);
   const draft = organizeFreeBrief(commercialBrief);
   assert.ok(draft.suggestions.length > 40);
   assert.ok(
@@ -324,14 +321,11 @@ test("the full commercial email organizes and exports without the project checkl
     "not be publicly listed",
   ])
     assert.ok(output.includes(phrase), phrase);
-  assert.throws(() => validateBriefDraft(draft), /cannot be read/);
-  assert.throws(
-    () => appendReviewedTasks([], { ...draft, reviewed: true }),
-    /cannot be read/,
-  );
+  assert.doesNotThrow(() => validateBriefDraft(draft));
+  assert.ok(appendReviewedTasks([], { ...draft, reviewed: true }).length > 40);
 });
 
-test("large free scopes keep every task beyond 40 while default project limits stay strict", () => {
+test("free and saved project scopes retain 120 tasks with separate bounded limits", () => {
   const text = Array.from(
     { length: 120 },
     (_, i) => `Capture Level ${Math.floor(i / 30) + 1} room ${i + 1}.`,
@@ -340,14 +334,8 @@ test("large free scopes keep every task beyond 40 while default project limits s
   assert.equal(draft.suggestions.length, 120);
   const output = checklistText({ ...draft, reviewed: true });
   assert.match(output, /120\. \[ \] Capture Level 4 room 120/);
-  assert.throws(
-    () => suggestTasks({ project: {}, text, limits: FREE_BRIEF_LIMITS }),
-    /40 requirements/,
-  );
-  assert.throws(
-    () => validateBriefDraft({ ...draft, limits: FREE_BRIEF_LIMITS }),
-    /cannot be read/,
-  );
+  assert.equal(suggestTasks({ project: {}, text }).length, 120);
+  assert.doesNotThrow(() => validateBriefDraft(draft));
   const paragraph =
     "Additional site access information: " +
     "Keep the rear delivery route clear during capture, ".repeat(30);
