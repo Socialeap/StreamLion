@@ -92,3 +92,53 @@ test("changed requests stay pending and unfinished exceptions remain in the depa
     /no longer available/,
   );
 });
+
+for (const count of [40, 119, 120]) {
+  for (const type of ["Changed request", "Follow-up", "Access blocked"]) {
+    test(`${type} at ${count} tasks respects shared checklist capacity`, () => {
+      const large = {
+        ...readWorkflow([], project),
+        requirements: Array.from({ length: count }, (_, i) => ({
+          id: `task-${i}`,
+          label: `Capture room ${i}`,
+          area: "Room",
+          state: "todo",
+          reason: "",
+          evidence: [],
+        })),
+      };
+      const original = structuredClone(large);
+      const request = { ...draft, type, taskId: "" };
+      if (count === 120) {
+        assert.throws(
+          () => attachException(large, request, "new-exception"),
+          /checklist is full/,
+        );
+      } else {
+        const updated = attachException(large, request, "new-exception");
+        assert.equal(updated.requirements.length, count + 1);
+        assert.deepEqual(updated.requirements.at(-1).evidence, [
+          "new-exception",
+        ]);
+        assert.equal(
+          updated.requirements.at(-1).state,
+          type === "Access blocked" ? "blocked" : "todo",
+        );
+      }
+      assert.deepEqual(
+        large,
+        original,
+        "keep existing work and evidence unchanged",
+      );
+      if (type === "Access blocked") {
+        const linked = attachException(
+          large,
+          { ...request, taskId: "task-0" },
+          "linked-exception",
+        );
+        assert.equal(linked.requirements.length, count);
+        assert.equal(linked.requirements[0].state, "blocked");
+      }
+    });
+  }
+}

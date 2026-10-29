@@ -1,3 +1,4 @@
+import { CHECKLIST_MAX_TASKS } from "./checklist-limits.js";
 import ProjectFolderButton from "./ProjectFolderButton.jsx";
 import ClientCoordinationStatus from "./ClientCoordinationStatus.jsx";
 import ProjectVoiceAnswers from "./ProjectVoiceAnswers.jsx";
@@ -385,7 +386,9 @@ function ProjectHomeContent({
           />
         </label>
         <button
-          disabled={!newLabel.trim() || plan.requirements.length >= 40}
+          disabled={
+            !newLabel.trim() || plan.requirements.length >= CHECKLIST_MAX_TASKS
+          }
           onClick={() => {
             update({
               ...plan,

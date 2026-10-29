@@ -362,3 +362,63 @@ test("project folder work holds the parent update gate until the Drive request s
     localStorage.clear();
   }
 });
+
+for (const count of [40, 119, 120]) {
+  test(`manual requirement addition at ${count} tasks respects shared capacity`, async () => {
+    localStorage.clear();
+    const project = {
+      id: `manual-${count}`,
+      title: "Large checklist",
+      deviceOnly: true,
+    };
+    const plan = readWorkflow([], project);
+    plan.requirements = Array.from({ length: count }, (_, i) => ({
+      id: `task-${i}`,
+      label: `Capture room ${i}`,
+      area: "Room",
+      state: "todo",
+      reason: "",
+      evidence: [],
+    }));
+    let saved;
+    const ui = render(
+      <ProjectHome
+        project={project}
+        notes={[
+          {
+            id: "metadata",
+            jobId: project.id,
+            area: WORKFLOW_AREA,
+            text: JSON.stringify(plan),
+          },
+        ]}
+        scope="local"
+        onSave={async (value) => {
+          saved = value;
+        }}
+      />,
+    );
+    try {
+      fireEvent.change(ui.getByLabelText("Add a requirement"), {
+        target: { value: "Confirm new access request" },
+      });
+      const add = ui.getByRole("button", { name: "Add", exact: true });
+      assert.equal(add.disabled, count === 120);
+      if (count < 120) {
+        fireEvent.click(add);
+        assert.ok(ui.getByText("Confirm new access request", { exact: true }));
+        await act(async () =>
+          fireEvent.click(ui.getByRole("button", { name: "Save checklist" })),
+        );
+        assert.equal(saved.requirements.length, count + 1);
+        assert.equal(
+          saved.requirements.at(-1).label,
+          "Confirm new access request",
+        );
+        assert.deepEqual(saved.requirements.slice(0, count), plan.requirements);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+}
