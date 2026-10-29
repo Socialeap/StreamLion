@@ -19,6 +19,12 @@ import {
 import { handleAI } from "../../server/ai-pilot.js";
 import { hash } from "../../server/google-auth.js";
 import { reserveProject, finishProject } from "../../server/shared-credits.js";
+import {
+  STRIPE_REQUEST_VERSION,
+  STRIPE_SNAPSHOT_VERSIONS,
+  STRIPE_CHECKOUT_EVENTS,
+  stripeSnapshot,
+} from "../../test/stripe-snapshot-fixture.js";
 function fixture(t, { tax = false } = {}) {
   const sql = new DatabaseSync(":memory:");
   for (const name of [
@@ -125,6 +131,10 @@ function fixture(t, { tax = false } = {}) {
       url.origin,
       "https://api.stripe.com",
       "never reach Google, AI or real networks",
+    );
+    assert.equal(
+      new Headers(options.headers).get("Stripe-Version"),
+      STRIPE_REQUEST_VERSION,
     );
     const path = url.pathname;
     if (path === "/v1/account")
@@ -493,10 +503,14 @@ function coordinationTopups(f, mode = "live") {
     )
     .run(mode);
 }
-async function signedCreditEvent(f, event) {
-  const body = JSON.stringify(event),
+async function signedCreditEvent(
+  f,
+  event,
+  secret = f.env.STRIPE_AI_WEBHOOK_SECRET,
+) {
+  const body = JSON.stringify(stripeSnapshot(event)),
     timestamp = Math.floor(Date.now() / 1000);
-  const signature = createHmac("sha256", f.env.STRIPE_AI_WEBHOOK_SECRET)
+  const signature = createHmac("sha256", secret)
     .update(timestamp + "." + body)
     .digest("hex");
   return f.request("webhook", {
@@ -505,6 +519,128 @@ async function signedCreditEvent(f, event) {
     headers: { "Stripe-Signature": `t=${timestamp},v1=${signature}` },
   });
 }
+for (const apiVersion of STRIPE_SNAPSHOT_VERSIONS)
+  for (const mode of ["test", "live"])
+    test(`credits ${mode} reconcile ${apiVersion} snapshots once using authoritative reads while checkout is paused`, async (t) => {
+      const f = fixture(t);
+      if (mode === "live") coordinationTopups(f);
+      f.env.STREAMLION_CHECKOUT_MODE = "paused";
+      const session = f.manualOrder("version-contract", mode);
+      const seen = new Set();
+      async function deliver(type, object, options = {}) {
+        seen.add(type);
+        const response = await signedCreditEvent(f, {
+          id: "evt_" + crypto.randomUUID(),
+          type,
+          livemode: mode === "live",
+          api_version: apiVersion,
+          data: { object },
+          ...options,
+        });
+        assert.equal(response.status, 200, await response.clone().text());
+      }
+      const balance = async (m = mode, subject = "a") =>
+        (await creditAccount(f.db, m, subject)).balance_micros;
+      const stale = {
+        id: session.id,
+        metadata: { ...session.metadata, google_subject: "b" },
+        payment_status: "paid",
+      };
+      await deliver("checkout.session.completed", stale);
+      assert.equal(await balance(), 0);
+      const intent = f.pay(session.id);
+      stale.payment_status = "unpaid";
+      await deliver("checkout.session.completed", stale, {
+        id: "evt_current_credit",
+      });
+      assert.equal(await balance(), 10000000);
+      assert.equal(await balance(mode, "b"), 0);
+      const count = () =>
+        f.sql
+          .prepare("SELECT COUNT(*) n FROM streamlion_credit_events_v1")
+          .get().n;
+      const beforeReplay = count();
+      await deliver("checkout.session.completed", stale, {
+        id: "evt_current_credit",
+      });
+      assert.equal(count(), beforeReplay);
+      assert.equal(await balance(), 10000000);
+      for (const type of STRIPE_CHECKOUT_EVENTS.filter(
+        (type) =>
+          type.startsWith("checkout.session.") &&
+          type !== "checkout.session.completed",
+      )) {
+        await deliver(type, stale);
+        assert.equal(await balance(), 10000000);
+      }
+      const charge = { payment_intent: intent.id, amount_refunded: 0 };
+      for (const type of [
+        "charge.dispute.created",
+        "charge.dispute.funds_withdrawn",
+      ]) {
+        intent.latest_charge.disputed = true;
+        await deliver(type, charge);
+        assert.equal(await balance(), 0);
+      }
+      for (const type of [
+        "charge.dispute.funds_reinstated",
+        "charge.dispute.closed",
+      ]) {
+        intent.latest_charge.disputed = false;
+        await deliver(type, charge);
+        assert.equal(await balance(), 10000000);
+      }
+      intent.latest_charge.amount_refunded = 100;
+      await deliver("charge.refunded", charge);
+      assert.equal(await balance(), 9000000);
+      intent.latest_charge.amount_refunded = 1000;
+      await deliver("charge.refunded", charge);
+      await deliver("checkout.session.completed", stale);
+      assert.equal(await balance(), 0);
+      const finalCount = count();
+      assert.equal(
+        (
+          await signedCreditEvent(
+            f,
+            {
+              id: "evt_invalid_signature",
+              type: "checkout.session.completed",
+              api_version: apiVersion,
+              livemode: mode === "live",
+              data: { object: stale },
+            },
+            "whsec_wrong",
+          )
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await signedCreditEvent(f, {
+            id: "evt_wrong_mode",
+            type: "checkout.session.completed",
+            api_version: apiVersion,
+            livemode: mode !== "live",
+            data: { object: stale },
+          })
+        ).status,
+        400,
+      );
+      await deliver("checkout.session.completed", {
+        id: "cs_core",
+        metadata: { app: "streamlion", order_id: "core-only" },
+      });
+      assert.equal(count(), finalCount);
+      assert.equal(await balance(), 0);
+      assert.equal(await balance(mode === "live" ? "test" : "live"), 0);
+      assert.equal(await balance(mode, "b"), 0);
+      assert.deepEqual([...seen].sort(), [...STRIPE_CHECKOUT_EVENTS].sort());
+      assert.equal(f.created.length, 0);
+      assert.equal(
+        (await (await f.request("config")).json()).checkoutMode,
+        "paused",
+      );
+    });
 test("live coordination top-ups fund projects with AI off and retain refund/replay recovery", async (t) => {
   const f = fixture(t),
     cookie = await f.login();
@@ -1216,7 +1352,7 @@ test("signed webhooks grant once, preserve current refunds, and reject unsigned/
   f.env.STREAMLION_CHECKOUT_QA_SUBJECTS = "malformed";
   const intent = f.pay(s.id);
   const deliver = async (event) => {
-    const body = JSON.stringify(event),
+    const body = JSON.stringify(stripeSnapshot(event)),
       now = Math.floor(Date.now() / 1000),
       sig = createHmac("sha256", f.env.STRIPE_AI_WEBHOOK_SECRET)
         .update(now + "." + body)

@@ -46,7 +46,7 @@ For an existing ledger, compare financial row counts, amounts, refund totals and
 ## 2. Stripe test setup (owner/dashboard or explicitly authorized API)
 
 1. Switch to **test mode/sandbox** in the existing Stripe account. Create one product **StreamLion** with metadata **`app=streamlion`**, and the approved USD **one-time** Price(s). Do not create a subscription or coupon. Reusing this account in test mode does not modify its live F|3D catalog.
-2. Create a **test-only webhook endpoint** at `https://streamlion.transcendencemedia.com/api/purchase/webhook`. Use snapshot events and API version **`2026-08-26.dahlia`**, explicitly pinned in this integration; the SDK default is newer. Subscribe only to:
+2. For a separately authorized new sandbox setup, create a **test-only webhook endpoint** at `https://streamlion.transcendencemedia.com/api/purchase/webhook`. Use **Your account** snapshot events and record the endpoint's payload API version. Current live snapshots use **`2026-09-30.endive`**; legacy **`2026-08-26.dahlia`** snapshots are also tested. The outgoing SDK request pin remains **`2026-08-26.dahlia`** and does not select the webhook payload version. Follow the [request/snapshot version contract](stripe-webhook-version-contract.md). Existing live destinations/secrets need no change for this correction; do not replay these historical setup steps against production. Subscribe only to:
    - `checkout.session.completed`
    - `checkout.session.async_payment_succeeded`
    - `checkout.session.async_payment_failed`

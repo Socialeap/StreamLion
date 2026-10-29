@@ -28,7 +28,7 @@ Test-mode catalog created and visibly verified in the existing Stripe account:
 | `STRIPE_AI_PRICE_25`     | `price_1UNjUwCQXdxBxU8Gc6h4DBaA`          |
 | `STRIPE_AI_PRICE_50`     | `price_1UNjVDCQXdxBxU8GVZdjSaH3`          |
 
-Core metadata is `app=streamlion`. AI product metadata is `app=streamlion`, `kind=ai_credits`. All five Prices are USD one-time. Existing F|3D objects were preserved. No live product, restricted key, webhook destination, real payment or provider call was created by this evidence snapshot. Webhook configuration is prepared for owner confirmation; delivery is unverified. The Stripe dashboard offers `2026-08-26.dahlia`; the client explicitly pins that version, even though SDK 23 defaults to a newer version. Do not upgrade the account-wide API version to accommodate this integration.
+Core metadata is `app=streamlion`. AI product metadata is `app=streamlion`, `kind=ai_credits`. All five Prices are USD one-time. Existing F|3D objects were preserved. No live product, restricted key, webhook destination, real payment or provider call was created by this evidence snapshot. Webhook configuration is prepared for owner confirmation; delivery is unverified. Outgoing SDK requests explicitly pin `2026-08-26.dahlia`; current live webhook snapshots use `2026-09-30.endive`. These are separate version contracts; see [snapshot compatibility and closeout](stripe-webhook-version-contract.md). Do not upgrade the account-wide API version to accommodate this integration.
 
 ## D1 idempotent preflight: Cloudflare owner, after merge
 
@@ -65,7 +65,7 @@ Create/reuse two **test** webhook destinations:
 - `https://streamlion.transcendencemedia.com/api/purchase/webhook` → `STRIPE_WEBHOOK_SECRET`
 - `https://streamlion.transcendencemedia.com/api/credits/webhook` → **independent** `STRIPE_AI_WEBHOOK_SECRET`
 
-Both receive **Your account** snapshot events at `2026-08-26.dahlia` only: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`, `charge.dispute.funds_withdrawn`, `charge.dispute.funds_reinstated`. Never subscribe all events, change existing F|3D endpoints or use connected-account events. Both handlers ignore the other product's fulfillment. Store signing secrets directly in Cloudflare. Record endpoint IDs/version/event sets without secret values.
+Both receive **Your account** snapshot events. The current live destinations use `2026-09-30.endive`; `2026-08-26.dahlia` snapshots remain covered for legacy test/replay compatibility. Follow the [separate request/snapshot version contract](stripe-webhook-version-contract.md); incoming versions do not change the outgoing Dahlia request pin. Subscribe only to: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`, `charge.dispute.funds_withdrawn`, `charge.dispute.funds_reinstated`. Never subscribe all events, change existing F|3D endpoints or use connected-account events. Both handlers ignore the other product's fulfillment. Store signing secrets directly in Cloudflare. Record endpoint IDs/version/event sets without secret values. Reuse existing verified live destinations; these historical test-setup steps are not authority to recreate them or rotate secrets. Keep checkout paused until separately approved.
 
 Server settings for the test environment:
 
