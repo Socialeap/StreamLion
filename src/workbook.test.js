@@ -167,3 +167,83 @@ test("documentation shares the executable field contract", async () => {
   assert.deepEqual(a.workbook.Projects, PROJECT_HEADERS);
   assert.deepEqual(a.workbook.Observations, NOTE_HEADERS);
 });
+
+test("full commercial checklists survive workbook revisions and exact source readback", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { suggestTasks, appendReviewedTasks } =
+    await import("./brief-tasks.js");
+  const { readWorkflow, validateWorkflow, WORKFLOW_AREA } =
+    await import("./workflow.js");
+  const scope = readFileSync(
+    new URL("./fixtures/riverside-commercial-brief.txt", import.meta.url),
+    "utf8",
+  ).trim();
+  for (const text of [
+    scope,
+    Array.from({ length: 120 }, (_, i) => `Capture room ${i + 1}.`).join("\n"),
+  ]) {
+    const project = { id: "commercial", scope: text };
+    const suggestions = suggestTasks({ project });
+    const plan = readWorkflow([], project);
+    plan.requirements = appendReviewedTasks([], {
+      text: "",
+      sourceName: "Project scope",
+      suggestions,
+      reviewed: true,
+    });
+    const original = JSON.stringify(validateWorkflow(plan));
+    assert.ok(plan.requirements.length > 40);
+    assert.ok(original.length > 12000 && original.length < 45000);
+    const first = makeRevision(
+      validateNote({
+        projectId: project.id,
+        area: WORKFLOW_AREA,
+        text: original,
+        sourceText: original,
+      }),
+      null,
+      "checklist",
+      "reviewed",
+    );
+    plan.requirements.at(-1).state = "blocked";
+    plan.requirements.at(-1).reason = "Access not authorized; client notified.";
+    plan.requirements[0].evidence = ["evidence-one"];
+    const edited = JSON.stringify(validateWorkflow(plan));
+    const second = makeRevision(
+      validateNote({ ...first, text: edited }),
+      first,
+      "checklist",
+      "reviewed",
+    );
+    const rows = [
+      NOTE_HEADERS,
+      rowFor(first, NOTE_HEADERS),
+      rowFor(second, NOTE_HEADERS),
+    ];
+    const [saved] = readRecords(JSON.parse(JSON.stringify(rows)), NOTE_HEADERS);
+    const reopened = readWorkflow(
+      [{ ...saved, id: saved.recordId, jobId: saved.projectId }],
+      project,
+    );
+    assert.deepEqual(reopened, plan);
+    assert.equal(saved.sourceText, original);
+    assert.ok(
+      reopened.requirements.every((item) => text.includes(item.source.quote)),
+    );
+    assert.equal(
+      reopened.requirements.at(-1).reason,
+      plan.requirements.at(-1).reason,
+    );
+    assert.deepEqual(reopened.requirements[0].evidence, ["evidence-one"]);
+  }
+  const note = {
+    projectId: "commercial",
+    area: WORKFLOW_AREA,
+    text: "x".repeat(45001),
+  };
+  assert.throws(() => validateNote(note), /Invalid annotation text/);
+  assert.throws(
+    () => validateNote({ ...note, area: "Lobby", text: "x".repeat(12001) }),
+    /Invalid annotation text/,
+  );
+});

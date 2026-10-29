@@ -86,7 +86,7 @@ test("conditional work stays a review request and incomplete room corrections ca
     () =>
       suggestTasks({
         project: {},
-        text: Array(41).fill("Scan office").join("\n"),
+        text: Array(121).fill("Scan office").join("\n"),
       }),
     /smaller section/,
   );

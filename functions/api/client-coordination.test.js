@@ -2935,11 +2935,10 @@ test("commercial client intake reaches the agreed field brief, reviewed tasks an
   for (const [key, value] of Object.entries(body.fields))
     assert.equal(project[key], value, key);
   assert.equal(f.google.heads.get(receipt.jobId).state, "confirmed");
-  // The full source is preserved. Task preparation currently needs a reviewed
-  // section that fits the field checklist; the free tool has a separate ceiling.
-  assert.throws(() => suggestTasks({ project }), /40 requirements/);
-  const section =
-    "Please scan the entrance vestibule, reception, visitor waiting area, main corridor and lift lobby.";
+  // Prepare the entire commercial scope, preserving every source passage.
+  const fullSuggestions = suggestTasks({ project });
+  assert.ok(fullSuggestions.length > 40);
+  const section = scope;
   assert.ok(scope.includes(section));
   const suggestions = suggestTasks({
     project,
@@ -2956,10 +2955,10 @@ test("commercial client intake reaches the agreed field brief, reviewed tasks an
   const plan = readWorkflow([], { ...project, id: project.recordId });
   plan.requirements = appendReviewedTasks([], { ...draft, reviewed: true });
   validateWorkflow(plan);
-  assert.equal(plan.requirements.length, 5);
+  assert.ok(plan.requirements.length > 40);
   assert.ok(
     plan.requirements.every(
-      (item) => item.source.quote === section && item.state === "todo",
+      (item) => scope.includes(item.source.quote) && item.state === "todo",
     ),
   );
   assert.equal(project.scope, scope);

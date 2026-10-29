@@ -8,7 +8,12 @@ import { validateTaskDetails, validateBriefDraft } from "./brief-tasks.js";
 import { validateExceptionDraft } from "./site-exceptions.js";
 
 // A versioned observation uses the existing workbook headers and revision rules.
-export const WORKFLOW_AREA = "StreamLion project checklist";
+import {
+  WORKFLOW_AREA,
+  CHECKLIST_MAX_TASKS,
+  CHECKLIST_MAX_CHARS,
+} from "./checklist-limits.js";
+export { WORKFLOW_AREA } from "./checklist-limits.js";
 const KIND = "streamlion.workflow";
 const STATES = ["todo", "done", "blocked", "not-needed"];
 export const VISIT_STATES = ["not-started", "in-progress", "captured"];
@@ -35,7 +40,7 @@ export function validateWorkflow(value, { draft = false } = {}) {
     !VISIT_STATES.includes(value.visit) ||
     !DELIVERY_STATES.includes(value.delivery) ||
     !Array.isArray(value.requirements) ||
-    value.requirements.length > 40
+    value.requirements.length > CHECKLIST_MAX_TASKS
   )
     throw new Error(
       "This checklist format is not supported. Keep the original record and contact support.",
@@ -90,7 +95,7 @@ export function validateWorkflow(value, { draft = false } = {}) {
   if (value.briefDraft !== undefined) validateBriefDraft(value.briefDraft);
   if (value.exceptionDraft !== undefined)
     validateExceptionDraft(value.exceptionDraft);
-  if (!draft && JSON.stringify(value).length > 11500)
+  if (!draft && JSON.stringify(value).length > CHECKLIST_MAX_CHARS)
     throw new Error(
       "This checklist is full. Select fewer tasks or shorten the descriptions before saving; nothing has been discarded.",
     );
@@ -140,7 +145,10 @@ export function requirementsFromBrief(project) {
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*[-*•]\s*/, "").trim())
     .filter(Boolean);
-  if (lines.length > 40 || lines.some((line) => line.length > 500))
+  if (
+    lines.length > CHECKLIST_MAX_TASKS ||
+    lines.some((line) => line.length > 500)
+  )
     throw new Error(
       "The brief needs a shorter checklist. Add the requirements individually; the full brief stays in project details.",
     );
