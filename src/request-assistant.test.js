@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   OUTPUTS,
   REQUEST_PREFIX,
@@ -127,6 +128,33 @@ const everything = [
   ["role", "events"],
   ["notes", "Please avoid the Friday wedding setup."],
 ];
+
+test("a full commercial scope survives guided intake, resume and server validation", () => {
+  const scope = readFileSync(
+    new URL("./fixtures/riverside-commercial-brief.txt", import.meta.url),
+    "utf8",
+  ).trim();
+  assert.ok(scope.length > 2000 && scope.length < 6000);
+  const d = descriptor();
+  const answers = everything.map(([id, value]) => [
+    id,
+    id === "scope" ? scope : value,
+  ]);
+  const { flow, state, walked } = run(d, answers);
+  assert.equal(walked.current.id, "review");
+  assert.equal(
+    flow.walk(JSON.parse(JSON.stringify(state)), {}).answers.scope,
+    scope,
+  );
+  const fields = requestFields(d, walked.answers);
+  assert.equal(fields.scope, scope);
+  assert.equal(validateFields(fields, { requireTitle: false }).scope, scope);
+  validateIntakeAnswers({ intake: d.intake }, fields);
+  const step = flow.steps.find((step) => step.id === "scope");
+  assert.equal(step.maxLength, 6000);
+  assert.equal(step.validate("x".repeat(6000)), "x".repeat(6000));
+  assert.throws(() => step.validate("x".repeat(6001)), /6,000/);
+});
 
 test("the flow is built from the provider's template, pricing and email rules", () => {
   const { stages, steps } = requestFlow(descriptor());
