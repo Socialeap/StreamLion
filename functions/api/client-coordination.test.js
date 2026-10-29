@@ -1,4 +1,8 @@
 import { expectedAdminSchema } from "../../scripts/preflight-admin.mjs";
+import { requestFlow } from "../../src/request-assistant.js";
+import { answerProjectQuestion } from "../../src/project-answers.js";
+import { suggestTasks, appendReviewedTasks } from "../../src/brief-tasks.js";
+import { readWorkflow, validateWorkflow } from "../../src/workflow.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -2859,6 +2863,126 @@ function accessRequest(
     body: JSON.stringify({ token, jobId }),
   });
 }
+test("commercial client intake reaches the agreed field brief, reviewed tasks and factual queries without a charge", async (t) => {
+  const f = await publicFixture(t);
+  const scope = readFileSync(
+    new URL(
+      "../../src/fixtures/riverside-commercial-brief.txt",
+      import.meta.url,
+    ),
+    "utf8",
+  ).trim();
+  const scopeStep = requestFlow({ brand: "Synthetic provider" }).steps.find(
+    (step) => step.id === "scope",
+  );
+  const body = publicBody(f, "commercial-workflow");
+  body.fields = {
+    ...body.fields,
+    title: "Riverside Business Centre — synthetic QA",
+    scope: scopeStep.validate(scope),
+    exclusions:
+      "Server room, electrical cupboard and roof. Records store needs authorization.",
+    accessInstructions:
+      "Sign in at reception; no service panels or furniture moves.",
+    deliverables:
+      "Private tour link; labelled photographs; measurement schedule.",
+    proposedTimes:
+      "Tuesday morning, subject to building management confirmation.",
+    deliveryDeadline: "Thursday afternoon, conditional on Tuesday access.",
+    notes:
+      "Drawing: 12 7/16 in, café façade ±2 mm. Not a verified site reading.",
+  };
+  const receipt = await f.submit(body);
+  assert.equal((await f.submit(body)).jobId, receipt.jobId);
+  assert.equal(f.google.heads.size, 1);
+  assert.equal(f.google.heads.get(receipt.jobId).fields.scope, scope);
+  assert.equal(
+    f.google.revisions.length,
+    0,
+    "submission does not silently become an agreed field brief",
+  );
+  const command = async (id, action, role, extra = {}) =>
+    f.engine.command(
+      id,
+      receipt.jobId,
+      {
+        action,
+        expectedRevision: f.google.heads.get(receipt.jobId).revision,
+        ...extra,
+      },
+      { role },
+    );
+  await command("window-question", "question", "provider", {
+    text: "Do window dimensions mean glazing, frame or structural opening?",
+  });
+  await assert.rejects(
+    () =>
+      command("premature-approval", "approve", "provider", {
+        authorizedMicros: 3000000,
+      }),
+    /Resolve required information and questions/,
+  );
+  await command("window-answer", "answer", "client", {
+    questionId: "window-question",
+    text: "Frame outside dimensions only. Records store remains excluded.",
+  });
+  await command("provider-approval", "approve", "provider", {
+    authorizedMicros: 3000000,
+  });
+  await command("client-approval", "approve", "client");
+  const project = f.google.revisions.at(-1);
+  assert.equal(project.reviewState, "reviewed");
+  for (const [key, value] of Object.entries(body.fields))
+    assert.equal(project[key], value, key);
+  assert.equal(f.google.heads.get(receipt.jobId).state, "confirmed");
+  // The full source is preserved. Task preparation currently needs a reviewed
+  // section that fits the field checklist; the free tool has a separate ceiling.
+  assert.throws(() => suggestTasks({ project }), /40 requirements/);
+  const section =
+    "Please scan the entrance vestibule, reception, visitor waiting area, main corridor and lift lobby.";
+  assert.ok(scope.includes(section));
+  const suggestions = suggestTasks({
+    project,
+    text: section,
+    sourceName: "Riverside scope — Level 1",
+  });
+  const draft = {
+    text: section,
+    sourceName: "Riverside scope — Level 1",
+    suggestions,
+    reviewed: false,
+  };
+  assert.throws(() => appendReviewedTasks([], draft), /Review/);
+  const plan = readWorkflow([], { ...project, id: project.recordId });
+  plan.requirements = appendReviewedTasks([], { ...draft, reviewed: true });
+  validateWorkflow(plan);
+  assert.equal(plan.requirements.length, 5);
+  assert.ok(
+    plan.requirements.every(
+      (item) => item.source.quote === section && item.state === "todo",
+    ),
+  );
+  assert.equal(project.scope, scope);
+  for (const [question, expected] of [
+    ["What work is requested?", /server room and electrical cupboard/],
+    ["When is the visit?", /not a confirmed appointment/],
+    ["What are the deliverables?", /Private tour link/],
+    ["What are the access instructions?", /no service panels/],
+  ]) {
+    const answer = answerProjectQuestion(project, question);
+    assert.equal(answer.kind, "answer");
+    assert.match(answer.answers.map((item) => item.text).join("\n"), expected);
+  }
+  assert.equal(
+    answerProjectQuestion(project, "What is the measured window width?").kind,
+    "unsupported",
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_shared_spends_v1").get()
+      .n,
+    0,
+  );
+});
 test("public form opens without email and accepts independent anonymous requests with isolated status capabilities and no charges", async (t) => {
   const f = await publicFixture(t),
     descriptor = await openPublicForm(f.env, f.token);

@@ -504,7 +504,7 @@ export function requestSteps(descriptor) {
         stage: stage("What you need"),
         kind: "text",
         multiline: true,
-        maxLength: 2000,
+        maxLength: 6000,
         placeholder: "e.g., Main hall, lobby and terrace for our venue website",
         suggestions: () => [
           "The whole property",
@@ -521,8 +521,8 @@ export function requestSteps(descriptor) {
         validate: (value) =>
           block(
             value,
-            2000,
-            "Describe the areas to capture, in up to 2,000 characters.",
+            6000,
+            "Describe the areas to capture, in up to 6,000 characters.",
           ),
       },
     ),
