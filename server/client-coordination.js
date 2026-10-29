@@ -1,4 +1,8 @@
 import {
+  hasCoordinationAccess,
+  coordinationEligibilitySQL,
+} from "./coordination-qa-access.js";
+import {
   completionBrief,
   verifiedCompletionBytes,
 } from "./completion-brief.js";
@@ -181,7 +185,7 @@ async function provider(request, env, unsafe) {
       "Your Google account changed. Reopen this page.",
       403,
     );
-  if (!(await hasPurchase(env, session.google_subject)))
+  if (!(await hasCoordinationAccess(env, session.google_subject)))
     throw new CoordinationError("StreamLion Core purchase required.", 403);
   return session;
 }
@@ -227,7 +231,7 @@ async function client(request, env) {
       "Your provider must renew project access.",
       409,
     );
-  if (!(await hasPurchase(env, connection.google_subject)))
+  if (!(await hasCoordinationAccess(env, connection.google_subject)))
     throw new CoordinationError(
       "Provider access is unavailable. Contact your provider.",
       403,
@@ -276,7 +280,7 @@ async function projectStatus(request, env) {
     "SELECT name FROM sqlite_master WHERE type='table' AND name='streamlion_coordination_jobs_v1'",
   ).first();
   if (!present) return json({ managed: false });
-  if (!(await hasPurchase(env, session.google_subject)))
+  if (!(await hasCoordinationAccess(env, session.google_subject)))
     throw new CoordinationError("Provider purchase required.", 403);
   const row = await env.GOOGLE_SESSIONS.prepare(
     "SELECT c.* FROM streamlion_coordination_jobs_v1 j JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id WHERE j.id=? AND c.google_subject=? AND c.workbook_id=? AND c.mode=?",
@@ -799,12 +803,13 @@ export async function handleCoordination({ request, env, params = {} }) {
           value.expires_at,
         )
         .run();
-      await grantStarter(
-        env.GOOGLE_SESSIONS,
-        value.mode,
-        value.google_subject,
-        Date.now(),
-      );
+      if (await hasPurchase(env, value.google_subject))
+        await grantStarter(
+          env.GOOGLE_SESSIONS,
+          value.mode,
+          value.google_subject,
+          Date.now(),
+        );
       await rememberProviderEmail(env, value, session.email);
       return json({ connected: true });
     }

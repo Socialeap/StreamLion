@@ -17,7 +17,9 @@ export async function ownerWorkspaceQa(env, identity, now = Date.now()) {
     const grant = JSON.parse(env.STREAMLION_OWNER_CORE_QA_LICENSE);
     if (
       grant?.version !== 1 ||
-      grant.scope !== "google-workspace" ||
+      !["google-workspace", "google-workspace-and-coordination"].includes(
+        grant.scope,
+      ) ||
       grant.mode !== "live" ||
       grant.origin !== env.GOOGLE_AUTH_ORIGIN ||
       grant.subject !== identity.google_subject ||
@@ -25,7 +27,10 @@ export async function ownerWorkspaceQa(env, identity, now = Date.now()) {
       grant.issuedAt <= 0 ||
       !Number.isSafeInteger(grant.expiresAt) ||
       grant.expiresAt <= grant.issuedAt ||
-      grant.expiresAt - grant.issuedAt > 86400000 ||
+      grant.expiresAt - grant.issuedAt >
+        (grant.scope === "google-workspace-and-coordination"
+          ? 7200000
+          : 86400000) ||
       grant.issuedAt > now ||
       grant.expiresAt <= now ||
       typeof grant.reason !== "string" ||

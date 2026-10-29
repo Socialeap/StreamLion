@@ -1,3 +1,4 @@
+import { hasPurchase } from "./purchase-access.js";
 import { completionBrief } from "./completion-brief.js";
 import { hash, seal, unseal } from "./google-auth.js";
 import { base64Bytes } from "./base64.js";
@@ -483,6 +484,15 @@ export class CoordinationEngine {
     const snapshot = await this.google.snapshot(),
       job = snapshot.heads.get(jobId);
     if (!job) throw new CoordinationError("Job unavailable.", 404);
+    if (
+      command.action === "progress" &&
+      command.state === "delivered" &&
+      !(await hasPurchase(this.env, this.connection.google_subject))
+    )
+      throw new CoordinationError(
+        "QA access cannot authorize paid delivery or spend credits.",
+        403,
+      );
     let next = reduceClientJob(job, { ...command, id }, actor, Date.now());
     const fieldHead = snapshot.projects.heads.find((r) => r.recordId === jobId);
     if (
@@ -949,7 +959,11 @@ export class CoordinationEngine {
             409,
           );
       }
-      if (plan.activation && plan.deferProjectCharge)
+      if (
+        plan.activation &&
+        plan.deferProjectCharge &&
+        (await hasPurchase(this.env, this.connection.google_subject))
+      )
         await grantStarter(
           this.db,
           this.connection.mode,
@@ -957,6 +971,11 @@ export class CoordinationEngine {
           Date.now(),
         );
       if ((plan.activation && !plan.deferProjectCharge) || plan.settlement) {
+        if (!(await hasPurchase(this.env, this.connection.google_subject)))
+          throw new CoordinationError(
+            "A paid purchase is required for delivery charges; QA access cannot spend credits.",
+            403,
+          );
         await grantStarter(
           this.db,
           this.connection.mode,
