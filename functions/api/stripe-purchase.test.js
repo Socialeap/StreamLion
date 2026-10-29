@@ -6,6 +6,13 @@ import { createHmac } from "node:crypto";
 import { handlePurchase, reconcile } from "../../server/stripe-purchase.js";
 import { hash, handleGoogle } from "../../server/google-auth.js";
 import { hasPurchase } from "../../server/purchase-access.js";
+import {
+  STRIPE_REQUEST_VERSION,
+  STRIPE_SNAPSHOT_VERSIONS,
+  CURRENT_STRIPE_SNAPSHOT_VERSION,
+  STRIPE_CHECKOUT_EVENTS,
+  stripeSnapshot,
+} from "../../test/stripe-snapshot-fixture.js";
 function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
   const sql = new DatabaseSync(":memory:");
   t.after(() => sql.close());
@@ -95,6 +102,10 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
       url.origin,
       "https://api.stripe.com",
       "tests must never reach any real provider",
+    );
+    assert.equal(
+      new Headers(options.headers).get("Stripe-Version"),
+      STRIPE_REQUEST_VERSION,
     );
     if (path === "/v1/account") return response({ id: env.STRIPE_ACCOUNT_ID });
     if (path === "/v1/customers/cus_business/tax_ids")
@@ -269,9 +280,18 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
       id = "evt_" + crypto.randomUUID().replaceAll("-", ""),
       valid = true,
       livemode = mode === "live",
+      apiVersion = CURRENT_STRIPE_SNAPSHOT_VERSION,
     } = {},
   ) {
-    const body = JSON.stringify({ id, type, livemode, data: { object } }),
+    const body = JSON.stringify(
+        stripeSnapshot({
+          id,
+          type,
+          livemode,
+          api_version: apiVersion,
+          data: { object },
+        }),
+      ),
       time = Math.floor(Date.now() / 1000);
     const sig = createHmac(
       "sha256",
@@ -302,6 +322,124 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
     },
   };
 }
+for (const apiVersion of STRIPE_SNAPSHOT_VERSIONS)
+  for (const mode of ["test", "live"])
+    test(`Core ${mode} reconciles ${apiVersion} snapshots against pinned authoritative reads while checkout is paused`, async (t) => {
+      const f = fixture(t, { mode });
+      f.env.STREAMLION_CHECKOUT_MODE = "open";
+      const { order } = await f.checkout();
+      f.env.STREAMLION_CHECKOUT_MODE = "paused";
+      const seen = new Set();
+      async function deliver(type, object, options = {}) {
+        seen.add(type);
+        const response = await f.event(type, object, {
+          apiVersion,
+          ...options,
+        });
+        assert.equal(response.status, 200, await response.clone().text());
+      }
+      const metadata = {
+        app: "streamlion",
+        order_id: order.order_id,
+        google_subject: "account-b",
+      };
+      // A signed snapshot claiming payment cannot grant an unpaid order.
+      await deliver("checkout.session.completed", {
+        id: order.checkout_session,
+        metadata,
+        payment_status: "paid",
+      });
+      assert.equal(await hasPurchase(f.env, "account-a"), false);
+      const paid = f.paid(order);
+      const stale = {
+        id: paid.id,
+        metadata,
+        payment_status: "unpaid",
+        status: "expired",
+      };
+      await deliver("checkout.session.completed", stale, {
+        id: "evt_current_paid",
+      });
+      assert.equal(await hasPurchase(f.env, "account-a"), true);
+      assert.equal(await hasPurchase(f.env, "account-b"), false);
+      const count = () =>
+        f.sql
+          .prepare("SELECT COUNT(*) n FROM streamlion_stripe_events_v1")
+          .get().n;
+      const beforeReplay = count();
+      await deliver("checkout.session.completed", stale, {
+        id: "evt_current_paid",
+      });
+      assert.equal(count(), beforeReplay);
+      assert.equal(await hasPurchase(f.env, "account-a"), true);
+      for (const type of STRIPE_CHECKOUT_EVENTS.filter(
+        (type) =>
+          type.startsWith("checkout.session.") &&
+          type !== "checkout.session.completed",
+      )) {
+        await deliver(type, stale);
+        assert.equal(await hasPurchase(f.env, "account-a"), true);
+      }
+      const charge = {
+        payment_intent: paid.payment_intent.id,
+        amount_refunded: 0,
+      };
+      for (const type of [
+        "charge.dispute.created",
+        "charge.dispute.funds_withdrawn",
+      ]) {
+        f.paid(order, { dispute: true });
+        await deliver(type, charge);
+        assert.equal(await hasPurchase(f.env, "account-a"), false);
+      }
+      for (const type of [
+        "charge.dispute.funds_reinstated",
+        "charge.dispute.closed",
+      ]) {
+        f.paid(order);
+        await deliver(type, charge);
+        assert.equal(await hasPurchase(f.env, "account-a"), true);
+      }
+      f.paid(order, { refund: 100 });
+      await deliver("charge.refunded", charge);
+      assert.equal(await hasPurchase(f.env, "account-a"), true);
+      f.paid(order, { refund: order.amount });
+      await deliver("charge.refunded", charge);
+      await deliver("checkout.session.completed", stale);
+      assert.equal(await hasPurchase(f.env, "account-a"), false);
+      assert.equal(await hasPurchase(f.env, "account-b"), false);
+      const finalCount = count();
+      assert.equal(
+        (
+          await f.event("checkout.session.completed", stale, {
+            apiVersion,
+            valid: false,
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await f.event("checkout.session.completed", stale, {
+            apiVersion,
+            livemode: mode !== "live",
+          })
+        ).status,
+        400,
+      );
+      await deliver("checkout.session.completed", {
+        id: "cs_foreign",
+        metadata: { ...metadata, kind: "ai_credits" },
+      });
+      assert.equal(count(), finalCount);
+      assert.equal(await hasPurchase(f.env, "account-a"), false);
+      assert.deepEqual([...seen].sort(), [...STRIPE_CHECKOUT_EVENTS].sort());
+      assert.equal(f.creates, 1);
+      assert.equal(
+        (await (await f.request("config")).json()).checkoutMode,
+        "paused",
+      );
+    });
 test("unconfigured live checkout is paused without changing payment mode or entitlement enforcement", async (t) => {
   const f = fixture(t, { mode: "live" });
   const config = await (await f.request("config")).json();

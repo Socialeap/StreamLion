@@ -66,7 +66,10 @@ before enabling.
      any new key directly into Cloudflare secrets.
    - Credits webhook destination (`/api/credits/webhook`): add
      `payment_intent.succeeded` and `payment_intent.payment_failed` at
-     `2026-08-26.dahlia`, keeping the existing events. Record IDs only.
+     the existing verified snapshot version (currently `2026-09-30.endive`),
+     keeping the existing events. Follow the separate
+     [request/snapshot version contract](stripe-webhook-version-contract.md);
+     the outgoing request pin is not the webhook version. Record IDs only.
    - Set `STREAMLION_SAVED_CARDS_ENABLED=true` last. Absent or any other value
      keeps saving and one-tap top-ups closed (removal stays available).
 4. **Server deployment:** HOLD for explicit authorization. Deploy the merged
