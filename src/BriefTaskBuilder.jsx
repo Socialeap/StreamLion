@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CHECKLIST_MAX_TASKS } from "./checklist-limits.js";
 import { ListChecks } from "lucide-react";
 import SectionHeading from "./SectionHeading.jsx";
 import { suggestTasks, appendReviewedTasks, READINGS } from "./brief-tasks.js";
@@ -64,7 +65,8 @@ export default function BriefTaskBuilder({
       </SectionHeading>
       <p>
         Get separate capture, measurement, and delivery tasks. Check each
-        suggestion beside the customer's exact wording.
+        suggestion beside the customer's exact wording. A project supports up to{" "}
+        {CHECKLIST_MAX_TASKS} tasks.
       </p>
       <details open={!!draft.text}>
         <summary>Paste or choose a brief</summary>

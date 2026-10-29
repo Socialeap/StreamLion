@@ -1,3 +1,4 @@
+import { WORKFLOW_AREA, CHECKLIST_MAX_CHARS } from "./checklist-limits.js";
 import { FIELD_KEYS, validateFields } from "./project-schema.js";
 export const META = [
   "recordId",
@@ -33,7 +34,11 @@ export function validateNote(value) {
   const result = {};
   for (const key of NOTE_HEADERS.slice(5)) {
     const v = value[key] ?? "";
-    if (typeof v !== "string" || v.length > 12000)
+    const limit =
+      value.area === WORKFLOW_AREA && ["text", "sourceText"].includes(key)
+        ? CHECKLIST_MAX_CHARS
+        : 12000;
+    if (typeof v !== "string" || v.length > limit)
       throw new Error(`Invalid annotation ${key}.`);
     result[key] = v;
   }

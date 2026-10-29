@@ -1,3 +1,4 @@
+import { CHECKLIST_MAX_TASKS } from "./checklist-limits.js";
 export const EXCEPTION_TYPES = [
   "Access blocked",
   "Changed request",
@@ -95,7 +96,7 @@ export function attachException(plan, draft, recordId) {
     draft.type === "Follow-up" ||
     (draft.type === "Access blocked" && !draft.taskId)
   ) {
-    if (requirements.length >= 40)
+    if (requirements.length >= CHECKLIST_MAX_TASKS)
       throw new Error(
         "This checklist is full. Add this exception in project details first.",
       );

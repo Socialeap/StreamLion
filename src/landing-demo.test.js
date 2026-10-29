@@ -53,7 +53,7 @@ test("rooms and requested dimensions become separate actions, with unchanged nam
   assert.throws(
     () =>
       checklistFromJobDetails(
-        Array.from({ length: 41 }, (_, i) => `Room ${i}`).join("\n"),
+        Array.from({ length: 121 }, (_, i) => `Room ${i}`).join("\n"),
         "",
       ),
     /shorter checklist/,
