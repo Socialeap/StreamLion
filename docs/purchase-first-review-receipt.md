@@ -3,9 +3,13 @@
 Owner TO-DOs
 
 1. Review [PR #147](https://github.com/Socialeap/StreamLion/pull/147) and approve merge. Keep `[CF-Pages-Skip]`. This receipt establishes source/sandbox evidence, not a Production release.
-2. Submit the approved $100 USD reserve funding through the existing live Stripe balance controls before sales open; preserve the shared payout schedule. Routine eligible refunds initiate automatically. Funding/provider exceptions remain the owner's responsibility.
+2. No upfront deposit is required. The approved $100 USD Stripe minimum balance accumulated from sales is enabled and verified. See the superseding funding decision below; other release/QA gates remain.
 3. After Codex deploys the reviewed merged revision with checkout paused, complete physical-phone/installed-PWA sign-in, onboarding, save/retrieve, export and backup QA on isolated owner data. Resolve the hosted 3DS challenge acceptance gap before paid opening.
 4. Review the closed-release receipt and report owner QA results. Codex then performs the separately recorded checkout-opening step within the existing authorization when all gates pass. No additional generic live-action approval or mailed-certificate delivery is required.
+
+## Superseding funding decision — November 2
+
+The owner replaced the upfront deposit prerequisite with a $100 USD minimum balance accumulated from incoming sales. The live shared Stripe seller setting was saved and verified after reload, with daily payouts/destination unchanged and no bank transfer. Earlier deposit/funding prerequisites below are historical and superseded. Do not wait for $100 accumulation to open under this approved arrangement; other technical/QA release gates remain. A configured minimum is not cash already available: settlement delays and retained processing fees still affect refund funding. See the current release packet. PR #147 is now merged as `1fb2087774aad05a76527c294299b50c704eb520`.
 
 ## Source and scope
 
