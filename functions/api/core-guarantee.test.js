@@ -211,6 +211,12 @@ test("an ambiguous API failure retries automatically with the same key and disco
   await processRefundQueue(f.env, f.stripe, f.now + 2 * 86400000);
   assert.equal(f.keys.length, 1);
   assert.equal(
+    f.sql
+      .prepare("SELECT refund_id FROM streamlion_core_refund_requests_v1")
+      .get().refund_id,
+    "re_lost",
+  );
+  assert.equal(
     (await guaranteeStatus(f.env, "test", "buyer")).state,
     "succeeded",
   );

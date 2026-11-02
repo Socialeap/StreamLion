@@ -189,9 +189,9 @@ export async function processRefundRequest(
         if (refund.metadata?.streamlion_refund_request === orderId)
           own = refund;
       }
+      if (own) refundId = own.id;
       if (succeeded >= charge.amount) state = "succeeded";
       else if (own) {
-        refundId = own.id;
         state =
           own.status === "succeeded"
             ? succeeded >= charge.amount
