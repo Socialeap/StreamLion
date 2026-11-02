@@ -182,6 +182,8 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
       return response(catalog[path.split("/").at(-1)]);
     if (path === "/v1/checkout/sessions" && options.method === "POST") {
       const params = new URLSearchParams(options.body);
+      assert.equal(params.get('payment_method_types[0]'),'card');
+      assert.match(params.get('custom_text[submit][message]'),/\[your account page\]\(https:\/\/app\.example\/api\/purchase\)/);
       created.push(params);
       assert.ok(
         params

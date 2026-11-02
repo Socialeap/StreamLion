@@ -444,6 +444,7 @@ async function createCheckout(env, stripe, identity, config, body) {
     ...taxCheckoutParams(order),
     ...businessCheckoutParams(order),
     mode: "payment",
+    payment_method_types: ["card"],
     client_reference_id: order.order_id,
     customer_email: order.checkout_email,
     line_items: [{ price: order.price_id, quantity: 1 }],
@@ -474,7 +475,7 @@ async function createCheckout(env, stripe, identity, config, body) {
         message: `I agree to the [StreamLion purchase terms](${config.origin}/api/terms).`,
       },
       submit: {
-        message: `One-time StreamLion purchase. No subscription. ${coreRefundRequestText(config.refundDays)} Email info@transcendencemedia.com with your receipt. Use the same Google account to restore access.`,
+        message: `One-time Core purchase. No subscription. ${coreRefundRequestText(config.refundDays)} Request your refund from [your account page](${config.origin}/api/purchase). Support: info@transcendencemedia.com. Use the same Google account to restore access.`,
       },
     },
   };
