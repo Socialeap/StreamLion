@@ -127,8 +127,10 @@ event re-signed for a local fixture is not a Stripe-signed public delivery.
 
 Seller: **Transcendence Media LLC**, based in NY. NY Business Express confirmed
 issuance on November 2, 2026. The actual certificate details and effective date
-still require verification. Keep sales paused until that verification, tax
-reconciliation and separate opening approval are complete. Do not put application numbers,
+still require verification when available. The owner has confirmed that the
+dashboard does not provide the certificate; a mailed copy is forthcoming. Paper
+delivery is not a prerequisite to validating or enabling the existing Stripe Tax
+workflow. Keep checkout paused through the current release and acceptance gates. Do not put application numbers,
 tax IDs or certificate numbers in this repository or chat.
 
 Confirm product classification (cloud/downloaded business software as appropriate),
@@ -187,8 +189,9 @@ upgrade or sales opening.
 
 On November 2, 2026, the approval/issuance email was verified. Certificate
 details and effective date still require verification. The existing Stripe NY
-registration is active from October 24; reconcile it with the actual certificate,
-without guessing, duplicating registrations or treating issuance as sales approval.
+registration is active from October 24; reconcile the effective date when
+available, without waiting for paper to validate tax collection, guessing,
+duplicating registrations or treating issuance as sales approval.
 Use [the current release packet](purchase-first-release.md); checkout remains paused.
 
 Prerequisites: gates 2–4 accepted, applicable legal approval and explicit future
