@@ -41,7 +41,10 @@ if (
   config.amount <= 0 ||
   config.currency !== "usd" ||
   config.refundDays !== Number(refundDays) ||
-  config.launchCapacity !== 200
+  config.offer !== "purchase-first-v1" ||
+  ![2995, 3995].includes(config.amount) ||
+  config.launchCapacity !== null ||
+  config.refundRequestsEnabled !== true
 )
   throw new Error("Purchase configuration mismatch.");
 if (

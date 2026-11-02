@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { coreGuaranteePreflight } from "./preflight-core-guarantee.mjs";
 const normalize = (s) => s.replace(/;\s*$/, "").replace(/\s+/g, " ").trim();
 const optionalSavedCards = new Set([
   "streamlion_credit_cards_v1",
@@ -40,6 +41,27 @@ export function expectedAdminSchema(after = true) {
 function classify(input, legacyProjection = false) {
   if (!input || !Array.isArray(input.schema) || !input.stamps)
     throw Error("Provide schema definitions and verified stamps; STOP.");
+  if (
+    input.schema.some(
+      (r) => r.name === "streamlion_core_guarantee_schema_v1",
+    ) ||
+    input.stamps.streamlion_core_guarantee_schema_v1 !== undefined
+  ) {
+    if (
+      coreGuaranteePreflight(input, legacyProjection).migration !==
+      "already_applied"
+    )
+      throw Error("Partial guarantee successor; STOP.");
+    const oldPurchase = expectedAdminSchema(true).schema.find(
+      (r) => r.name === "streamlion_purchases_v1",
+    );
+    input = {
+      ...input,
+      schema: input.schema.map((r) =>
+        r.name === oldPurchase.name ? oldPurchase : r,
+      ),
+    };
+  }
   const before = expectedAdminSchema(false),
     after = expectedAdminSchema(true),
     oldNames = new Set(before.schema.map((x) => x.name)),

@@ -24,7 +24,8 @@ Named unfinished drafts appear in Projects on the device where they were started
 - [Current architecture and limits](docs/google-owned-plan.md)
 - [Field map](docs/field-map.md)
 - [JSON fixture](fixtures/project-intake.json)
-- [Immediate pilot admission and scheduled places: held release](docs/instant-pilot-release.md)
+- [Purchase-first Core offer and automatic refund release](docs/purchase-first-release.md)
+- [Immediate pilot admission and scheduled places: historical held release](docs/instant-pilot-release.md)
 - [Controlled free pilot: held release and approval gates](docs/controlled-free-pilot-release.md)
 - [ChatGPT retirement and release gates](docs/chatgpt-retirement-release.md)
 

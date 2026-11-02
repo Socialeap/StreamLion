@@ -25,7 +25,7 @@ const config = {
   enabled: true,
   required: true,
   mode: "test",
-  amount: 2996,
+  amount: 2995,
   standardAmount: 3995,
   launchRemaining: 200,
   launchCapacity: 200,
@@ -477,7 +477,7 @@ test("offline cold start restores the cached pilot expiry timer and stops local 
   await ui.findByText(/Your pilot access has ended/);
 });
 
-test("the 14-day purchase guarantee discloses first delivery before a buyer continues", async (t) => {
+test("the 14-day purchase guarantee has no usage condition before a buyer continues", async (t) => {
   t.mock.method(globalThis, "fetch", async (url) =>
     response(
       url.endsWith("config")
@@ -488,9 +488,7 @@ test("the 14-day purchase guarantee discloses first delivery before a buyer cont
   const ui = render(<Purchase />);
   try {
     await waitFor(() => assert.ok(ui.getByText(/14-day money-back guarantee/)));
-    assert.ok(
-      ui.getByText(/before your first project delivery through StreamLion/),
-    );
+    assert.ok(ui.getByText(/No usage or delivery condition/));
     assert.ok(ui.getByRole("link", { name: "Purchase terms" }));
     assert.ok(ui.getByRole("link", { name: "Continue with Google" }));
   } finally {
@@ -623,4 +621,59 @@ test("owner QA expiry closes the workspace at its original deadline", async (t) 
   await waitFor(() => assert.equal(typeof expire, "function"));
   await act(async () => expire());
   assert.equal(ui.queryByText("Temporary QA workspace"), null);
+});
+
+test("refund requests show pending separately from success and retain backup retrieval after a successful refund", async (t) => {
+  t.after(cleanup);
+  window.history.replaceState(null, "", "/api/purchase");
+  let succeeded = false,
+    requests = 0;
+  const deadline = Date.parse("2026-11-16T22:00:00Z");
+  const account = () => ({
+    enabled: true,
+    required: true,
+    mode: "test",
+    connected: true,
+    subject: "account-a",
+    account: "buyer@example.com",
+    purchased: !succeeded,
+    guarantee: {
+      orderId: "one",
+      deadline,
+      canRequest: !requests,
+      state: succeeded ? "succeeded" : requests ? "pending" : null,
+      receivedAt: requests ? deadline - 1 : null,
+    },
+  });
+  t.mock.method(globalThis, "fetch", async (url, opts) => {
+    if (url.endsWith("/refund")) {
+      requests++;
+      assert.equal(opts.headers["X-StreamLion-Account"], "account-a");
+      return response({
+        purchased: true,
+        guarantee: {
+          ...account().guarantee,
+          state: "pending",
+          canRequest: false,
+        },
+      });
+    }
+    return response(
+      url.endsWith("/status")
+        ? account()
+        : { ...config, enabled: false, checkoutMode: "paused" },
+    );
+  });
+  const ui = render(<Purchase />);
+  await waitFor(() =>
+    assert(ui.getByRole("button", { name: "Request full Core refund" })),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Request full Core refund" }));
+  await waitFor(() => assert(ui.getByText(/Refund pending with Stripe/)));
+  assert.equal(requests, 1);
+  assert.equal(ui.queryByText(/Full refund succeeded/), null);
+  succeeded = true;
+  fireEvent.click(ui.getByRole("button", { name: "Check again" }));
+  await waitFor(() => assert(ui.getByText(/Full refund succeeded/)));
+  assert(ui.getByRole("button", { name: "Download my device backup" }));
 });

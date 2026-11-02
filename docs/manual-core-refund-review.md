@@ -1,3 +1,7 @@
+# Legacy manual review only — current guarantee is automatic
+
+The November 2 new-purchase guarantee has no first-delivery or usage condition and uses timestamped automatic requests. See [current release packet](purchase-first-release.md). The historical checklist below is relevant only to earlier contracts; never use it to add a condition to the new guarantee.
+
 # Manual Core refund review — held release checklist
 
 Owner TO-DOs

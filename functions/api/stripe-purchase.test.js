@@ -6,6 +6,8 @@ import { createHmac } from "node:crypto";
 import { handlePurchase, reconcile } from "../../server/stripe-purchase.js";
 import { hash, handleGoogle } from "../../server/google-auth.js";
 import { hasPurchase } from "../../server/purchase-access.js";
+import coreRefundWorker from "../../ops/core-refunds-worker.js";
+import { processRefundRequest } from "../../server/core-guarantee.js";
 import {
   STRIPE_REQUEST_VERSION,
   STRIPE_SNAPSHOT_VERSIONS,
@@ -25,6 +27,7 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
     "0007_streamlion_ai_pilot",
     "0008_streamlion_ai_credits",
     "0020_checkout_business",
+    "0026_core_guarantee",
   ])
     sql.exec(
       readFileSync(
@@ -44,6 +47,7 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
   const wrap = (query, values = []) => ({
     bind: (...v) => wrap(query, v),
     first: async () => sql.prepare(query).get(...values) || null,
+    all: async () => ({ results: sql.prepare(query).all(...values) }),
     run: async () => ({
       meta: { changes: sql.prepare(query).run(...values).changes },
     }),
@@ -59,7 +63,10 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
     STREAMLION_PAYMENTS_MODE: mode,
     ...(mode === "live" ? { STREAMLION_LIVE_PAYMENTS_APPROVED: "true" } : {}),
     STREAMLION_REQUIRE_LICENSE: "true",
-    STREAMLION_REFUND_DAYS: "7",
+    STREAMLION_REFUND_DAYS: "14",
+    STREAMLION_CORE_REFUNDS_ENABLED: "true",
+    STREAMLION_CORE_PROMOTION_END: "2027-01-01T05:00:00.000Z",
+    STREAMLION_CORE_AFTER_PROMOTION: "standard",
     STRIPE_SECRET_KEY: `sk_${mode}_synthetic` + crypto.randomUUID(),
     STRIPE_WEBHOOK_SECRET: "whsec_synthetic",
     STRIPE_ACCOUNT_ID: "acct_synthetic",
@@ -75,7 +82,7 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
   };
   const catalog = {
     price_standard: { id: "price_standard", unit_amount: 3995 },
-    price_launch: { id: "price_launch", unit_amount: 2996 },
+    price_launch: { id: "price_launch", unit_amount: 2995 },
   };
   for (const price of Object.values(catalog))
     Object.assign(price, {
@@ -89,6 +96,8 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
   const sessions = new Map(),
     intents = new Map();
   const created = [];
+  const refunds = [],
+    refundControl = { status: "succeeded", creates: 0 };
   const taxProof = { status: "pending" };
   let creates = 0;
   const response = (value) =>
@@ -122,16 +131,69 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
       });
     if (path === "/v1/customers/cus_business")
       return response({ id: "cus_business", metadata: {} });
+    if (path === "/v1/refunds") {
+      if (options.method === "POST") {
+        const params = new URLSearchParams(options.body),
+          intent = intents.get(params.get("payment_intent"));
+        refundControl.creates++;
+        const r = {
+          id: "re_auto_" + refundControl.creates,
+          charge: intent.latest_charge.id,
+          payment_intent: intent.id,
+          livemode: mode === "live",
+          currency: "usd",
+          amount: Number(params.get("amount")),
+          status: refundControl.status,
+          metadata: {
+            streamlion_refund_request: params.get(
+              "metadata[streamlion_refund_request]",
+            ),
+          },
+        };
+        refunds.push(r);
+        intent.latest_charge.amount_refunded += r.amount;
+        return response(r);
+      }
+      const chargeId = url.searchParams.get("charge"),
+        explicit = refunds.filter((r) => r.charge === chargeId);
+      const session = [...sessions.values()].find(
+        (s) => s.payment_intent?.latest_charge?.id === chargeId,
+      );
+      const charge = session?.payment_intent?.latest_charge;
+      return response({
+        has_more: false,
+        data: explicit.length
+          ? explicit
+          : charge?.amount_refunded
+            ? [
+                {
+                  id: "re_verified",
+                  charge: charge.id,
+                  livemode: mode === "live",
+                  currency: "usd",
+                  amount: charge.amount_refunded,
+                  status: charge.refundStatus || "succeeded",
+                },
+              ]
+            : [],
+      });
+    }
     if (path.startsWith("/v1/prices/"))
       return response(catalog[path.split("/").at(-1)]);
     if (path === "/v1/checkout/sessions" && options.method === "POST") {
       const params = new URLSearchParams(options.body);
+      assert.equal(params.get("payment_method_types[0]"), "card");
+      assert.equal(params.get("wallet_options[link][display]"), "never");
+      assert.match(
+        params.get("custom_text[submit][message]"),
+        /\[your account page\]\(https:\/\/app\.example\/api\/purchase\)/,
+      );
       created.push(params);
       assert.ok(
         params
           .get("custom_text[submit][message]")
           .includes(
-            `Request a full refund within ${env.STREAMLION_REFUND_DAYS} days of purchase`,
+            `within ${env.STREAMLION_REFUND_DAYS} days of successful payment`,
           ),
       );
       const orderId = params.get("metadata[order_id]");
@@ -258,9 +320,10 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
         status: "succeeded",
         metadata: { app: "streamlion", order_id: order.order_id },
         latest_charge: {
-          id: "ch_1",
+          id: "ch_" + order.order_id,
           paid: true,
           captured: true,
+          livemode: mode === "live",
           currency: "usd",
           amount: session.amount_total || order.amount,
           amount_refunded: refund,
@@ -309,6 +372,8 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
     sql,
     env,
     sessions,
+    refunds,
+    refundControl,
     catalog,
     created,
     taxProof,
@@ -831,12 +896,12 @@ test("the 200-place migration preserves financial state and uniqueness safeguard
     sql.close();
   }
 });
-test("quotes report 200 places and seven days; unmigrated checkout fails closed", async (t) => {
+test("quotes report uncapped purchase-first pricing and fourteen days; unmigrated checkout fails closed", async (t) => {
   const f = fixture(t);
   const quote = await (await f.request("config")).json();
-  assert.equal(quote.launchCapacity, 200);
-  assert.equal(quote.launchRemaining, 200);
-  assert.equal(quote.refundDays, 7);
+  assert.equal(quote.launchCapacity, null);
+  assert.equal(quote.launchRemaining, null);
+  assert.equal(quote.refundDays, 14);
   f.sql.exec("DROP TABLE streamlion_purchase_schema_v2");
   assert.equal((await f.request("config")).status, 503);
   const cookie = await f.login();
@@ -909,7 +974,7 @@ test("only an authenticated matching account can create checkout; client price t
   assert.equal(response.status, 200);
   assert.equal(
     f.sql.prepare("SELECT amount FROM streamlion_purchases_v1").get().amount,
-    2996,
+    2995,
   );
 });
 test("concurrent repeated checkout clicks create one order and one Stripe session", async (t) => {
@@ -1031,7 +1096,7 @@ test("repeat public quotes reuse a short validated catalog while enforcing a glo
       headers: { "CF-Connecting-IP": `synthetic-${i}` },
     });
     assert.equal(response.status, 200);
-    assert.equal((await response.json()).amount, 2996);
+    assert.equal((await response.json()).amount, 2995);
   }
   assert.equal(
     globalThis.fetch.mock.callCount(),
@@ -1144,7 +1209,7 @@ test("expired and failed delayed payments release their slots; processing paymen
   assert.equal(receipt.status, "failed");
   assert.equal(receipt.promo_slot, null);
 });
-test("two hundred launch slots cannot be oversold by simultaneous purchasers", async (t) => {
+test("historical launch slots never cap or automatically increase new purchase prices", async (t) => {
   const f = fixture(t);
   const insert = f.sql
     .prepare(`INSERT INTO streamlion_purchases_v1(order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,status,created_at,expires_at,updated_at)
@@ -1154,18 +1219,18 @@ test("two hundred launch slots cannot be oversold by simultaneous purchasers", a
     f.checkout("buyer-a"),
     f.checkout("buyer-b"),
   ]);
-  assert.deepEqual(receipts.map((r) => r.order.amount).sort(), [2996, 3995]);
+  assert.deepEqual(receipts.map((r) => r.order.amount).sort(), [2995, 2995]);
   assert.equal(
     f.sql
       .prepare(
         "SELECT COUNT(*) AS n FROM streamlion_purchases_v1 WHERE promo_slot IS NOT NULL",
       )
       .get().n,
-    200,
+    199,
   );
   const quote = await (await f.request("config")).json();
-  assert.equal(quote.launchRemaining, 0);
-  assert.equal(quote.amount, 3995);
+  assert.equal(quote.launchRemaining, null);
+  assert.equal(quote.amount, 2995);
 });
 test("the Google proxy refuses unpaid accounts while leaving disconnect available", async (t) => {
   const f = fixture(t),
@@ -1225,6 +1290,21 @@ test("concurrent stale completion read cannot overwrite a refund due to compare-
   const started = new Promise((r) => (reached = r));
   let reads = 0;
   const stripe = {
+    refunds: {
+      list: async () => ({
+        has_more: false,
+        data: [
+          {
+            id: "re_cas",
+            charge: session.payment_intent.latest_charge.id,
+            livemode: false,
+            currency: "usd",
+            amount: order.amount,
+            status: "succeeded",
+          },
+        ],
+      }),
+    },
     checkout: {
       sessions: {
         retrieve: async () => {
@@ -1486,19 +1566,19 @@ test("Stripe tax-ID verification recovers a pending business receipt without ano
   assert.equal(f.creates, 1);
 });
 
-for (const days of [7, 14, 30])
-  test(`Core ${days}-day quote and Checkout state the first-delivery limit`, async (t) => {
+for (const days of [14])
+  test(`Core ${days}-day quote and Checkout state the unconditional guarantee`, async (t) => {
     const f = fixture(t);
     f.env.STREAMLION_REFUND_DAYS = String(days);
     const quote = await (await f.request("config")).json();
     assert.equal(quote.refundDays, days);
     await f.checkout();
     const submit = f.created.at(-1).get("custom_text[submit][message]");
-    assert.match(submit, new RegExp(`within ${days} days of purchase`));
     assert.match(
       submit,
-      /before your first project delivery through StreamLion/,
+      new RegExp(`within ${days} days of successful payment`),
     );
+    assert.match(submit, /No usage or delivery condition/);
     assert.match(submit, /info@transcendencemedia\.com/);
     assert.equal(f.creates, 1);
   });
@@ -1559,4 +1639,205 @@ test("owner workspace QA status remains unpaid and checkout paused", async (t) =
     }),
   });
   assert.equal(checkout.status, 403);
+});
+
+test("signed successful-payment event records the immutable refund clock; a success URL cannot", async (t) => {
+  const f = fixture(t, { tax: true }),
+    { order } = await f.checkout(),
+    s = f.paid(order);
+  await f.event("checkout.session.completed", s);
+  assert.equal(
+    f.sql.prepare("SELECT paid_at FROM streamlion_purchases_v1").get().paid_at,
+    null,
+  );
+  assert.equal(
+    (await f.event("payment_intent.succeeded", s.payment_intent)).status,
+    200,
+  );
+  const paidAt = f.sql
+    .prepare("SELECT paid_at FROM streamlion_purchases_v1")
+    .get().paid_at;
+  assert.ok(paidAt);
+  await f.event("payment_intent.succeeded", s.payment_intent);
+  assert.equal(
+    f.sql.prepare("SELECT paid_at FROM streamlion_purchases_v1").get().paid_at,
+    paidAt,
+  );
+});
+
+test("an authenticated refund request automatically returns gross payment including tax once while checkout is paused", async (t) => {
+  const f = fixture(t, { tax: true }),
+    { cookie, order } = await f.checkout(),
+    s = f.paid(order);
+  await f.event("payment_intent.succeeded", s.payment_intent);
+  f.env.STREAMLION_CHECKOUT_MODE = "paused";
+  const call = () =>
+    f.request("refund", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ amount: 1, receivedAt: 1, days: 999 }),
+    });
+  const responses = await Promise.all([call(), call()]);
+  assert(responses.every((r) => r.status === 200));
+  assert.equal(f.refundControl.creates, 0);
+  await coreRefundWorker.scheduled({}, f.env);
+  assert.equal(f.refundControl.creates, 1);
+  assert.equal(f.refunds[0].amount, s.amount_total);
+  assert.equal(await hasPurchase(f.env, "account-a"), false);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_core_refund_requests_v1")
+      .get().n,
+    1,
+  );
+  assert.equal((await (await call()).json()).guarantee.state, "succeeded");
+  assert.equal(f.refundControl.creates, 1);
+  assert.equal((await f.request("refund", { method: "POST" })).status, 401);
+  assert.equal(
+    (
+      await f.request("refund", {
+        method: "POST",
+        cookie,
+        origin: "https://evil.example",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await f.request("refund", {
+        method: "POST",
+        cookie: await f.login("account-b"),
+        subject: "account-b",
+      })
+    ).status,
+    503,
+  );
+});
+
+test("pending and failed Stripe refunds preserve access and original request time; later success revokes only that order", async (t) => {
+  const f = fixture(t, { tax: true }),
+    { cookie, order } = await f.checkout(),
+    s = f.paid(order);
+  await f.event("payment_intent.succeeded", s.payment_intent);
+  f.refundControl.status = "pending";
+  const response = await f.request("refund", { method: "POST", cookie });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).guarantee.state, "requested");
+  await coreRefundWorker.scheduled({}, f.env);
+  assert.equal(f.refundControl.creates, 1);
+  assert.equal(await hasPurchase(f.env, "account-a"), true);
+  const request = f.sql
+    .prepare("SELECT * FROM streamlion_core_refund_requests_v1")
+    .get();
+  f.refunds[0].status = "failed";
+  await f.event("refund.failed", f.refunds[0]);
+  await processRefundRequest(
+    f.env,
+    {
+      checkout: { sessions: { retrieve: async () => s } },
+      refunds: { list: async () => ({ has_more: false, data: f.refunds }) },
+    },
+    order.order_id,
+    request.next_attempt_at,
+  );
+  assert.equal(await hasPurchase(f.env, "account-a"), true);
+  assert.equal(
+    f.sql.prepare("SELECT state FROM streamlion_core_refund_requests_v1").get()
+      .state,
+    "failed",
+  );
+  // Simulate a later provider correction; current provider state wins over old events.
+  f.refunds[0].status = "succeeded";
+  await f.event("refund.updated", f.refunds[0]);
+  assert.equal(await hasPurchase(f.env, "account-a"), false);
+  assert.equal(
+    f.sql
+      .prepare("SELECT received_at FROM streamlion_core_refund_requests_v1")
+      .get().received_at,
+    request.received_at,
+  );
+  assert.equal(f.refundControl.creates, 1);
+});
+
+test("a timely request waits durably for payment-time verification, then processes after day fourteen", async (t) => {
+  const f = fixture(t, { tax: true }),
+    { cookie, order } = await f.checkout(),
+    s = f.paid(order);
+  await f.event("checkout.session.completed", s);
+  assert.equal(
+    (await f.request("refund", { method: "POST", cookie })).status,
+    200,
+  );
+  assert.equal(f.refundControl.creates, 0);
+  const request = f.sql
+    .prepare("SELECT * FROM streamlion_core_refund_requests_v1")
+    .get();
+  f.sql
+    .prepare("UPDATE streamlion_purchases_v1 SET paid_at=?")
+    .run(request.received_at - 13 * 86400000);
+  const stripe = {
+    checkout: { sessions: { retrieve: async () => s } },
+    refunds: {
+      list: async () => ({ has_more: false, data: [] }),
+      create: async () => {
+        f.refundControl.creates++;
+        return {
+          id: "re_late",
+          charge: s.payment_intent.latest_charge.id,
+          livemode: false,
+          currency: "usd",
+          amount: s.amount_total,
+          status: "succeeded",
+        };
+      },
+    },
+  };
+  await processRefundRequest(
+    f.env,
+    stripe,
+    order.order_id,
+    request.received_at + 2 * 86400000,
+  );
+  assert.equal(f.refundControl.creates, 1);
+  assert.equal(
+    f.sql.prepare("SELECT state FROM streamlion_core_refund_requests_v1").get()
+      .state,
+    "succeeded",
+  );
+});
+
+test("purchased access continues after day fourteen and later prices/offer changes do not rewrite existing access", async (t) => {
+  const f = fixture(t),
+    { order } = await f.checkout(),
+    s = f.paid(order);
+  await f.event("checkout.session.completed", s);
+  f.sql
+    .prepare("UPDATE streamlion_purchases_v1 SET created_at=1,paid_at=1")
+    .run();
+  f.catalog.price_launch.unit_amount = 3995;
+  f.env.STREAMLION_REFUND_DAYS = "7";
+  assert.equal(await hasPurchase(f.env, "account-a"), true);
+  assert.equal((await f.request("config")).status, 503);
+  assert.equal(await hasPurchase(f.env, "account-a"), true);
+});
+
+test("refund receipt survives a cold Stripe preflight outage", async (t) => {
+  const f = fixture(t),
+    { cookie, order } = await f.checkout(),
+    s = f.paid(order);
+  await f.event("payment_intent.succeeded", s.payment_intent);
+  f.env.STRIPE_SECRET_KEY += "cold";
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("Stripe unavailable");
+  });
+  const response = await f.request("refund", { method: "POST", cookie });
+  assert.equal(response.status, 200);
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_core_refund_requests_v1")
+      .get().n,
+    1,
+  );
 });

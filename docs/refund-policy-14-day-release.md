@@ -1,3 +1,7 @@
+# Historical conditional refund offer — superseded for new purchases
+
+The November 2, 2026 owner-approved new offer is an unconditional 14-day full-refund-on-request guarantee with automatic initiation. See [current purchase-first release packet](purchase-first-release.md). Do not execute this older activation checklist for the new offer. Retain this document only as evidence of earlier wording and release gates; preserve any more favorable terms actually promised.
+
 # Core refund wording: 14 days, before first delivery — held release
 
 Owner TO-DOs

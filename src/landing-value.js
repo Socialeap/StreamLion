@@ -1,5 +1,5 @@
 const STANDARD_PRICE = 39.95;
-const LAUNCH_PRICE = 29.96;
+const LAUNCH_PRICE = 29.95;
 
 export const VALUE_TASKS = ["brief", "readings", "handover"];
 
@@ -15,7 +15,7 @@ export function formatTimeValueEquation(minutes, hourlyRate, perJob) {
   return `${minutes} minutes ÷ 60 × $${Number(hourlyRate)}/hour ${total} per job.`;
 }
 
-/** Only a valid live quote with available slots may reveal promotional pricing. */
+/** Only the approved, live purchase-first quote may reveal an actionable offer. */
 export function confirmedPurchaseQuote(config) {
   if (
     !config?.enabled ||
@@ -25,10 +25,13 @@ export function confirmedPurchaseQuote(config) {
       (n) => Number.isSafeInteger(n) && n > 0,
     ) ||
     config.currency !== "usd" ||
-    ![7, 14, 30].includes(config.refundDays) ||
-    (config.amount < config.standardAmount &&
-      (!Number.isSafeInteger(config.launchRemaining) ||
-        config.launchRemaining <= 0))
+    config.refundDays !== 14 ||
+    ![2995, 3995].includes(config.amount) ||
+    !["promotion", "standard"].includes(config.promotionPhase) ||
+    config.amount !== (config.promotionPhase === "promotion" ? 2995 : 3995) ||
+    !Number.isSafeInteger(config.promotionEndsAt) ||
+    config.offer !== "purchase-first-v1" ||
+    config.refundRequestsEnabled !== true
   )
     return null;
   return config;

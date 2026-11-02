@@ -139,6 +139,32 @@ export default function Purchase({ onPurchased }) {
       setBusy(false);
     }
   }
+  async function requestRefund() {
+    const subject = account?.subject,
+      generation = epoch.current;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await purchaseRequest("refund", {
+        method: "POST",
+        account: subject,
+        body: "{}",
+      });
+      if (generation !== epoch.current) return;
+      setAccount((a) => ({
+        ...a,
+        guarantee: result.guarantee,
+        purchased: result.purchased,
+      }));
+      setMessage(
+        "Your refund request is recorded. Its original receipt time determines eligibility.",
+      );
+    } catch (e) {
+      if (generation === epoch.current) setError(e.message);
+    } finally {
+      if (generation === epoch.current) setBusy(false);
+    }
+  }
   const amount = config?.amount
     ? new Intl.NumberFormat("en-US", {
         style: "currency",
@@ -237,12 +263,19 @@ export default function Purchase({ onPurchased }) {
                       paying.
                     </p>
                   )}
-                  {config.launchRemaining > 0 && (
+                  <p>
+                    Pay once. Purchased Core access continues after day 14. No
+                    subscription or later charge.
+                  </p>
+                  {config.promotionPhase === "promotion" && (
                     <p>
-                      First 200 Only Launch Offer. Places are reserved when
-                      checkout starts. Pending payments hold a place; expired or
-                      failed checkouts release it once confirmed. Your final
-                      price is shown before payment.
+                      $29.95 promotional price through{" "}
+                      {new Date(config.promotionEndsAt - 1).toLocaleString(
+                        "en-US",
+                        { timeZone: "America/New_York", timeZoneName: "short" },
+                      )}
+                      ; then $39.95 for new checkouts. A checkout already issued
+                      keeps its quoted price until it expires.
                     </p>
                   )}
                   <p>
@@ -255,6 +288,13 @@ export default function Purchase({ onPurchased }) {
                     <a href="/api/privacy" target="_blank" rel="noreferrer">
                       Privacy
                     </a>
+                  </p>
+                  <p>
+                    <a href="/api/purchase">
+                      Request a refund from this account page
+                    </a>
+                    . The deadline is 14 × 24 hours after successful payment;
+                    bank processing time is separate.
                   </p>
                   {!account?.connected ? (
                     <>
@@ -303,6 +343,60 @@ export default function Purchase({ onPurchased }) {
             </>
           )}
           {message && <p role="status">{message}</p>}
+          {account?.guarantee && (
+            <section aria-label="Core refund guarantee">
+              <h2>Purchase and refund</h2>
+              {account.guarantee.deadline ? (
+                <p>
+                  Refund request deadline:{" "}
+                  {new Date(account.guarantee.deadline).toLocaleString(
+                    undefined,
+                    { timeZone: "UTC", timeZoneName: "short" },
+                  )}
+                  . Requests received at this exact deadline qualify.
+                </p>
+              ) : (
+                <p>
+                  Confirming your successful-payment timestamp and refund
+                  deadline.
+                </p>
+              )}
+              {account.guarantee.receivedAt && (
+                <p>
+                  Request received:{" "}
+                  {new Date(account.guarantee.receivedAt).toISOString()}.
+                </p>
+              )}
+              {account.guarantee.state && (
+                <p role="status">
+                  {
+                    {
+                      requested:
+                        "Request recorded; verification and refund initiation are automatic.",
+                      pending:
+                        "Refund pending with Stripe. Your request is recorded; bank processing is separate.",
+                      succeeded:
+                        "Full refund succeeded. This purchase no longer provides Core access.",
+                      failed:
+                        "Refund processing needs attention and will be checked automatically. Your original request time is preserved.",
+                      ineligible:
+                        "This request was received after the guarantee deadline. Contact support for any other applicable rights.",
+                    }[account.guarantee.state]
+                  }
+                </p>
+              )}
+              {account.guarantee.canRequest && (
+                <button disabled={busy} onClick={requestRefund}>
+                  Request full Core refund
+                </button>
+              )}
+              <p>
+                A successful full refund ends access from this purchase.
+                Google-owned files remain yours; download your device backup
+                below. Other purchases remain separate.
+              </p>
+            </section>
+          )}
           {error && <p role="alert">{error}</p>}
           {(error || message) && (
             <button disabled={busy} onClick={load}>
