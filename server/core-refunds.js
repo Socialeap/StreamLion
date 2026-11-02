@@ -1,6 +1,7 @@
 const id = (value) => (typeof value === "string" ? value : value?.id);
 // Charge summaries can include refunds still pending. Only current, verified
 // succeeded Refund objects count toward revocation; never trust an event snapshot.
+// Refund objects have no livemode field; bind them to a mode-verified Charge.
 export async function verifiedCoreRefunds(
   stripe,
   charge,
@@ -9,6 +10,7 @@ export async function verifiedCoreRefunds(
 ) {
   const reported = charge.amount_refunded || 0;
   if (
+    charge.livemode !== livemode ||
     !Number.isSafeInteger(reported) ||
     reported < 0 ||
     reported > charge.amount
@@ -27,7 +29,6 @@ export async function verifiedCoreRefunds(
       !refund.id ||
       seen.has(refund.id) ||
       id(refund.charge) !== charge.id ||
-      refund.livemode !== livemode ||
       refund.currency !== charge.currency ||
       !Number.isSafeInteger(refund.amount) ||
       refund.amount <= 0 ||

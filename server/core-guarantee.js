@@ -159,6 +159,7 @@ export async function processRefundRequest(
         intent.id !== r.payment_intent ||
         intent.metadata?.app !== "streamlion" ||
         intent.metadata?.order_id !== orderId ||
+        charge?.livemode !== session.livemode ||
         !charge?.paid ||
         !charge.captured ||
         charge.currency !== "usd" ||
@@ -177,7 +178,6 @@ export async function processRefundRequest(
           (typeof refund.charge === "string"
             ? refund.charge
             : refund.charge?.id) !== charge.id ||
-          refund.livemode !== session.livemode ||
           refund.currency !== charge.currency ||
           !Number.isSafeInteger(refund.amount) ||
           refund.amount <= 0
@@ -227,7 +227,6 @@ export async function processRefundRequest(
           (typeof refund.charge === "string"
             ? refund.charge
             : refund.charge?.id) !== charge.id ||
-          refund.livemode !== session.livemode ||
           refund.currency !== charge.currency ||
           refund.amount !== charge.amount - succeeded ||
           ![

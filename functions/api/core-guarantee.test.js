@@ -53,6 +53,7 @@ function fixture(t, { migrate = true } = {}) {
   }
   const charge = {
     id: "ch_order",
+    livemode: false,
     paid: true,
     captured: true,
     currency: "usd",
@@ -83,7 +84,6 @@ function fixture(t, { migrate = true } = {}) {
         const r = {
           id: "re_one",
           charge: charge.id,
-          livemode: false,
           currency: "usd",
           amount: body.amount,
           status: "succeeded",
@@ -308,5 +308,40 @@ test("paid business-review holds can request refunds but unverified unpaid holds
       .prepare("SELECT COUNT(*) n FROM streamlion_core_refund_requests_v1")
       .get().n,
     1,
+  );
+});
+
+test("real Stripe Refund responses without livemode are verified through their parent charge", async (t) => {
+  const { verifiedCoreRefunds } = await import("../../server/core-refunds.js");
+  const stripe = {
+    refunds: {
+      list: async () => ({
+        has_more: false,
+        data: [
+          {
+            id: "re_real",
+            charge: "ch_real",
+            currency: "usd",
+            amount: 3261,
+            status: "succeeded",
+          },
+        ],
+      }),
+    },
+  };
+  const charge = {
+    id: "ch_real",
+    livemode: false,
+    currency: "usd",
+    amount: 3261,
+    amount_refunded: 3261,
+  };
+  assert.equal(
+    (await verifiedCoreRefunds(stripe, charge, false)).state,
+    "succeeded",
+  );
+  await assert.rejects(
+    verifiedCoreRefunds(stripe, { ...charge, livemode: true }, false),
+    /purchase_mismatch/,
   );
 });

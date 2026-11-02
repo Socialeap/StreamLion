@@ -182,9 +182,12 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
       return response(catalog[path.split("/").at(-1)]);
     if (path === "/v1/checkout/sessions" && options.method === "POST") {
       const params = new URLSearchParams(options.body);
-      assert.equal(params.get('payment_method_types[0]'),'card');
-      assert.equal(params.get('wallet_options[link][display]'),'never');
-      assert.match(params.get('custom_text[submit][message]'),/\[your account page\]\(https:\/\/app\.example\/api\/purchase\)/);
+      assert.equal(params.get("payment_method_types[0]"), "card");
+      assert.equal(params.get("wallet_options[link][display]"), "never");
+      assert.match(
+        params.get("custom_text[submit][message]"),
+        /\[your account page\]\(https:\/\/app\.example\/api\/purchase\)/,
+      );
       created.push(params);
       assert.ok(
         params
@@ -320,6 +323,7 @@ function fixture(t, { launch = true, mode = "test", tax = false } = {}) {
           id: "ch_" + order.order_id,
           paid: true,
           captured: true,
+          livemode: mode === "live",
           currency: "usd",
           amount: session.amount_total || order.amount,
           amount_refunded: refund,
