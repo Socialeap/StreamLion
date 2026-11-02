@@ -445,6 +445,7 @@ async function createCheckout(env, stripe, identity, config, body) {
     ...businessCheckoutParams(order),
     mode: "payment",
     payment_method_types: ["card"],
+    wallet_options: { link: { display: "never" } },
     client_reference_id: order.order_id,
     customer_email: order.checkout_email,
     line_items: [{ price: order.price_id, quantity: 1 }],
