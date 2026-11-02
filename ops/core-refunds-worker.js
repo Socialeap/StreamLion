@@ -4,6 +4,26 @@ import {
   processRefundQueue,
 } from "../server/core-guarantee.js";
 import { reconcile } from "../server/stripe-purchase.js";
+export async function reconcileRefundOrders(
+  env,
+  stripe,
+  results,
+  reconcileOrder = reconcile,
+) {
+  for (const r of results) {
+    try {
+      await reconcileOrder(env, stripe, r.order_id, r.checkout_session, true);
+    } catch {
+      console.error(
+        JSON.stringify({
+          service: "streamlion-core-refunds",
+          orderId: r.order_id,
+          error: "reconciliation_failed",
+        }),
+      );
+    }
+  }
+}
 export default {
   async scheduled(event, env) {
     if (!refundsEnabled(env)) return;
@@ -18,8 +38,7 @@ export default {
     )
       .bind(env.STREAMLION_PAYMENTS_MODE)
       .all();
-    for (const r of results)
-      await reconcile(env, stripe, r.order_id, r.checkout_session, true);
+    await reconcileRefundOrders(env, stripe, results);
     console.log(
       JSON.stringify({
         service: "streamlion-core-refunds",

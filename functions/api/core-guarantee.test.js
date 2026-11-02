@@ -351,3 +351,19 @@ test("real Stripe Refund responses without livemode are verified through their p
     /purchase_mismatch/,
   );
 });
+
+test("a reconciliation failure does not prevent later refund orders from being checked", async () => {
+  const { reconcileRefundOrders } =
+    await import("../../ops/core-refunds-worker.js");
+  const checked = [];
+  await reconcileRefundOrders(
+    {},
+    {},
+    [{ order_id: "bad" }, { order_id: "good" }],
+    async (env, stripe, id) => {
+      checked.push(id);
+      if (id === "bad") throw Error("provider unavailable");
+    },
+  );
+  assert.deepEqual(checked, ["bad", "good"]);
+});

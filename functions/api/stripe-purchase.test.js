@@ -1821,3 +1821,23 @@ test("purchased access continues after day fourteen and later prices/offer chang
   assert.equal((await f.request("config")).status, 503);
   assert.equal(await hasPurchase(f.env, "account-a"), true);
 });
+
+test("refund receipt survives a cold Stripe preflight outage", async (t) => {
+  const f = fixture(t),
+    { cookie, order } = await f.checkout(),
+    s = f.paid(order);
+  await f.event("payment_intent.succeeded", s.payment_intent);
+  f.env.STRIPE_SECRET_KEY += "cold";
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("Stripe unavailable");
+  });
+  const response = await f.request("refund", { method: "POST", cookie });
+  assert.equal(response.status, 200);
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  assert.equal(
+    f.sql
+      .prepare("SELECT COUNT(*) n FROM streamlion_core_refund_requests_v1")
+      .get().n,
+    1,
+  );
+});

@@ -766,7 +766,6 @@ export async function handlePurchase({ request, env, params }) {
       return json(CHECKOUT_PAUSED, 403);
     if (path === "checkout" && !refundsEnabled(env))
       return json(CHECKOUT_PAUSED, 403);
-    await preflight(env, stripe);
     if (path === "refund") {
       await recordRefundRequest(env, mode, identity.google_subject, receivedAt);
       // The scheduled refund worker alone has refund-write credentials.
@@ -775,6 +774,7 @@ export async function handlePurchase({ request, env, params }) {
         purchased: await hasPurchase(env, identity.google_subject),
       });
     }
+    await preflight(env, stripe);
     if (path === "checkout" && request.method === "POST") {
       const body = request.body ? await boundedJSON(request) : {};
       return json(await createCheckout(env, stripe, identity, config, body));
