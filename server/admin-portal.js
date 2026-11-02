@@ -246,7 +246,24 @@ export async function handleAdmin(
       const days = Number(url.searchParams.get("days") || 30);
       if (![7, 30, 90].includes(days))
         throw fail(400, "Choose 7, 30 or 90 days.");
-      return reply(await overview(db, mode, time, days));
+      const result = await overview(db, mode, time, days);
+      if (
+        await db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE name='streamlion_core_refund_requests_v1'",
+          )
+          .first()
+      ) {
+        result.refundRequests = (
+          await db
+            .prepare(
+              "SELECT state,error,COUNT(*) AS count,MIN(received_at) AS oldestReceivedAt FROM streamlion_core_refund_requests_v1 WHERE mode=? GROUP BY state,error",
+            )
+            .bind(mode)
+            .all()
+        ).results;
+      }
+      return reply(result);
     }
     if (path.startsWith("users/")) {
       const target = decodeURIComponent(path.slice(6));

@@ -14,7 +14,6 @@ import {
   VALUE_TASKS,
 } from "./landing-value.js";
 import { initializeLandingVoice } from "./landing-voice.js";
-import { initializeLandingPilot } from "./landing-pilot.js";
 import { beforeLeaving } from "./workflow.js";
 import { closeoutNextActions } from "./landing-demo.js";
 import {
@@ -627,19 +626,20 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
     if (!config) return;
     const purchaseCTA = document.querySelector("[data-purchase-cta]");
     purchaseCTA.href = "/api/purchase";
-    purchaseCTA.textContent = "Purchase Now!";
+    purchaseCTA.textContent = `Buy Core — ${currency.format(config.amount / 100)}`;
     document.querySelector(".purchase-guarantee").hidden = false;
     const format = (amount) => currency.format(amount / 100);
     document.querySelector(".standard-price .price").textContent = format(
-      config.standardAmount,
+      config.amount,
     );
     document.querySelector(".launch-price .price").textContent = format(
       config.amount,
     );
-    const launch = config.amount < config.standardAmount;
-    document.querySelector(".launch-price h3").textContent = launch
-      ? "First 200 Only Launch Offer"
-      : "One-time purchase";
+    const launch = false;
+    document.querySelector("[data-core-promotion]").hidden =
+      config.promotionPhase !== "promotion";
+    document.querySelector(".launch-price h3").textContent =
+      "One-time purchase";
     document.querySelector(".original-price s").textContent = format(
       config.standardAmount,
     );
@@ -663,13 +663,15 @@ fetch("/api/purchase/config", { cache: "no-store", credentials: "same-origin" })
     document.querySelectorAll("[data-refund-period]").forEach((label) => {
       label.textContent = `${config.refundDays} days`;
     });
-    document.querySelector("[data-checkout-note]").textContent = launch
-      ? "Launch places are reserved when checkout starts. Final price and any taxes are shown before payment."
-      : "Pay once. Your final price and any taxes are shown before payment.";
+    document.querySelector("[data-checkout-note]").textContent =
+      config.promotionPhase === "promotion"
+        ? `$29.95 through ${new Date(config.promotionEndsAt - 1).toLocaleString("en-US", { timeZone: "America/New_York", timeZoneName: "short" })}. Pay once, plus applicable tax. No subscription or later charge.`
+        : "Pay once, plus applicable tax. No subscription or later charge.";
   })
   .catch(() => {
     /* Keep the standard-price HTML fallback; never imply unconfirmed slots. */
   });
 
 // Public pilot offers stay hidden until a fresh server policy is confirmed.
-initializeLandingPilot(document, window);
+// Existing pilot participants retain /pilot/ and their grants. New customers
+// follow the purchase offer; do not promote the retired free-first entry point.

@@ -125,9 +125,10 @@ event re-signed for a local fixture is not a Stripe-signed public delivery.
 
 ## 3. Legal and business configuration prerequisites — owner
 
-Seller: **Transcendence Media LLC**, based in NY. Its application is **pending
-issuance**, not an active Certificate of Authority. Keep taxable NY sales closed
-until the certificate is received and effective. Do not put application numbers,
+Seller: **Transcendence Media LLC**, based in NY. NY Business Express confirmed
+issuance on November 2, 2026. The actual certificate details and effective date
+still require verification. Keep sales paused until that verification, tax
+reconciliation and separate opening approval are complete. Do not put application numbers,
 tax IDs or certificate numbers in this repository or chat.
 
 Confirm product classification (cloud/downloaded business software as appropriate),
@@ -184,12 +185,11 @@ other modes. This configuration change requires its own review/merge and
 closed deployment before claiming tax activation; it does not authorize an
 upgrade or sales opening.
 
-On October 24, 2026, the owner rechecked the NY business dashboard and reported
-the certificate is still pending. The earlier October 24 date and any existing
-Stripe registration schedule are not proof of issuance or permission to sell.
-Do not duplicate or change a Stripe registration under the free-pilot task.
-Checkout must stay paused until the certificate is actually issued/effective
-and the separate legal, commercial and release approvals are satisfied.
+On November 2, 2026, the approval/issuance email was verified. Certificate
+details and effective date still require verification. The existing Stripe NY
+registration is active from October 24; reconcile it with the actual certificate,
+without guessing, duplicating registrations or treating issuance as sales approval.
+Use [the current release packet](purchase-first-release.md); checkout remains paused.
 
 Prerequisites: gates 2–4 accepted, applicable legal approval and explicit future
 cost approval. Verify Stripe live account and exact StreamLion product/price IDs

@@ -46,6 +46,9 @@ const bindings = {
   STREAMLION_CHECKOUT_MODE: "paused",
   STREAMLION_REQUIRE_LICENSE: "true",
   STREAMLION_REFUND_DAYS: "14",
+  STREAMLION_CORE_REFUNDS_ENABLED: "true",
+  STREAMLION_CORE_PROMOTION_END: "2027-01-01T05:00:00.000Z",
+  STREAMLION_CORE_AFTER_PROMOTION: "standard",
   STRIPE_SECRET_KEY: "sk_test_synthetic",
   STRIPE_WEBHOOK_SECRET: "whsec_synthetic",
   STRIPE_ACCOUNT_ID: "acct_synthetic",
@@ -329,7 +332,7 @@ try {
                 type: "one_time",
                 currency: "usd",
                 unit_amount: url.pathname.endsWith("price_launch")
-                  ? 2996
+                  ? 2995
                   : 3995,
                 product: {
                   id: "prod_synthetic",

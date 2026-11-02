@@ -945,6 +945,24 @@ export default function AdminPortal() {
         ) : null}
         {overview && tab === "overview" ? (
           <>
+            {overview.refundRequests?.length > 0 && (
+              <section aria-label="Core refund processing">
+                <h2>Core refund processing</h2>
+                <p>
+                  Requests initiate automatically. Funding, provider failures
+                  and missing verification can still need resolution.
+                </p>
+                <ul>
+                  {overview.refundRequests.map((r) => (
+                    <li key={r.state + ":" + r.error}>
+                      {r.count} {r.state}
+                      {r.error ? " — " + r.error.replaceAll("_", " ") : ""};
+                      oldest request {date(r.oldestReceivedAt)}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             <section className="admin-kpis" aria-label="Account overview">
               {[
                 ["Known accounts", overview.registered, Users],

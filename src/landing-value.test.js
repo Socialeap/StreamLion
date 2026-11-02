@@ -12,13 +12,17 @@ import {
 const liveQuote = {
   enabled: true,
   mode: "live",
-  amount: 2996,
+  amount: 2995,
   standardAmount: 3995,
   currency: "usd",
-  refundDays: 7,
-  launchRemaining: 1,
+  refundDays: 14,
+  promotionPhase: "promotion",
+  promotionEndsAt: Date.parse("2027-01-01T05:00:00.000Z"),
+  offer: "purchase-first-v1",
+  refundRequestsEnabled: true,
+  launchRemaining: null,
 };
-test("launch pricing requires a valid live quote and an available slot", () => {
+test("launch pricing requires a valid live quote without an admission cap", () => {
   assert.equal(confirmedPurchaseQuote(liveQuote), liveQuote);
   for (const config of [
     null,
@@ -28,16 +32,21 @@ test("launch pricing requires a valid live quote and an available slot", () => {
     { ...liveQuote, checkoutMode: "paused" },
     { ...liveQuote, checkoutMode: "owner_qa" },
     { ...liveQuote, mode: "test" },
-    { ...liveQuote, amount: "2996" },
+    { ...liveQuote, amount: "2995" },
     { ...liveQuote, currency: "eur" },
     { ...liveQuote, refundDays: 0 },
-    { ...liveQuote, launchRemaining: 0 },
-    { ...liveQuote, launchRemaining: undefined },
+    { ...liveQuote, offer: "old-offer" },
+    { ...liveQuote, refundRequestsEnabled: false },
   ])
     assert.equal(confirmedPurchaseQuote(config), null);
 });
 test("exhausted live quotes may show standard pricing", () => {
-  const standard = { ...liveQuote, amount: 3995, launchRemaining: 0 };
+  const standard = {
+    ...liveQuote,
+    amount: 3995,
+    promotionPhase: "standard",
+    launchRemaining: null,
+  };
   assert.equal(confirmedPurchaseQuote(standard), standard);
 });
 test("HTML without JavaScript or a successful quote only advertises standard pricing", () => {
@@ -46,7 +55,7 @@ test("HTML without JavaScript or a successful quote only advertises standard pri
   ).window.document;
   assert.equal(
     document.querySelector(".launch-price .price").textContent,
-    "$39.95",
+    "$29.95",
   );
   assert.equal(
     document.querySelector(".launch-price h3").textContent,
@@ -83,11 +92,11 @@ test("illustrative defaults compare both prices", () => {
 test("exact price boundaries cover the purchase in one job", () => {
   assert.equal(estimateTimeValue(60, 39.95).standardJobs, 1);
   assert.equal(estimateTimeValue(20, 119.85).standardJobs, 1);
-  assert.equal(estimateTimeValue(60, 29.96).launchJobs, 1);
+  assert.equal(estimateTimeValue(60, 29.95).launchJobs, 1);
   assert.equal(estimateTimeValue(480, 10000).standardProgress, 1);
 });
 test("uses unrounded value rather than displayed currency", () => {
-  const result = estimateTimeValue(60, 9.986);
+  const result = estimateTimeValue(60, 9.982);
   assert.equal(result.standardJobs, 5);
   assert.equal(result.launchJobs, 4);
 });
@@ -176,7 +185,7 @@ test("equation preserves the entered rate and fractional minutes before rounding
   }
 });
 
-test("landing fallbacks, purchase terms and support disclose the coordinated 14-day delivery limit", () => {
+test("landing fallbacks, purchase terms and support disclose the unconditional 14-day guarantee", () => {
   const landing = new JSDOM(
     readFileSync(new URL("../api/welcome.html", import.meta.url), "utf8"),
   ).window.document;
@@ -186,18 +195,18 @@ test("landing fallbacks, purchase terms and support disclose the coordinated 14-
     assert.match(label.textContent, /14-day money-back guarantee/);
     assert.match(
       label.closest("p").textContent.replace(/\s+/g, " "),
-      /before your first project delivery through StreamLion/,
+      /no usage(?:,| or) delivery condition|no usage, delivery/i,
     );
   }
   const terms = new JSDOM(
     readFileSync(new URL("../public/api/terms.html", import.meta.url), "utf8"),
   ).window.document.body.textContent;
   assert.match(terms, /14-day money-back guarantee/);
-  assert.match(terms, /before your first project delivery through StreamLion/);
   assert.match(
     terms,
-    /do not retrospectively impose the first-delivery condition/,
+    /no usage(?:,| or) delivery condition|no usage, delivery/i,
   );
+  assert.match(terms, /do not retrospectively weaken earlier purchase terms/);
   assert.match(terms, /mandatory consumer rights/);
   const support = new JSDOM(
     readFileSync(
@@ -208,6 +217,6 @@ test("landing fallbacks, purchase terms and support disclose the coordinated 14-
   assert.match(support, /14-day money-back guarantee/);
   assert.match(
     support,
-    /before your first project delivery through StreamLion/,
+    /no usage(?:,| or) delivery condition|no usage, delivery/i,
   );
 });

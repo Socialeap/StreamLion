@@ -7,6 +7,16 @@ import {
 import Stripe from "stripe";
 import { ownerWorkspaceQa } from "./owner-core-qa.js";
 import { coreRefundRequestText } from "../src/refund-policy.js";
+import { verifiedCoreRefunds } from "./core-refunds.js";
+import {
+  CORE_OFFER,
+  refundsEnabled,
+  guaranteeSchema,
+  guaranteeStatus,
+  recordRefundRequest,
+  recordSuccessfulPayment,
+} from "./core-guarantee.js";
+import { coreOffer } from "./core-offer.js";
 import {
   checkoutTaxMode,
   taxSchemaReady,
@@ -26,13 +36,13 @@ import {
   hasPurchase,
 } from "./purchase-access.js";
 const API_VERSION = "2026-08-26.dahlia";
-const LAUNCH_PLACES = 200;
 const purchaseMethods = new Map([
   ["config", "GET"],
   ["status", "GET"],
   ["checkout", "POST"],
   ["confirm", "POST"],
   ["webhook", "POST"],
+  ["refund", "POST"],
 ]);
 const json = (value, status = 200) =>
   new Response(JSON.stringify(value), {
@@ -108,6 +118,7 @@ export async function preflight(env, stripe) {
   accountChecks.set(cacheKey, Date.now() + 60000);
 }
 async function prices(env, stripe, mode) {
+  await guaranteeSchema(env);
   const taxMode = checkoutTaxMode(env);
   await taxSchemaReady(env, taxMode);
   const load = async (id) => {
@@ -132,7 +143,13 @@ async function prices(env, stripe, mode) {
   const launch = env.STRIPE_LAUNCH_PRICE_ID
     ? await load(env.STRIPE_LAUNCH_PRICE_ID)
     : null;
-  if (launch && launch.unit_amount !== 2996)
+  // The approved promotion has a fixed cutoff, never a rolling admission cap.
+  // Old orders still reconcile against their own saved price and tax contract.
+  if (
+    !launch ||
+    launch.unit_amount !== 2995 ||
+    env.STREAMLION_REFUND_DAYS !== "14"
+  )
     throw new Error("purchase_configuration");
   return { standard, launch };
 }
@@ -146,6 +163,7 @@ async function quotePrices(env, stripe, mode) {
     env.STRIPE_PRODUCT_ID,
     env.STRIPE_PRICE_ID,
     env.STRIPE_LAUNCH_PRICE_ID,
+    env.STREAMLION_REFUND_DAYS,
     mode,
     checkoutTaxMode(env),
   ]);
@@ -229,7 +247,13 @@ export function validateCheckout(session, order) {
 }
 // Read current Stripe state, rather than trusting the age/order of event payloads.
 // CAS prevents a delayed completion read from overwriting a concurrent refund write.
-export async function reconcile(env, stripe, orderId, sessionId) {
+export async function reconcile(
+  env,
+  stripe,
+  orderId,
+  sessionId,
+  inspectRefunds = false,
+) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const order = await first(
       env,
@@ -251,7 +275,8 @@ export async function reconcile(env, stripe, orderId, sessionId) {
             ? "failed"
             : "processing"
           : "pending";
-    let refunded = 0;
+    let refunded = 0,
+      refundState = "none";
     if (session.payment_status === "paid") {
       const charge = intent?.latest_charge;
       if (
@@ -268,7 +293,12 @@ export async function reconcile(env, stripe, orderId, sessionId) {
           charge.amount !== session.amount_total)
       )
         throw new Error("purchase_mismatch");
-      refunded = charge.amount_refunded || 0;
+      ({ amount: refunded, state: refundState } = await verifiedCoreRefunds(
+        stripe,
+        charge,
+        session.livemode,
+        inspectRefunds || order.amount_refunded > 0,
+      ));
       status = refunded >= charge.amount ? "refunded" : "paid";
       if (charge.disputed) {
         const disputes = await stripe.disputes.list({
@@ -306,6 +336,8 @@ export async function reconcile(env, stripe, orderId, sessionId) {
         ...order,
         status,
         amount_refunded: refunded,
+        payment_intent: idOf(intent) || null,
+        refundState,
         businessReview: review,
       };
   }
@@ -317,7 +349,7 @@ async function createCheckout(env, stripe, identity, config, body) {
   if (await hasPurchase(env, identity.google_subject))
     return { purchased: true };
   await limited(env, identity.google_subject);
-  const catalog = await prices(env, stripe, config.mode);
+  let catalog;
   await run(
     env,
     "UPDATE streamlion_purchases_v1 SET status='expired',promo_slot=NULL,revision=revision+1 WHERE mode=? AND checkout_session IS NULL AND status='pending' AND expires_at <= ?",
@@ -355,38 +387,33 @@ async function createCheckout(env, stripe, identity, config, body) {
     } else order = null;
   }
   if (!order) {
+    catalog = await prices(env, stripe, config.mode);
+    const offer = coreOffer(env);
+    if (!offer.available) throw Error("purchase_configuration");
+    const selected =
+      offer.phase === "promotion" ? catalog.launch : catalog.standard;
     requireBusinessConsent(body);
     await requireBusinessSchema(env);
     const now = Date.now(),
       orderId = crypto.randomUUID();
-    // Reserve at most 200 launch slots in the same atomic INSERT. Pending and
-    // delayed payments hold their slots; only confirmed expiry/failure frees one.
+    // The existing unique pending-account index deduplicates concurrent starts.
+    // Historical promo slots remain untouched; new purchases consume no slot.
     await run(
       env,
-      `WITH RECURSIVE slots(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM slots WHERE n<${LAUNCH_PLACES}),
-      candidate AS (SELECT MIN(n) AS slot FROM slots WHERE NOT EXISTS
-        (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND promo_slot=n))
-      INSERT OR IGNORE INTO streamlion_purchases_v1
-        (order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,status,created_at,expires_at,updated_at,checkout_business_policy${taxMode === "stripe" ? ",checkout_tax_mode" : ""})
-      SELECT ?,?,?,?,CASE WHEN ? AND slot IS NOT NULL THEN ? ELSE ? END,?,
-        CASE WHEN ? AND slot IS NOT NULL THEN ? ELSE ? END,'usd',
-        CASE WHEN ? THEN slot ELSE NULL END,'pending',?,?,?,1${taxMode === "stripe" ? ",'stripe'" : ""} FROM candidate WHERE NOT EXISTS (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND google_subject=? AND status='paid')`,
-      config.mode,
+      `INSERT OR IGNORE INTO streamlion_purchases_v1
+        (order_id,mode,google_subject,checkout_email,price_id,product_id,amount,currency,promo_slot,status,created_at,expires_at,updated_at,checkout_business_policy,core_offer,refund_days${taxMode === "stripe" ? ",checkout_tax_mode" : ""})
+      SELECT ?,?,?,?,?,?,?,'usd',NULL,'pending',?,?,?,1,?,14${taxMode === "stripe" ? ",'stripe'" : ""} WHERE NOT EXISTS (SELECT 1 FROM streamlion_purchases_v1 WHERE mode=? AND google_subject=? AND status='paid')`,
       orderId,
       config.mode,
       identity.google_subject,
       identity.email,
-      catalog.launch ? 1 : 0,
-      catalog.launch?.id || "",
-      catalog.standard.id,
+      selected.id,
       env.STRIPE_PRODUCT_ID,
-      catalog.launch ? 1 : 0,
-      catalog.launch?.unit_amount || 0,
-      catalog.standard.unit_amount,
-      catalog.launch ? 1 : 0,
+      selected.unit_amount,
       now,
       now + 3600000,
       now,
+      CORE_OFFER,
       config.mode,
       identity.google_subject,
     );
@@ -407,7 +434,7 @@ async function createCheckout(env, stripe, identity, config, body) {
   // Its price may no longer be offered by the currently configured catalog.
   if (order.checkout_tax_mode === "stripe") {
     const price =
-      [catalog.standard, catalog.launch].find(
+      [catalog?.standard, catalog?.launch].find(
         (price) => price?.id === order.price_id,
       ) ||
       (await stripe.prices.retrieve(order.price_id, { expand: ["product"] }));
@@ -420,10 +447,18 @@ async function createCheckout(env, stripe, identity, config, body) {
     client_reference_id: order.order_id,
     customer_email: order.checkout_email,
     line_items: [{ price: order.price_id, quantity: 1 }],
-    metadata: { app: "streamlion", order_id: order.order_id },
+    metadata: {
+      app: "streamlion",
+      order_id: order.order_id,
+      core_refund_policy: "payment-14-days-unconditional-v1",
+    },
     payment_intent_data: {
       statement_descriptor_suffix: "STREAMLION",
-      metadata: { app: "streamlion", order_id: order.order_id },
+      metadata: {
+        app: "streamlion",
+        order_id: order.order_id,
+        core_refund_policy: "payment-14-days-unconditional-v1",
+      },
     },
     expires_at: Math.floor(order.expires_at / 1000),
     success_url:
@@ -473,6 +508,10 @@ const EVENTS = new Set([
   "checkout.session.async_payment_failed",
   "checkout.session.expired",
   "charge.refunded",
+  "refund.created",
+  "refund.updated",
+  "refund.failed",
+  "payment_intent.succeeded",
   "charge.dispute.created",
   "charge.dispute.closed",
   "charge.dispute.funds_withdrawn",
@@ -530,7 +569,10 @@ async function webhook(request, env, stripe, config) {
     return json({ received: true });
   const object = event.data.object;
   let order;
-  if (event.type.startsWith("checkout.session.")) {
+  if (
+    event.type.startsWith("checkout.session.") ||
+    event.type === "payment_intent.succeeded"
+  ) {
     if (
       object.metadata?.app !== "streamlion" ||
       object.metadata?.kind === "ai_credits"
@@ -566,14 +608,23 @@ async function webhook(request, env, stripe, config) {
   // A recognized but not yet linked StreamLion order is retried, not swallowed.
   if (!order || order.mode !== config.mode)
     throw new Error("purchase_mismatch");
-  await reconcile(
+  const settled = await reconcile(
     env,
     stripe,
     order.order_id,
     event.type.startsWith("checkout.session.")
       ? object.id
       : order.checkout_session,
+    event.type.startsWith("refund."),
   );
+  if (
+    event.type === "payment_intent.succeeded" &&
+    order.core_offer === CORE_OFFER
+  ) {
+    if (object.id !== settled.payment_intent || object.status !== "succeeded")
+      throw Error("purchase_mismatch");
+    await recordSuccessfulPayment(env, order.order_id, event.created * 1000);
+  }
   await run(
     env,
     "INSERT OR IGNORE INTO streamlion_stripe_events_v1 VALUES (?,?,?,?)",
@@ -585,6 +636,7 @@ async function webhook(request, env, stripe, config) {
   return json({ received: true });
 }
 export async function handlePurchase({ request, env, params }) {
+  const receivedAt = Date.now();
   const path = (params.path || []).join("/"),
     mode = paymentMode(env),
     required = licenseRequired(env);
@@ -655,6 +707,15 @@ export async function handlePurchase({ request, env, params }) {
           ? { account: identity.email, subject: identity.google_subject }
           : {}),
         purchased,
+        ...(identity
+          ? {
+              guarantee: await guaranteeStatus(
+                env,
+                mode,
+                identity.google_subject,
+              ),
+            }
+          : {}),
         ...(ownerQa ? { ownerQa } : {}),
       });
     }
@@ -663,30 +724,28 @@ export async function handlePurchase({ request, env, params }) {
     if (path === "config" && request.method === "GET") {
       await preflight(env, stripe);
       const catalog = await quotePrices(env, stripe, mode);
-      const used = await first(
-        env,
-        "SELECT COUNT(*) AS count FROM streamlion_purchases_v1 WHERE mode=? AND promo_slot IS NOT NULL",
-        mode,
-      );
-      const launch = catalog.launch && used.count < LAUNCH_PLACES;
+      const offer = coreOffer(env);
       const access = await checkoutQuoteAccess(request, env);
       return json({
-        enabled: access.allowed,
+        enabled: access.allowed && refundsEnabled(env) && offer.available,
         checkoutMode: access.mode,
         required,
         mode,
         currency: "usd",
         taxMode: checkoutTaxMode(env),
         businessUseRequired: true,
-        amount: launch
-          ? catalog.launch.unit_amount
-          : catalog.standard.unit_amount,
+        amount:
+          offer.phase === "promotion"
+            ? catalog.launch.unit_amount
+            : catalog.standard.unit_amount,
+        promotionEndsAt: offer.endsAt,
+        promotionPhase: offer.phase,
         standardAmount: catalog.standard.unit_amount,
-        launchRemaining: catalog.launch
-          ? Math.max(0, LAUNCH_PLACES - used.count)
-          : 0,
-        launchCapacity: LAUNCH_PLACES,
+        offer: "purchase-first-v1",
+        launchRemaining: null,
+        launchCapacity: null,
         refundDays: config.refundDays,
+        refundRequestsEnabled: refundsEnabled(env),
       });
     }
     const identity = await getSession(request, env);
@@ -703,7 +762,17 @@ export async function handlePurchase({ request, env, params }) {
       return json({ error: "Your account changed. Reopen this page." }, 403);
     if (path === "checkout" && !checkoutAccess(env, identity).allowed)
       return json(CHECKOUT_PAUSED, 403);
+    if (path === "checkout" && !refundsEnabled(env))
+      return json(CHECKOUT_PAUSED, 403);
     await preflight(env, stripe);
+    if (path === "refund") {
+      await recordRefundRequest(env, mode, identity.google_subject, receivedAt);
+      // The scheduled refund worker alone has refund-write credentials.
+      return json({
+        guarantee: await guaranteeStatus(env, mode, identity.google_subject),
+        purchased: await hasPurchase(env, identity.google_subject),
+      });
+    }
     if (path === "checkout" && request.method === "POST") {
       const body = request.body ? await boundedJSON(request) : {};
       return json(await createCheckout(env, stripe, identity, config, body));

@@ -1,3 +1,5 @@
+> Historical setup record. For the November 2 purchase-first offer and exact current actions, use [purchase-first-release.md](purchase-first-release.md). Do not replay completed migrations, obsolete price limits or the first-delivery condition below.
+
 # StreamLion one-time purchases: activation and acceptance
 
 **HOLD — ACTIVATE ONLY AFTER PR MERGE AND OWNER CONFIGURATION APPROVAL.**
