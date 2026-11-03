@@ -95,9 +95,21 @@ export async function removeSiteCopy(bookId) {
 }
 export function download(blob, name) {
   const url = URL.createObjectURL(blob);
+  try {
+    downloadURL(url, name);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+}
+export function downloadURL(url, name) {
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  a.hidden = true;
+  document.body.appendChild(a);
+  try {
+    a.click();
+  } finally {
+    a.remove();
+  }
 }

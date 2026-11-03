@@ -1,7 +1,7 @@
 import { CircleCheck } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-export default function DownloadNotice({ fileName, label }) {
+export default function DownloadNotice({ fileName, label, requested = false }) {
   const notice = useRef(null);
   useEffect(() => {
     if (fileName) notice.current?.scrollIntoView?.({ block: "nearest" });
@@ -16,7 +16,9 @@ export default function DownloadNotice({ fileName, label }) {
     >
       <CircleCheck size={24} aria-hidden="true" />
       <div>
-        <strong>{label} download started</strong>
+        <strong>
+          {label} download {requested ? "requested" : "started"}
+        </strong>
         <span className="download-filename">{fileName}</span>
         <p>
           Check Downloads or your file manager. If your browser asks, allow the

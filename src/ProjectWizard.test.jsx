@@ -626,3 +626,162 @@ test("each project field has a help explanation", () => {
 
 test.afterEach(() => cleanup());
 test.after(() => dom.window.close());
+
+test("Finish project download uses an attached link, reports its filename and offers valid copyable JSON", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  let captured;
+  t.mock.method(URL, "createObjectURL", () => "blob:project-test");
+  t.mock.method(URL, "revokeObjectURL", () => {});
+  t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", function () {
+    assert.equal(this.isConnected, true);
+    captured = this.download;
+  });
+  const ui = render(
+    <ProjectEditor
+      onSave={async () => {}}
+      onCancel={() => {}}
+      draftScope="download-finish"
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Synthetic mobile QA" },
+  });
+  for (let i = 0; i < 7; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  assert.equal(captured, "streamlion-project.json");
+  assert.match(
+    within(ui.container.querySelector(".finish-review")).getByRole("status")
+      .textContent,
+    /download requested/,
+  );
+  assert.equal(
+    ui
+      .getByRole("link", { name: "save the project details file directly" })
+      .getAttribute("href"),
+    "blob:project-test",
+  );
+  assert.equal(
+    JSON.parse(ui.getByLabelText("Project details JSON").value).fields.title,
+    "Synthetic mobile QA",
+  );
+  fireEvent.change(ui.getByLabelText("Sources: document, page, passage"), {
+    target: { value: "New source after export" },
+  });
+  assert.equal(
+    ui.queryByRole("link", { name: "save the project details file directly" }),
+    null,
+  );
+});
+
+test("a browser download failure leaves copyable project JSON and an adjacent error", (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  t.mock.method(URL, "createObjectURL", () => {
+    throw Error("Downloads unavailable");
+  });
+  const ui = render(
+    <ProjectEditor
+      onSave={async () => {}}
+      onCancel={() => {}}
+      draftScope="blocked-download"
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Keep my mobile details" },
+  });
+  for (let i = 0; i < 7; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  const alert = ui.getByRole("alert");
+  assert.match(alert.textContent, /Downloads unavailable/);
+  assert(alert.closest(".finish-review"));
+  assert.equal(ui.queryByText(/download started/), null);
+  assert.equal(
+    JSON.parse(ui.getByLabelText("Project details JSON").value).fields.title,
+    "Keep my mobile details",
+  );
+});
+
+test("invalid project fields explain the blocked export beside the Finish button without losing edits", (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const ui = render(
+    <ProjectEditor
+      onSave={async () => {}}
+      onCancel={() => {}}
+      draftScope="invalid-download"
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Keep invalid draft" },
+  });
+  for (let i = 0; i < 5; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.change(ui.getByLabelText("Offered fee"), {
+    target: { value: "$200" },
+  });
+  for (let i = 0; i < 2; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  assert.match(
+    ui.getByRole("alert").textContent,
+    /without units or currency symbols/,
+  );
+  assert(ui.getByRole("alert").closest(".finish-review"));
+  assert.equal(ui.queryByText(/download started/), null);
+  fireEvent.click(ui.getByRole("button", { name: /Step 7:/ }));
+  assert.equal(ui.getByLabelText("Offered fee").value, "$200");
+});
+
+test("the reported currency error stays beside export and links to a correctable Payment field", (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  t.mock.method(URL, "createObjectURL", () => "blob:currency-test");
+  t.mock.method(URL, "revokeObjectURL", () => {});
+  t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", () => {});
+  const ui = render(
+    <ProjectEditor
+      onSave={async () => {}}
+      onCancel={() => {}}
+      draftScope="currency-export"
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Currency QA" },
+  });
+  for (let i = 0; i < 5; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.change(ui.getByLabelText("Currency (ISO code)"), {
+    target: { value: "US Dollars" },
+  });
+  for (let i = 0; i < 2; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  assert.match(
+    ui.getByRole("alert").textContent,
+    /Use a three-letter uppercase currency code/,
+  );
+  assert(ui.getByRole("alert").closest(".finish-review"));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Review currency in Payment" }),
+  );
+  assert.equal(ui.getByLabelText("Currency (ISO code)").value, "US DOLLARS");
+  fireEvent.change(ui.getByLabelText("Currency (ISO code)"), {
+    target: { value: "usd" },
+  });
+  assert.equal(ui.getByLabelText("Currency (ISO code)").value, "USD");
+  for (let i = 0; i < 2; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  assert.equal(ui.queryByRole("alert"), null);
+  assert.equal(
+    JSON.parse(ui.getByLabelText("Project details JSON").value).fields.currency,
+    "USD",
+  );
+});
