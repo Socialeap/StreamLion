@@ -12,6 +12,7 @@ import {
 import useManagedAnswers from "./useManagedAnswers.js";
 import { creditLabel, aiAvailabilityMessage } from "./managed-ai.js";
 import FocusedAsk from "./FocusedAsk.jsx";
+import BriefComparison from "./BriefComparison.jsx";
 
 const preferenceKey = "streamlion-read-answers-v1";
 const speechErrors = {
@@ -664,6 +665,10 @@ function VoiceAnswers({
             </div>
           ))}
           <p className="hint">{result.sourceLabel}</p>
+          {result.kind === "answer" &&
+            result.answers.some((item) => item.topic === "ai") && (
+              <BriefComparison project={project} />
+            )}
           {canSpeak &&
             ["answer", "unsupported"].includes(result.kind) &&
             !speaking &&

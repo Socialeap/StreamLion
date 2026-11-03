@@ -377,6 +377,24 @@ test("answers are validated before they are kept", () => {
   assert.throws(
     () =>
       times.validate(
+        { slots: [{ date: "", window: "morning" }], flexible: true },
+        {},
+        {},
+      ),
+    /Add a date or clear the selected time/,
+  );
+  assert.throws(
+    () =>
+      times.validate(
+        { slots: [{ date: day(3), window: "" }], flexible: true },
+        {},
+        {},
+      ),
+    /Choose a time of day or clear the selected date/,
+  );
+  assert.throws(
+    () =>
+      times.validate(
         { slots: [{ date: day(-1), window: "any" }], flexible: false },
         {},
         {},

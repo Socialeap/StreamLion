@@ -59,6 +59,79 @@ function providerAPI(job) {
     throw new Error("Unexpected fixture request: " + path);
   };
 }
+test("provider can review exact client wording, measurement needs and agreement without implying a scheduled visit", async (t) => {
+  t.after(cleanup);
+  const job = fixture();
+  const fields = {
+    ...job.fields,
+    scope: "Capture the lobby. Exclude the storage room.",
+    exclusions: "",
+    notes:
+      "Clarify ceiling height.\nExact dimensions needed for: Both meeting rooms",
+  };
+  job.fields = fields;
+  job.accepted = { ...fields };
+  job.questions = [
+    { id: "q1", text: "Confirm the atrium clearance.", answer: "" },
+  ];
+  const base = providerAPI(job);
+  const ui = render(
+    <Portal
+      api={async (path) =>
+        path === "provider/status"
+          ? {
+              ...(await base(path)),
+              email: "owner@example.test",
+              workbook: "selected-book",
+            }
+          : base(path)
+      }
+    />,
+  );
+  const order = within(await ui.findByRole("region", { name: "Work order" }));
+  assert.equal(
+    order.getByText("Brief agreed", { selector: ".coord-pill" }).textContent,
+    "Brief agreed",
+  );
+  assert.ok(order.getByText("Visit not scheduled"));
+  assert.ok(
+    ui.getByRole("button", {
+      name: /Account: owner@example.test.*workbook selected/i,
+    }),
+  );
+  fireEvent.click(order.getByText("Briefing highlights"));
+  const highlights = within(
+    order.getByRole("region", { name: "Briefing highlights" }),
+  );
+  assert.ok(
+    highlights.getByText("Capture the lobby. Exclude the storage room."),
+  );
+  assert.ok(highlights.getByText("Both meeting rooms"));
+  assert.ok(highlights.getByText(/Clarify ceiling height/));
+  assert.ok(highlights.getByText("Confirm the atrium clearance."));
+  assert.equal(order.getByRole("textbox", { name: "Exclusions" }).value, "");
+  assert.equal(
+    order.getByRole("textbox", { name: /Scope of work/ }).value,
+    fields.scope,
+  );
+});
+for (const [appointmentStatus, expected] of [
+  ["proposed", "Proposed · 2026-11-10 09:00 · America/New_York"],
+  ["confirmed", "2026-11-10 09:00 · America/New_York"],
+])
+  test(`appointment summary distinguishes ${appointmentStatus} timing`, async (t) => {
+    t.after(cleanup);
+    const job = fixture();
+    job.fields = {
+      ...job.fields,
+      appointmentStatus,
+      startLocal: "2026-11-10T09:00",
+      timeZone: "America/New_York",
+    };
+    const ui = render(<Portal api={providerAPI(job)} />);
+    const order = within(await ui.findByRole("region", { name: "Work order" }));
+    assert.ok(order.getByText(expected));
+  });
 async function selectPageSection(ui, label) {
   const name = "Go to " + label;
   let button = ui.queryByRole("button", { name, exact: true });
@@ -698,7 +771,7 @@ test("provider has a copyable job-specific link that contains no verification cr
   });
   const ui = render(<Portal api={providerAPI(job)} />);
   await ui.findByRole("heading", { name: "Invite a client" });
-  fireEvent.click(ui.getByRole("button", { name: /Office.*Confirmed/ }));
+  fireEvent.click(ui.getByRole("button", { name: /Office.*Brief agreed/ }));
   const link = await ui.findByLabelText("Private project link");
   assert.equal(link.value, "https://app.example/api/client-portal?job=job-a");
   fireEvent.click(ui.getByRole("button", { name: "Copy client link" }));
@@ -739,7 +812,7 @@ test("an exhausted email allowance explains resumption and disables invites whil
     ui.getByRole("button", { name: "Create request & invite" }).disabled,
     true,
   );
-  fireEvent.click(ui.getByRole("button", { name: /Office.*Confirmed/ }));
+  fireEvent.click(ui.getByRole("button", { name: /Office.*Brief agreed/ }));
   await ui.findByLabelText("Private project link");
   fireEvent.click(ui.getByRole("button", { name: "Progress", exact: true }));
   assert.equal(
@@ -765,7 +838,7 @@ test("public requests offer email sign-in only after the prospect verifies, pres
     job.accepted.requesterEmail = email;
     const ui = render(<Portal api={providerAPI(job)} />);
     fireEvent.click(
-      await ui.findByRole("button", { name: /Office.*Confirmed/ }),
+      await ui.findByRole("button", { name: /Office.*Brief agreed/ }),
     );
     assert.equal(ui.queryByLabelText("Private project link"), null);
     assert.ok(ui.getByText(/prospect received a private status link/));
@@ -780,7 +853,9 @@ test("public requests offer email sign-in only after the prospect verifies, pres
   job.source = "public-form";
   job.emailVerified = true;
   const ui = render(<Portal api={providerAPI(job)} />);
-  fireEvent.click(await ui.findByRole("button", { name: /Office.*Confirmed/ }));
+  fireEvent.click(
+    await ui.findByRole("button", { name: /Office.*Brief agreed/ }),
+  );
   assert.ok(ui.getByLabelText("Private project link"));
   fireEvent.click(ui.getByRole("button", { name: "Progress", exact: true }));
   assert.equal(

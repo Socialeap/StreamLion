@@ -127,6 +127,16 @@ export function AvailabilityWidget({
               aria-invalid={error ? true : undefined}
               onChange={(event) => change(index, { date: event.target.value })}
             />
+            {slot.date && (
+              <button
+                type="button"
+                className="setup-quiet"
+                aria-label={`Clear date for option ${index + 1}`}
+                onClick={() => change(index, { date: "" })}
+              >
+                Clear date
+              </button>
+            )}
             {slots.length > 1 && (
               <button
                 type="button"
@@ -155,6 +165,16 @@ export function AvailabilityWidget({
               </button>
             ))}
           </div>
+          {slot.window && (
+            <button
+              type="button"
+              className="setup-quiet"
+              aria-label={`Clear time for option ${index + 1}`}
+              onClick={() => change(index, { window: "" })}
+            >
+              Clear time
+            </button>
+          )}
         </fieldset>
       ))}
       <div className="setup-dock-actions">
