@@ -503,7 +503,7 @@ test("temporary owner QA opens only the online workspace and never persists an o
     "streamlion-purchase-receipt-v1",
     JSON.stringify({ expires: Date.now() + 86400000 }),
   );
-  const expiresAt = Date.now() + 60000;
+  const expiresAt = Date.now() + 72 * 3600000;
   t.mock.method(globalThis, "fetch", async (url) =>
     response(
       url.endsWith("/api/purchase/status")

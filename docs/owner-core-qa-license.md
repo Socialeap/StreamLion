@@ -19,8 +19,8 @@ For the separately scoped Core plus coordination test, see
   must have the established owner email. A fresh database read must also confirm
   the same owner remains enabled under the live admin policy. No authorization
   result is cached. Missing configuration, malformed grants and DB errors deny QA.
-- The offline preparer issues two hours of access from generation. The server
-  rejects any interval longer than 24 hours, future starts and expired grants.
+- The offline preparer defaults to two hours from generation. An explicitly approved workspace-only duration can be set with --hours (maximum 72); coordination remains capped at two hours. The server
+  rejects any workspace-only interval longer than 72 hours, future starts and expired grants.
 - The scope is `google-workspace`: existing guarded Sheets/Drive/Picker operations
   behind the Core Google proxy. All ordinary upstream restrictions, quotas,
   mutation validation and managed-project protections remain enforced.
@@ -40,7 +40,7 @@ For the separately scoped Core plus coordination test, see
    without the optional grant. Verify the exact `/release.json`, anonymous denial,
    existing purchased access, and paused checkout. No migration is required;
    neither scheduled Worker requires deployment.
-3. Obtain explicit owner approval to activate **two hours**, for the existing
+3. Obtain explicit owner approval to activate a bounded window (two hours by default; up to **72 hours** for workspace-only QA), for the existing
    verified production owner only, covering Google workspace QA. Preparation or
    merge approval is not activation approval.
 4. Codex obtains a private read-only operator receipt from the existing production

@@ -22,7 +22,7 @@ export default function LicenseGate({ children }) {
         receipt.ownerQa?.scope === "google-workspace" &&
         Number.isSafeInteger(receipt.ownerQa.expiresAt) &&
         receipt.ownerQa.expiresAt > Date.now() &&
-        receipt.ownerQa.expiresAt <= Date.now() + 86400000
+        receipt.ownerQa.expiresAt <= Date.now() + 72 * 3600000
           ? receipt.ownerQa
           : null;
       setOwnerQa(qa);

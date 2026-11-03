@@ -7,6 +7,7 @@ const { values } = parseArgs({
   options: {
     "identity-file": { type: "string" },
     out: { type: "string" },
+    hours: { type: "string", default: "2" },
     coordination: { type: "boolean", default: false },
   },
 });
@@ -25,6 +26,13 @@ try {
     throw Error(
       "Expected the existing enabled verified production owner enrollment; STOP.",
     );
+  const hours = Number(values.hours);
+  if (
+    !Number.isInteger(hours) ||
+    hours < 1 ||
+    hours > (values.coordination ? 2 : 72)
+  )
+    throw Error("invalid_duration");
   const issuedAt = Date.now();
   const grant = {
     version: 1,
@@ -35,7 +43,7 @@ try {
     origin: "https://streamlion.transcendencemedia.com",
     subject: identity.google_subject,
     issuedAt,
-    expiresAt: issuedAt + 7200000,
+    expiresAt: issuedAt + hours * 3600000,
     reason: values.coordination
       ? "Owner-only production Core and client coordination QA"
       : "Owner-only production Google workspace QA",

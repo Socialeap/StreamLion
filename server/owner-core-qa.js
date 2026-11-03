@@ -30,7 +30,7 @@ export async function ownerWorkspaceQa(env, identity, now = Date.now()) {
       grant.expiresAt - grant.issuedAt >
         (grant.scope === "google-workspace-and-coordination"
           ? 7200000
-          : 86400000) ||
+          : 72 * 3600000) ||
       grant.issuedAt > now ||
       grant.expiresAt <= now ||
       typeof grant.reason !== "string" ||
