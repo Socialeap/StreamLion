@@ -926,3 +926,52 @@ test("the visit selector preserves a valid saved time-zone alias", (t) => {
   });
   assert.equal(picker.value, "US/Eastern");
 });
+
+test("location search never strands the visit selector and never chooses a zone automatically", (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  t.mock.method(URL, "createObjectURL", () => "blob:location-test");
+  t.mock.method(URL, "revokeObjectURL", () => {});
+  t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", () => {});
+  writeDraft(projectDraftKey("location-search"), {
+    fields: {
+      ...Object.fromEntries(PROJECT_FIELDS.map((f) => [f.key, ""])),
+      title: "Location QA",
+      startLocal: "2026-11-04T10:00",
+    },
+  });
+  const ui = render(
+    <ProjectEditor
+      draftScope="location-search"
+      onSave={async () => {}}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 5: When is the visit?" }),
+  );
+  const search = ui.getByLabelText("Find a time zone");
+  const select = ui.getByRole("combobox", {
+    name: "Time zone (e.g. America/New_York)",
+  });
+  fireEvent.change(search, { target: { value: "America/Texas" } });
+  assert(within(select).getByRole("option", { name: "America / Chicago" }));
+  assert(within(select).getByRole("option", { name: "America / Denver" }));
+  assert(ui.getByText(/Texas spans Central/));
+  assert.equal(select.value, "");
+  fireEvent.change(search, { target: { value: "San Diego, California" } });
+  assert(within(select).getByRole("option", { name: "America / Los Angeles" }));
+  assert.equal(select.value, "");
+  fireEvent.change(select, { target: { value: "America/Los_Angeles" } });
+  fireEvent.change(search, { target: { value: "some unlisted town" } });
+  assert(ui.getByText(/The full list is shown below/));
+  assert.equal(select.value, "America/Los_Angeles");
+  assert(within(select).getByRole("option", { name: "Asia / Tokyo" }));
+  fireEvent.change(select, { target: { value: "Asia/Tokyo" } });
+  fireEvent.click(ui.getByRole("button", { name: "Step 9: Review and save" }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  assert.equal(
+    JSON.parse(ui.getByLabelText("Project details JSON").value).fields.timeZone,
+    "Asia/Tokyo",
+  );
+});
