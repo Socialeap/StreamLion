@@ -27,6 +27,12 @@ import { reusableFields } from "./workflow";
 import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
 import BriefImporter from "./BriefImporter.jsx";
 import { fillEmptyBriefFields, readPendingBrief } from "./brief-import.js";
+import { CURRENCIES } from "./setup-assistant.js";
+
+const CURRENCY_CODES =
+  typeof Intl.supportedValuesOf === "function"
+    ? Intl.supportedValuesOf("currency")
+    : CURRENCIES;
 
 const STEPS = [
   { label: "Start", group: null, title: "Start with your project brief" },
@@ -616,6 +622,31 @@ export default function ProjectEditor({
                             })
                           }
                         />
+                      ) : field.key === "currency" ? (
+                        <select
+                          id={id}
+                          value={fields.currency}
+                          onChange={(event) =>
+                            update({ ...fields, currency: event.target.value })
+                          }
+                        >
+                          <option value="">Select currency (unknown)</option>
+                          {fields.currency &&
+                            !CURRENCY_CODES.includes(fields.currency) && (
+                              <option
+                                value={fields.currency}
+                                disabled={!/^[A-Z]{3}$/.test(fields.currency)}
+                              >
+                                {fields.currency} (saved value — select
+                                currency)
+                              </option>
+                            )}
+                          {CURRENCY_CODES.map((code) => (
+                            <option key={code} value={code}>
+                              {code}
+                            </option>
+                          ))}
+                        </select>
                       ) : field.type === "appointment" ? (
                         <select
                           id={id}
@@ -649,17 +680,16 @@ export default function ProjectEditor({
                           onChange={(event) =>
                             update({
                               ...fields,
-                              [field.key]:
-                                field.key === "currency"
-                                  ? event.target.value.toUpperCase()
-                                  : event.target.value,
+                              [field.key]: event.target.value,
                             })
                           }
                         />
                       )}
                       {field.key === "currency" && (
                         <p className="hint">
-                          Use a three-letter currency code, such as USD or EUR.
+                          Select the project's currency: USD for US dollars, EUR
+                          for euros, or the appropriate code. Leave unknown only
+                          when no amounts are entered.
                         </p>
                       )}
                       {field.key === "deliverables" &&
