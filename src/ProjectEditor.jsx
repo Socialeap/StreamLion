@@ -634,66 +634,80 @@ export default function ProjectEditor({
                       ) : field.key === "timeZone" ? (
                         <>
                           <LocationTimezone
+                            compact
                             fields={fields}
                             onUse={(timeZone) =>
                               update({ ...fields, timeZone })
                             }
                           />
-                          <label htmlFor={`${id}-search`}>
-                            Find a time zone
-                          </label>
-                          <input
-                            id={`${id}-search`}
-                            type="search"
-                            placeholder="Time-zone city or supported location"
-                            value={zoneSearch}
-                            onChange={(event) =>
-                              setZoneSearch(event.target.value)
-                            }
-                          />
-                          {zoneResults.noMatches && (
-                            <p role="status" className="hint">
-                              No matching time-zone name or supported location.
-                              The full list is shown below. Choose a nearby
-                              major city in the same time zone, or clear the
-                              search to browse.
+                          {fields.timeZone && (
+                            <p className="hint">
+                              Current time zone:{" "}
+                              {timeZoneLabel(fields.timeZone)}
                             </p>
                           )}
-                          {zoneResults.note && (
-                            <p role="status" className="hint">
-                              {zoneResults.note}
-                            </p>
-                          )}
-                          <select
-                            id={id}
-                            value={fields.timeZone}
-                            onChange={(event) =>
-                              update({
-                                ...fields,
-                                timeZone: event.target.value,
-                              })
-                            }
-                          >
-                            <option value="">Select visit time zone</option>
-                            {fields.timeZone &&
-                              !TIME_ZONES.includes(fields.timeZone) && (
-                                <option
-                                  value={fields.timeZone}
-                                  disabled={!validTimeZone(fields.timeZone)}
-                                >
-                                  {fields.timeZone} (saved value)
+                          <details className="quiet-details">
+                            <summary>Choose a different time zone</summary>
+                            <label htmlFor={`${id}-search`}>
+                              Find a time zone
+                            </label>
+                            <input
+                              id={`${id}-search`}
+                              type="search"
+                              placeholder="Time-zone city or supported location"
+                              value={zoneSearch}
+                              onChange={(event) =>
+                                setZoneSearch(event.target.value)
+                              }
+                            />
+                            {zoneResults.noMatches && (
+                              <p role="status" className="hint">
+                                No matching time-zone name or supported
+                                location. The full list is shown below. Choose a
+                                nearby major city in the same time zone, or
+                                clear the search to browse.
+                              </p>
+                            )}
+                            {zoneResults.note && (
+                              <p role="status" className="hint">
+                                {zoneResults.note}
+                              </p>
+                            )}
+                            <select
+                              id={id}
+                              value={fields.timeZone}
+                              onChange={(event) =>
+                                update({
+                                  ...fields,
+                                  timeZone: event.target.value,
+                                })
+                              }
+                            >
+                              <option value="">Select visit time zone</option>
+                              {fields.timeZone &&
+                                !TIME_ZONES.includes(fields.timeZone) && (
+                                  <option
+                                    value={fields.timeZone}
+                                    disabled={!validTimeZone(fields.timeZone)}
+                                  >
+                                    {fields.timeZone} (saved value)
+                                  </option>
+                                )}
+                              {TIME_ZONES.filter(
+                                (zone) =>
+                                  zone === fields.timeZone ||
+                                  zoneResults.options.includes(zone),
+                              ).map((zone) => (
+                                <option key={zone} value={zone}>
+                                  {timeZoneLabel(zone)}
                                 </option>
-                              )}
-                            {TIME_ZONES.filter(
-                              (zone) =>
-                                zone === fields.timeZone ||
-                                zoneResults.options.includes(zone),
-                            ).map((zone) => (
-                              <option key={zone} value={zone}>
-                                {timeZoneLabel(zone)}
-                              </option>
-                            ))}
-                          </select>
+                              ))}
+                            </select>
+                            <p className="hint">
+                              Required for scheduled times. Choose the visit
+                              location’s zone.
+                            </p>
+                          </details>
                         </>
                       ) : field.key === "currency" ? (
                         <select
@@ -763,16 +777,6 @@ export default function ProjectEditor({
                           Select the project's currency: USD for US dollars, EUR
                           for euros, or the appropriate code. Leave unknown only
                           when no amounts are entered.
-                        </p>
-                      )}
-                      {field.key === "timeZone" && (
-                        <p className="hint">
-                          Required when a start or end time is entered. Use the
-                          visit location's time zone. Search listed time-zone
-                          cities or supported locations, then choose from the
-                          list (America / New York for New York). This keeps the
-                          scheduled clock time correct across daylight saving
-                          changes.
                         </p>
                       )}
                       {field.key === "deliverables" &&

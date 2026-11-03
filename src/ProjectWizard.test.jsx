@@ -836,7 +836,8 @@ for (const timeZone of ["", "New York city"]) {
       ui.getByLabelText("Time zone (e.g. America/New_York)").value,
       timeZone,
     );
-    assert(ui.getByText(/Required when a start or end time is entered/));
+
+    fireEvent.click(ui.getByText("Choose a different time zone"));
     const zonePicker = ui.getByRole("combobox", {
       name: "Time zone (e.g. America/New_York)",
     });
@@ -912,6 +913,7 @@ test("the visit selector preserves a valid saved time-zone alias", (t) => {
   fireEvent.click(
     ui.getByRole("button", { name: "Step 5: When is the visit?" }),
   );
+  fireEvent.click(ui.getByText("Choose a different time zone"));
   const picker = ui.getByRole("combobox", {
     name: "Time zone (e.g. America/New_York)",
   });
@@ -950,6 +952,11 @@ test("location search never strands the visit selector and never chooses a zone 
   fireEvent.click(
     ui.getByRole("button", { name: "Step 5: When is the visit?" }),
   );
+  const manual = ui
+    .getByText("Choose a different time zone")
+    .closest("details");
+  assert.equal(manual.open, false);
+  fireEvent.click(ui.getByText("Choose a different time zone"));
   const search = ui.getByLabelText("Find a time zone");
   const select = ui.getByRole("combobox", {
     name: "Time zone (e.g. America/New_York)",

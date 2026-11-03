@@ -51,3 +51,47 @@ test("offline QA preparation binds the verified enrolled owner and protects its 
     await writeFile(out, "preserve");
   }
 });
+
+test("explicit 72-hour preparation works only for workspace QA", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "owner-72h-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const input = join(dir, "identity.json");
+  await writeFile(
+    input,
+    JSON.stringify({
+      mode: "live",
+      google_subject: "owner-synthetic",
+      email: "shakoure@transcendencemedia.com",
+      enabled: 1,
+      policy_enabled: 1,
+    }),
+  );
+  for (const [hours, coordination, ok] of [
+    ["72", false, true],
+    ["73", false, false],
+    ["0", false, false],
+    ["72", true, false],
+  ]) {
+    const out = join(dir, `grant-${hours}-${coordination}.json`);
+    const run = spawnSync(
+      process.execPath,
+      [
+        script.pathname,
+        "--identity-file",
+        input,
+        "--out",
+        out,
+        "--hours",
+        hours,
+        ...(coordination ? ["--coordination"] : []),
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(run.status === 0, ok);
+    if (ok) {
+      const grant = JSON.parse(await readFile(out, "utf8"));
+      assert.equal(grant.expiresAt - grant.issuedAt, 72 * 3600000);
+      assert.equal(grant.scope, "google-workspace");
+    }
+  }
+});

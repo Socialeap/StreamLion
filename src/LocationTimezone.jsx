@@ -9,6 +9,7 @@ export default function LocationTimezone({
   fields,
   onUse,
   loadCountry = loadLocationCountry,
+  compact = false,
 }) {
   const [result, setResult] = useState({ state: "loading", zones: [] });
   const [retry, setRetry] = useState(0);
@@ -33,7 +34,7 @@ export default function LocationTimezone({
   }, [fields.city, fields.region, fields.country, retry, loadCountry]);
   return (
     <section aria-label="Time zone from project location">
-      <h3>Time zone from your project location</h3>
+      {!compact && <h3>Time zone from your project location</h3>}
       {result.state === "loading" && (
         <p role="status">Checking your project’s city and country…</p>
       )}
@@ -70,7 +71,9 @@ export default function LocationTimezone({
       {result.zones.map((zone) => (
         <p key={zone}>
           {fields.timeZone === zone ? (
-            <span>Selected: {timeZoneLabel(zone)}</span>
+            compact ? null : (
+              <span>Selected: {timeZoneLabel(zone)}</span>
+            )
           ) : (
             <button type="button" onClick={() => onUse(zone)}>
               Use {timeZoneLabel(zone)}
@@ -80,9 +83,7 @@ export default function LocationTimezone({
       ))}
       {!!result.zones.length && (
         <p className="hint">
-          Based on the project’s city, not a street-level boundary check.
-          Confirm the zone for the visit. Your current choice stays unchanged
-          until you select a suggestion.
+          City-level suggestion. Confirm for the visit location.
         </p>
       )}
       <small>
@@ -98,7 +99,7 @@ export default function LocationTimezone({
         >
           CC BY 4.0
         </a>
-        . Location matching runs on your device.
+        .
       </small>
     </section>
   );

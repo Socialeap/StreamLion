@@ -63,7 +63,7 @@ test("QA licence never accepts another identity, mode, origin, expired interval 
     { origin: "https://other.example" },
     { issuedAt: f.now + 1 },
     { expiresAt: f.now },
-    { issuedAt: f.now - 86400000, expiresAt: f.now + 1 },
+    { issuedAt: f.now - 72 * 3600000, expiresAt: f.now + 1 },
     { expiresAt: String(f.grant.expiresAt) },
     { reason: "" },
   ])
@@ -185,5 +185,42 @@ test("two-hour coordination QA is owner-only, atomic, revocable and never a purc
       (r) => r.google_subject,
     ),
     ["other"],
+  );
+});
+
+test("72-hour workspace QA remains owner-bound, expires exactly and rejects longer grants", async (t) => {
+  const f = fixture(t);
+  const grant = {
+    ...f.grant,
+    issuedAt: f.now,
+    expiresAt: f.now + 72 * 3600000,
+  };
+  const env = {
+    ...f.env,
+    STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify(grant),
+  };
+  assert(await ownerWorkspaceQa(env, f.identity, f.now + 71 * 3600000));
+  assert.equal(await ownerWorkspaceQa(env, f.identity, grant.expiresAt), null);
+  assert.equal(
+    await ownerWorkspaceQa(
+      {
+        ...env,
+        STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify({
+          ...grant,
+          expiresAt: grant.expiresAt + 1,
+        }),
+      },
+      f.identity,
+      f.now,
+    ),
+    null,
+  );
+  assert.equal(
+    await ownerWorkspaceQa(
+      env,
+      { ...f.identity, google_subject: "other" },
+      f.now,
+    ),
+    null,
   );
 });
