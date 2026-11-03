@@ -793,3 +793,136 @@ test("a saved invalid currency remains visible until corrected using the currenc
     "USD",
   );
 });
+
+for (const timeZone of ["", "New York city"]) {
+  test(`export explains and corrects a ${timeZone ? "invalid" : "missing"} visit time zone without changing the scheduled time`, (t) => {
+    t.after(cleanup);
+    localStorage.clear();
+    t.mock.method(URL, "createObjectURL", () => "blob:timezone-test");
+    t.mock.method(URL, "revokeObjectURL", () => {});
+    t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", () => {});
+    writeDraft(projectDraftKey("timezone-export"), {
+      fields: {
+        ...Object.fromEntries(PROJECT_FIELDS.map((f) => [f.key, ""])),
+        title: "Visit timezone QA",
+        startLocal: "2026-11-04T10:00",
+        timeZone,
+      },
+    });
+    const ui = render(
+      <ProjectEditor
+        draftScope="timezone-export"
+        onSave={async () => {}}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Step 9: Review and save" }),
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Download project details" }),
+    );
+    assert.match(ui.getByRole("alert").textContent, /time zone/i);
+    assert(ui.getByRole("alert").closest(".finish-review"));
+    assert(ui.getByText(/In step 5, Visit, select the time zone/));
+    fireEvent.click(
+      ui.getByRole("button", { name: "Review time zone in Visit" }),
+    );
+    assert.equal(
+      ui.getByLabelText("Start date and time").value,
+      "2026-11-04T10:00",
+    );
+    assert.equal(
+      ui.getByLabelText("Time zone (e.g. America/New_York)").value,
+      timeZone,
+    );
+    assert(ui.getByText(/Required when a start or end time is entered/));
+    const zonePicker = ui.getByRole("combobox", {
+      name: "Time zone (e.g. America/New_York)",
+    });
+    assert.equal(zonePicker.tagName, "SELECT");
+    assert(within(zonePicker).getByRole("option", { name: "UTC" }));
+    assert(
+      within(zonePicker).getByRole("option", { name: "America / New York" }),
+    );
+    assert(within(zonePicker).getByRole("option", { name: "Europe / London" }));
+    if (timeZone)
+      assert(
+        within(zonePicker).getByRole("option", { name: /saved value/ })
+          .disabled,
+      );
+    for (const option of zonePicker.options) {
+      if (option.value && !option.disabled)
+        assert.doesNotThrow(
+          () => new Intl.DateTimeFormat("en", { timeZone: option.value }),
+        );
+    }
+    fireEvent.change(zonePicker, {
+      target: { value: "America/New_York" },
+    });
+    fireEvent.change(ui.getByLabelText("Find a time zone"), {
+      target: { value: "London" },
+    });
+    assert.equal(zonePicker.value, "America/New_York");
+    assert(within(zonePicker).getByRole("option", { name: "Europe / London" }));
+    assert.equal(
+      within(zonePicker).queryByRole("option", { name: "Asia / Tokyo" }),
+      null,
+    );
+    fireEvent.change(ui.getByLabelText("Find a time zone"), {
+      target: { value: "Asia/Tokyo" },
+    });
+    assert(within(zonePicker).getByRole("option", { name: "Asia / Tokyo" }));
+    assert.equal(zonePicker.value, "America/New_York");
+    fireEvent.change(ui.getByLabelText("Find a time zone"), {
+      target: { value: "" },
+    });
+    fireEvent.click(
+      ui.getByRole("button", { name: "Step 9: Review and save" }),
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Download project details" }),
+    );
+    assert.equal(ui.queryByRole("alert"), null);
+    const exported = JSON.parse(
+      ui.getByLabelText("Project details JSON").value,
+    );
+    assert.equal(exported.fields.timeZone, "America/New_York");
+    assert.equal(exported.fields.startLocal, "2026-11-04T10:00");
+  });
+}
+
+test("the visit selector preserves a valid saved time-zone alias", (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  writeDraft(projectDraftKey("zone-alias"), {
+    fields: {
+      ...Object.fromEntries(PROJECT_FIELDS.map((f) => [f.key, ""])),
+      title: "Existing visit",
+      timeZone: "US/Eastern",
+    },
+  });
+  const ui = render(
+    <ProjectEditor
+      draftScope="zone-alias"
+      onSave={async () => {}}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 5: When is the visit?" }),
+  );
+  const picker = ui.getByRole("combobox", {
+    name: "Time zone (e.g. America/New_York)",
+  });
+  assert.equal(picker.value, "US/Eastern");
+  assert.equal(
+    within(picker).getByRole("option", { name: /US\/Eastern.*saved value/ })
+      .disabled,
+    false,
+  );
+  fireEvent.change(ui.getByLabelText("Find a time zone"), {
+    target: { value: "no matching city" },
+  });
+  assert.equal(picker.value, "US/Eastern");
+});
