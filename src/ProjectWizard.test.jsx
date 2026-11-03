@@ -737,3 +737,51 @@ test("invalid project fields explain the blocked export beside the Finish button
   fireEvent.click(ui.getByRole("button", { name: /Step 7:/ }));
   assert.equal(ui.getByLabelText("Offered fee").value, "$200");
 });
+
+test("the reported currency error stays beside export and links to a correctable Payment field", (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  t.mock.method(URL, "createObjectURL", () => "blob:currency-test");
+  t.mock.method(URL, "revokeObjectURL", () => {});
+  t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", () => {});
+  const ui = render(
+    <ProjectEditor
+      onSave={async () => {}}
+      onCancel={() => {}}
+      draftScope="currency-export"
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
+  fireEvent.change(ui.getByLabelText("Project name"), {
+    target: { value: "Currency QA" },
+  });
+  for (let i = 0; i < 5; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.change(ui.getByLabelText("Currency (ISO code)"), {
+    target: { value: "US Dollars" },
+  });
+  for (let i = 0; i < 2; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  assert.match(
+    ui.getByRole("alert").textContent,
+    /Use a three-letter uppercase currency code/,
+  );
+  assert(ui.getByRole("alert").closest(".finish-review"));
+  fireEvent.click(
+    ui.getByRole("button", { name: "Review currency in Payment" }),
+  );
+  assert.equal(ui.getByLabelText("Currency (ISO code)").value, "US DOLLARS");
+  fireEvent.change(ui.getByLabelText("Currency (ISO code)"), {
+    target: { value: "usd" },
+  });
+  assert.equal(ui.getByLabelText("Currency (ISO code)").value, "USD");
+  for (let i = 0; i < 2; i++)
+    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  assert.equal(ui.queryByRole("alert"), null);
+  assert.equal(
+    JSON.parse(ui.getByLabelText("Project details JSON").value).fields.currency,
+    "USD",
+  );
+});

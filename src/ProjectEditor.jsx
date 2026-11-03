@@ -649,10 +649,18 @@ export default function ProjectEditor({
                           onChange={(event) =>
                             update({
                               ...fields,
-                              [field.key]: event.target.value,
+                              [field.key]:
+                                field.key === "currency"
+                                  ? event.target.value.toUpperCase()
+                                  : event.target.value,
                             })
                           }
                         />
+                      )}
+                      {field.key === "currency" && (
+                        <p className="hint">
+                          Use a three-letter currency code, such as USD or EUR.
+                        </p>
                       )}
                       {field.key === "deliverables" &&
                         usualDeliverables.length > 0 &&
@@ -705,9 +713,16 @@ export default function ProjectEditor({
                   requested
                 />
                 {exportError && (
-                  <p role="alert" className="error">
-                    {exportError}
-                  </p>
+                  <>
+                    <p role="alert" className="error">
+                      {exportError}
+                    </p>
+                    {/currency/i.test(exportError) && (
+                      <button type="button" onClick={() => goTo(6)}>
+                        Review currency in Payment
+                      </button>
+                    )}
+                  </>
                 )}
                 {exportUrl && (
                   <p className="hint">
