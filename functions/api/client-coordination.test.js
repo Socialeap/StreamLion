@@ -21,6 +21,10 @@ import { handleCoordination } from "../../server/client-coordination.js";
 import { CoordinationEngine } from "../../server/coordination-engine.js";
 import { CoordinationGoogle } from "../../server/coordination-google.js";
 import {
+  hasCoordinationAccess,
+  coordinationEligibilitySQL,
+} from "../../server/coordination-qa-access.js";
+import {
   createProspectLink,
   openProspect,
   requestProspectVerification,
@@ -5174,88 +5178,172 @@ test("a workbook with one event slot left cannot reserve credits for a two-check
   assert.equal(f.uploads.length, 0);
 });
 
-test("owner coordination QA submits and approves without purchase, credit grant or spend, then closes on revocation", async (t) => {
-  const f = await publicFixture(t);
-  const now = Date.now();
-  Object.assign(f.env, {
-    STREAMLION_PAYMENTS_MODE: "live",
-    STREAMLION_AI_CREDITS_MODE: "live",
-    STREAMLION_CHECKOUT_MODE: "paused",
-    GOOGLE_AUTH_ORIGIN: "https://streamlion.transcendencemedia.com",
-    STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify({
-      version: 1,
-      scope: "google-workspace-and-coordination",
-      mode: "live",
-      origin: "https://streamlion.transcendencemedia.com",
-      subject: "a",
-      issuedAt: now - 1000,
-      expiresAt: now + 7199000,
-      reason: "Synthetic owner coordination QA",
-    }),
-  });
-  f.connection.mode = "live";
-  f.sql.exec(
-    "DELETE FROM streamlion_purchases_v1; UPDATE streamlion_coordination_connections_v1 SET mode='live'; UPDATE streamlion_coordination_policy_v1 SET active=1 WHERE mode='live'; UPDATE streamlion_admin_policy_v1 SET enabled=1 WHERE mode='live'; INSERT INTO streamlion_admin_owners_v1 VALUES('live','a','shakoure@transcendencemedia.com',1)",
-  );
-  const body = publicBody(f, "owner-qa-request");
-  Object.assign(body.fields, {
-    title: "Synthetic QA",
-    deliverables: "Private tour",
-    accessInstructions: "Meet owner",
-  });
-  const result = await f.submit(body);
-  assert.equal(f.google.heads.get(result.jobId).state, "submitted");
-  for (const role of ["provider", "client"]) {
-    await f.engine.command(
-      "qa-approve-" + role,
-      result.jobId,
-      {
-        action: "approve",
-        expectedRevision: f.google.heads.get(result.jobId).revision,
-        ...(role === "provider" ? { authorizedMicros: 3000000 } : {}),
-      },
-      { role },
+for (const separate of [false, true])
+  test(`owner coordination QA (${separate ? "separate window" : "legacy window"}) submits and approves without purchase, credit grant or spend, then closes on revocation`, async (t) => {
+    const f = await publicFixture(t);
+    const now = Date.now();
+    Object.assign(f.env, {
+      STREAMLION_PAYMENTS_MODE: "live",
+      STREAMLION_AI_CREDITS_MODE: "live",
+      STREAMLION_CHECKOUT_MODE: "paused",
+      GOOGLE_AUTH_ORIGIN: "https://streamlion.transcendencemedia.com",
+      STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify({
+        version: 1,
+        scope: "google-workspace-and-coordination",
+        mode: "live",
+        origin: "https://streamlion.transcendencemedia.com",
+        subject: "a",
+        issuedAt: now - 1000,
+        expiresAt: now + 7199000,
+        reason: "Synthetic owner coordination QA",
+      }),
+    });
+    if (separate) {
+      f.env.STREAMLION_OWNER_COORDINATION_QA =
+        f.env.STREAMLION_OWNER_CORE_QA_LICENSE;
+      f.env.STREAMLION_OWNER_CORE_QA_LICENSE = JSON.stringify({
+        version: 1,
+        scope: "google-workspace",
+        mode: "live",
+        origin: "https://streamlion.transcendencemedia.com",
+        subject: "a",
+        issuedAt: now - 1000,
+        expiresAt: now + 72 * 3600000 - 1000,
+        reason: "Synthetic owner workspace QA",
+      });
+    }
+    f.connection.mode = "live";
+    f.sql.exec(
+      "DELETE FROM streamlion_purchases_v1; UPDATE streamlion_coordination_connections_v1 SET mode='live'; UPDATE streamlion_coordination_policy_v1 SET active=1 WHERE mode='live'; UPDATE streamlion_admin_policy_v1 SET enabled=1 WHERE mode='live'; INSERT INTO streamlion_admin_owners_v1 VALUES('live','a','shakoure@transcendencemedia.com',1)",
     );
-  }
-  assert.equal(f.google.heads.get(result.jobId).state, "confirmed");
-  assert.equal(
-    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
-    0,
-  );
-  assert.equal(
-    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_starter_grants_v1").get()
-      .n,
-    0,
-  );
-  assert.equal(
-    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get().n,
-    0,
-  );
-  await assert.rejects(
-    () =>
-      f.engine.command(
-        "qa-paid-delivery",
+    const body = publicBody(f, "owner-qa-request");
+    Object.assign(body.fields, {
+      title: "Synthetic QA",
+      deliverables: "Private tour",
+      accessInstructions: "Meet owner",
+    });
+    const result = await f.submit(body);
+    assert.equal(f.google.heads.get(result.jobId).state, "submitted");
+    for (const role of ["provider", "client"]) {
+      await f.engine.command(
+        "qa-approve-" + role,
         result.jobId,
         {
-          action: "progress",
-          state: "delivered",
+          action: "approve",
           expectedRevision: f.google.heads.get(result.jobId).revision,
+          ...(role === "provider" ? { authorizedMicros: 3000000 } : {}),
         },
-        { role: "provider" },
+        { role },
+      );
+    }
+    assert.equal(f.google.heads.get(result.jobId).state, "confirmed");
+    assert.equal(
+      f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+      0,
+    );
+    assert.equal(
+      f.sql.prepare("SELECT COUNT(*) n FROM streamlion_starter_grants_v1").get()
+        .n,
+      0,
+    );
+    assert.equal(
+      f.sql.prepare("SELECT COUNT(*) n FROM streamlion_shared_spends_v1").get()
+        .n,
+      0,
+    );
+    await assert.rejects(
+      () =>
+        f.engine.command(
+          "qa-paid-delivery",
+          result.jobId,
+          {
+            action: "progress",
+            state: "delivered",
+            expectedRevision: f.google.heads.get(result.jobId).revision,
+          },
+          { role: "provider" },
+        ),
+      /QA access cannot/,
+    );
+    assert.equal(
+      f.sql
+        .prepare(
+          "SELECT COUNT(*) n FROM streamlion_coordination_operations_v1 WHERE state='pending'",
+        )
+        .get().n,
+      0,
+    );
+    if (separate) delete f.env.STREAMLION_OWNER_COORDINATION_QA;
+    else delete f.env.STREAMLION_OWNER_CORE_QA_LICENSE;
+    await assert.rejects(
+      () => f.submit(publicBody(f, "after-revoke")),
+      /unavailable|purchase|provider|Provider/i,
+    );
+  });
+
+test("separate coordination window requires the matching active workspace and closes at two hours", async (t) => {
+  const f = await publicFixture(t),
+    now = Date.now(),
+    origin = "https://streamlion.transcendencemedia.com";
+  const workspace = {
+    version: 1,
+    scope: "google-workspace",
+    mode: "live",
+    origin,
+    subject: "a",
+    issuedAt: now - 1000,
+    expiresAt: now + 3600000,
+    reason: "Workspace QA",
+  };
+  const coordination = {
+    ...workspace,
+    scope: "google-workspace-and-coordination",
+    expiresAt: now + 1800000,
+  };
+  Object.assign(f.env, {
+    STREAMLION_PAYMENTS_MODE: "live",
+    STREAMLION_CHECKOUT_MODE: "paused",
+    GOOGLE_AUTH_ORIGIN: origin,
+    STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify(workspace),
+    STREAMLION_OWNER_COORDINATION_QA: JSON.stringify(coordination),
+  });
+  f.sql.exec(
+    "DELETE FROM streamlion_purchases_v1; UPDATE streamlion_coordination_connections_v1 SET mode='live'; UPDATE streamlion_admin_policy_v1 SET enabled=1 WHERE mode='live'; INSERT INTO streamlion_admin_owners_v1 VALUES('live','a','shakoure@transcendencemedia.com',1)",
+  );
+  const check = async (e, expected) => {
+    assert.equal(await hasCoordinationAccess(e, "a"), expected);
+    const predicate = coordinationEligibilitySQL(e, "c");
+    assert.equal(
+      Boolean(
+        f.sql
+          .prepare(
+            `SELECT ${predicate} AS allowed FROM streamlion_coordination_connections_v1 c WHERE c.google_subject='a'`,
+          )
+          .get().allowed,
       ),
-    /QA access cannot/,
+      expected,
+    );
+  };
+  await check(f.env, true);
+  for (const w of [
+    { ...workspace, subject: "b" },
+    { ...workspace, expiresAt: now - 1 },
+    { ...workspace, reason: "" },
+    { ...workspace, expiresAt: now + 10000 },
+  ])
+    await check(
+      { ...f.env, STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify(w) },
+      false,
+    );
+  await check(
+    {
+      ...f.env,
+      STREAMLION_OWNER_COORDINATION_QA: JSON.stringify({
+        ...coordination,
+        expiresAt: now + 7200001,
+      }),
+    },
+    false,
   );
-  assert.equal(
-    f.sql
-      .prepare(
-        "SELECT COUNT(*) n FROM streamlion_coordination_operations_v1 WHERE state='pending'",
-      )
-      .get().n,
-    0,
-  );
-  delete f.env.STREAMLION_OWNER_CORE_QA_LICENSE;
-  await assert.rejects(
-    () => f.submit(publicBody(f, "after-revoke")),
-    /unavailable|purchase|provider|Provider/i,
-  );
+  await check({ ...f.env, STREAMLION_CHECKOUT_MODE: "open" }, false);
 });

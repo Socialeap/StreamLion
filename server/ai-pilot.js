@@ -1,6 +1,8 @@
 import { getSession, hash } from "./google-auth.js";
 import { getExtensionProject } from "./extension-workbook.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
+import { ownerAiQa } from "./owner-ai-qa.js";
+import { OWNER_EMAIL } from "./admin-data.js";
 import { boundedText } from "./request-body.js";
 import { privateAIInput, restoreAIAnswer } from "./ai-privacy.js";
 import {
@@ -76,6 +78,40 @@ export async function reserveTurn(db, subject, id, price, now = Date.now()) {
     throw new Error("pilot_exhausted");
   return reserved;
 }
+export async function reserveOwnerQaTurn(db, session, grant, price) {
+  // The fixed request ID and authorization checks are in the same D1 write.
+  // Replays, concurrent taps, expired windows, revoked owners and changed
+  // workbook sessions fail without allocating another provider attempt.
+  const nowSql = "CAST((julianday('now')-2440587.5)*86400000 AS INTEGER)";
+  const result = await db
+    .prepare(
+      `INSERT INTO streamlion_ai_turns_v1(google_subject,request_id,created_at,price_micros,reserve_micros)
+     SELECT ?,?,${nowSql},?,? WHERE ${nowSql}>=? AND ${nowSql}<?
+     AND EXISTS(SELECT 1 FROM streamlion_google_sessions_v1 s WHERE s.session_hash=? AND s.google_subject=? AND s.workbook_id=? AND s.expires_at>${nowSql})
+     AND EXISTS(SELECT 1 FROM streamlion_admin_owners_v1 o JOIN streamlion_admin_policy_v1 p ON p.mode=o.mode WHERE o.mode='live' AND o.google_subject=? AND o.email=? AND o.enabled=1 AND p.enabled=1)
+     AND (SELECT COUNT(*) FROM streamlion_ai_turns_v1) < ?
+     AND (SELECT COALESCE(SUM(reserve_micros),0) FROM streamlion_ai_turns_v1)+? <= ?`,
+    )
+    .bind(
+      session.google_subject,
+      grant.requestId,
+      price,
+      AI_LIMITS.reserveMicros,
+      grant.issuedAt,
+      grant.expiresAt,
+      session.session_hash,
+      session.google_subject,
+      grant.workbookId,
+      session.google_subject,
+      OWNER_EMAIL,
+      PILOT_CEILING.attempts,
+      AI_LIMITS.reserveMicros,
+      PILOT_CEILING.reserveMicros,
+    )
+    .run();
+  if (!Number.isSafeInteger(result.meta?.changes) || result.meta.changes < 1)
+    throw new Error("owner_qa_unavailable");
+}
 export async function finishTurn(db, subject, id, state) {
   return db
     .prepare(
@@ -103,9 +139,10 @@ export async function handleAI(context) {
     (path.endsWith("/answer") && request.method !== "POST")
   )
     return json({ error: "Method not allowed." }, 405);
-  const creditMode = paidCreditMode(env),
-    paid = creditMode !== "disabled";
-  if (paid && !paidAIApproved(env))
+  const creditMode = paidCreditMode(env);
+  let paid = creditMode !== "disabled";
+  const possibleQa = typeof env.STREAMLION_OWNER_AI_QA === "string";
+  if (paid && !paidAIApproved(env) && !possibleQa)
     return path.endsWith("/config")
       ? json({
           enabled: false,
@@ -113,7 +150,7 @@ export async function handleAI(context) {
           billing: "credits",
         })
       : json({ error: "Paid AI credits are not active." }, 503);
-  if (!settingsReady(env))
+  if (!settingsReady(env) && !possibleQa)
     return path.endsWith("/config")
       ? json({ enabled: false, reason: "pilot_unavailable" })
       : json({ error: "AI pilot is not configured." }, 503);
@@ -131,7 +168,22 @@ export async function handleAI(context) {
       return path.endsWith("/config")
         ? json({ enabled: false, reason: "connect_google" })
         : json({ error: "Connect Google before using AI." }, 401);
+    const qa = possibleQa ? await ownerAiQa(env, session) : null;
+    if (!qa && paid && !paidAIApproved(env))
+      return path.endsWith("/config")
+        ? json({
+            enabled: false,
+            reason: "credits_not_active",
+            billing: "credits",
+          })
+        : json({ error: "Paid AI credits are not active." }, 503);
+    if (!qa && !settingsReady(env))
+      return path.endsWith("/config")
+        ? json({ enabled: false, reason: "pilot_unavailable" })
+        : json({ error: "AI pilot is not configured." }, 503);
+    if (qa) paid = false;
     if (
+      !qa &&
       (paid || licenseRequired(env) || env.ENABLE_FREE_PILOT === "true") &&
       !(await hasPurchase(env, session.google_subject))
     )
@@ -187,6 +239,7 @@ export async function handleAI(context) {
         return json({ enabled: false, reason: "select_workbook" });
       const quote = {
         preferenceScope,
+        ...(qa ? { ownerQa: true } : {}),
         ...(paid ? { billing: "credits", creditsUrl: "/api/credits" } : {}),
         ...(wallet
           ? {
@@ -203,6 +256,17 @@ export async function handleAI(context) {
         });
       if (eligible && wallet.balance_micros < wallet.price_micros)
         return json({ enabled: false, reason: "credits_exhausted", ...quote });
+      if (
+        eligible &&
+        qa &&
+        (await database
+          .prepare(
+            "SELECT 1 AS used FROM streamlion_ai_turns_v1 WHERE google_subject=? AND request_id=?",
+          )
+          .bind(session.google_subject, qa.requestId)
+          .first())
+      )
+        return json({ enabled: false, reason: "pilot_exhausted", ...quote });
       if (eligible)
         return json({
           enabled: true,
@@ -269,6 +333,17 @@ export async function handleAI(context) {
         },
         409,
       );
+    if (qa && (input.projectId !== qa.projectId || input.speech))
+      return json(
+        {
+          error:
+            "This owner test is limited to its selected project and text answers.",
+        },
+        403,
+      );
+    // A server-selected ID makes all concurrent clicks and retries share one
+    // durable SQLite primary key, even if the client supplies different IDs.
+    if (qa) input.requestId = qa.requestId;
     if (input.priceMicros !== wallet.price_micros)
       return json(
         {
@@ -325,6 +400,8 @@ export async function handleAI(context) {
         );
       }
       if (controller.signal.aborted) throw new Error("cancelled");
+      if (qa && !(await ownerAiQa(env, session)))
+        return json({ error: "The owner test window has ended." }, 403);
       try {
         if (paid)
           await reserveCreditTurn(
@@ -334,6 +411,8 @@ export async function handleAI(context) {
             input.requestId,
             wallet.price_micros,
           );
+        else if (qa)
+          await reserveOwnerQaTurn(database, session, qa, wallet.price_micros);
         else
           await reserveTurn(
             env.GOOGLE_SESSIONS,
