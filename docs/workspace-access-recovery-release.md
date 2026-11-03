@@ -11,11 +11,15 @@ The defect is the recovery UX: workbook restoration called a StreamLion entitlem
 - A gate-confirmed blocked purchase panel explains that signing in again cannot restore access, offers an explicit access recheck without OAuth, and disables protected navigation while retaining backup/account options. Standalone purchase pages and legitimate paid/pilot/QA access keep their existing navigation behavior.
 - In-session owner QA expiry explains the expired window and retains a route to backup options.
 
+Customer copy is shown whether checkout is open or paused. An account with no active purchase gets “Let’s check your account”, a reminder to use the purchasing Google account or check a pending payment, and a support route without requiring another purchase. Only a server-reported succeeded refund gets “Your refund is complete” and an explanation that access from that purchase ended. Both paths preserve backup and Google-file retrieval guidance. No refund is inferred from a generic denial.
+
+Purchased Core access has no age-based expiry. A submitted, pending or failed refund does not itself revoke it; a successful full refund does. Existing reconciliation can also suspend an order for a payment dispute, while a wrong Google account or unconfirmed payment can prevent purchase verification. These are distinct from the owner's temporary QA window. No commercial access rule is changed here.
+
 No server entitlement, authentication, data retention, purchase, pilot or checkout policy is changed. No automatic renewal, paid entitlement or browser bypass is added.
 
 ## Verification
 
-The new integration regression reproduces a signed-in remembered workbook returning 402, verifies honest opener guidance, follows access review into the held gate, verifies disabled navigation cannot navigate, and confirms drafts/workbook selection and device backup remain available. Existing tests cover paid recovery, active pilot access, bounded online-only owner QA and expiry. Full npm test: 1,233 passed, zero failures/skips. Build and diff checks passed. Physical Android QA remains separate.
+The new integration regression reproduces a signed-in remembered workbook returning 402, verifies honest opener guidance, follows access review into the held gate, verifies disabled navigation cannot navigate, and confirms drafts/workbook selection and device backup remain available. Existing tests cover paid recovery, active pilot access, bounded online-only owner QA and expiry. Full npm test: 1,237 passed, zero failures/skips. Build and diff checks passed. Physical Android QA remains separate.
 
 ## Release
 

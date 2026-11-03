@@ -706,7 +706,7 @@ test("a signed-in account without workspace access gets access guidance instead 
   await ui.findByRole("button", { name: "Review workspace access" });
   assert.match(
     ui.getByRole("alert").textContent,
-    /Google is connected.*workspace access/,
+    /You are signed in.*cannot open StreamLion/,
   );
   assert.equal(ui.queryByText("Your workspace is ready."), null);
   assert.equal(
@@ -714,7 +714,7 @@ test("a signed-in account without workspace access gets access guidance instead 
     null,
   );
   fireEvent.click(ui.getByRole("button", { name: "Review workspace access" }));
-  await ui.findByText(/Signing in again will not restore workspace access/);
+  await ui.findByText(/We could not find an active Core purchase/);
   assert.equal(
     ui
       .getByRole("link", { name: "Check workspace access again" })

@@ -165,6 +165,8 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
       if (generation === epoch.current) setBusy(false);
     }
   }
+  const refundComplete =
+    !account?.purchased && account?.guarantee?.state === "succeeded";
   const amount = config?.amount
     ? new Intl.NumberFormat("en-US", {
         style: "currency",
@@ -183,7 +185,11 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
           <h1 id="purchase-title">
             {account?.purchased
               ? "Your workspace is ready"
-              : "Own your field workspace"}
+              : accessBlocked && account?.connected
+                ? refundComplete
+                  ? "Your refund is complete"
+                  : "Let’s check your account"
+                : "Own your field workspace"}
           </h1>
           <p>One purchase. Your projects stay in your Google account.</p>
           {config?.mode === "test" && (
@@ -193,24 +199,20 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
             </p>
           )}
           {!config && !error && <p role="status">Checking purchase options…</p>}
+          {accessBlocked && account?.connected && !account.purchased && (
+            <>
+              <p role="status">
+                {refundComplete
+                  ? "Your full refund is complete, so access from that purchase has ended. Your Google files remain yours. You can download your device backup below."
+                  : "We could not find an active Core purchase for this Google account. If you already paid, use the Google account you purchased with, check again if your payment is still being confirmed, or contact support below. You do not need to pay again to check your purchase. Your saved work is kept."}
+              </p>
+              <p>
+                <a href="/?page=Connections">Check workspace access again</a>
+              </p>
+            </>
+          )}
           {config?.enabled === false && (
             <>
-              {accessBlocked && account?.connected && !account.purchased && (
-                <>
-                  <p role="status">
-                    You are signed in, but workspace access is not active for
-                    this account. Signing in again will not restore workspace
-                    access. Workspace navigation becomes available when access
-                    is restored. Your Google files remain in your Google
-                    account.
-                  </p>
-                  <p>
-                    <a href="/?page=Connections">
-                      Check workspace access again
-                    </a>
-                  </p>
-                </>
-              )}
               <p>
                 New purchases are paused. Existing purchases can still be
                 restored or confirmed.

@@ -376,7 +376,7 @@ async function request(path, options = {}) {
   if (!response.ok) {
     if (persistentSession && response.status === 402) {
       const error = new Error(
-        "Google is connected, but this account does not currently have StreamLion workspace access. Review workspace access; signing in again will not restore it. Your saved data is kept.",
+        "You are signed in, but this Google account cannot open StreamLion right now. Check your purchase or contact support. Your saved work is kept.",
       );
       error.code = "WORKSPACE_ACCESS_REQUIRED";
       throw error;
