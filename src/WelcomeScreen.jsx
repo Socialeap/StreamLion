@@ -18,6 +18,7 @@ export default function WelcomeScreen({
   account,
   bookId,
   error,
+  workspaceAccessRequired = false,
   busy,
   animate = true,
   setup = "",
@@ -259,13 +260,15 @@ export default function WelcomeScreen({
     !connected && !error && !disabled && !configLoading && !!config;
   const label = checking
     ? "Checking connection…"
-    : error
-      ? "Review connection"
-      : connected
-        ? "Open Projects"
-        : bookId
-          ? "Reconnect with Google"
-          : "Sign in with Google";
+    : workspaceAccessRequired
+      ? "Review workspace access"
+      : error
+        ? "Review connection"
+        : connected
+          ? "Open Projects"
+          : bookId
+            ? "Reconnect with Google"
+            : "Sign in with Google";
   const action = connected && !error ? onProjects : onConnect;
   // A first visit leads with the setup assistant; Google stays one tap away.
   const guided = !!setup && !!onSetup && !connected && !error && !checking;
@@ -403,13 +406,15 @@ export default function WelcomeScreen({
           ) : null}
         </p>
         <p className="welcome-note">
-          {connected
-            ? bookId
-              ? "Your workspace is ready."
-              : "Choose a workbook to finish setup."
-            : "Your records. Your Google account."}
+          {workspaceAccessRequired
+            ? "Your Google account is signed in. Workspace access needs review."
+            : connected
+              ? bookId
+                ? "Your workspace is ready."
+                : "Choose a workbook to finish setup."
+              : "Your records. Your Google account."}
         </p>
-        {(!connected || error) && (
+        {!workspaceAccessRequired && (!connected || error) && (
           <button
             className="welcome-device"
             disabled={disabled}

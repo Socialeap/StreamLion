@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { AppHeader, BottomNavigation } from "./AppNavigation.jsx";
 import { purchaseRequest } from "./purchase-api.js";
 import { coreRefundRequestText } from "./refund-policy.js";
-export default function Purchase({ onPurchased }) {
+export default function Purchase({ onPurchased, accessBlocked = false }) {
   const [config, setConfig] = useState(null),
     [account, setAccount] = useState(null);
   const [error, setError] = useState(""),
@@ -165,6 +165,8 @@ export default function Purchase({ onPurchased }) {
       if (generation === epoch.current) setBusy(false);
     }
   }
+  const refundComplete =
+    !account?.purchased && account?.guarantee?.state === "succeeded";
   const amount = config?.amount
     ? new Intl.NumberFormat("en-US", {
         style: "currency",
@@ -183,7 +185,11 @@ export default function Purchase({ onPurchased }) {
           <h1 id="purchase-title">
             {account?.purchased
               ? "Your workspace is ready"
-              : "Own your field workspace"}
+              : accessBlocked && account?.connected
+                ? refundComplete
+                  ? "Your refund is complete"
+                  : "Let’s check your account"
+                : "Own your field workspace"}
           </h1>
           <p>One purchase. Your projects stay in your Google account.</p>
           {config?.mode === "test" && (
@@ -193,6 +199,18 @@ export default function Purchase({ onPurchased }) {
             </p>
           )}
           {!config && !error && <p role="status">Checking purchase options…</p>}
+          {accessBlocked && account?.connected && !account.purchased && (
+            <>
+              <p role="status">
+                {refundComplete
+                  ? "Your full refund is complete, so access from that purchase has ended. Your Google files remain yours. You can download your device backup below."
+                  : "We could not find an active Core purchase for this Google account. If you already paid, use the Google account you purchased with, check again if your payment is still being confirmed, or contact support below. You do not need to pay again to check your purchase. Your saved work is kept."}
+              </p>
+              <p>
+                <a href="/?page=Connections">Check workspace access again</a>
+              </p>
+            </>
+          )}
           {config?.enabled === false && (
             <>
               <p>
@@ -414,7 +432,7 @@ export default function Purchase({ onPurchased }) {
           </footer>
         </section>
       </main>
-      <BottomNavigation page="Account" />
+      <BottomNavigation page="Account" disabled={accessBlocked} />
     </>
   );
 }

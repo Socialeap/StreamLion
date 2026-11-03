@@ -88,6 +88,9 @@ export default function LicenseGate({ children }) {
       () => {
         setAllowed(false);
         setOwnerQa(null);
+        setError(
+          "Your temporary owner QA access has ended. Signing in again will not extend it. Your Google files and device backup remain available.",
+        );
       },
       Math.max(0, ownerQa.expiresAt - Date.now()),
     );
@@ -138,7 +141,7 @@ export default function LicenseGate({ children }) {
       <div className="purchase-shell">
         <AppHeader checking />
         <p role="status">Opening StreamLion…</p>
-        <BottomNavigation />
+        <BottomNavigation disabled />
       </div>
     );
   if (allowed)
@@ -171,13 +174,13 @@ export default function LicenseGate({ children }) {
             <a href="/api/welcome">About StreamLion</a>
           </p>
         </section>
-        <BottomNavigation />
+        <BottomNavigation disabled />
       </div>
     );
   return (
     <div className="purchase-shell">
       {pilotNotice}
-      <Purchase onPurchased={() => check()} />
+      <Purchase accessBlocked onPurchased={() => check()} />
     </div>
   );
 }

@@ -621,6 +621,12 @@ test("owner QA expiry closes the workspace at its original deadline", async (t) 
   await waitFor(() => assert.equal(typeof expire, "function"));
   await act(async () => expire());
   assert.equal(ui.queryByText("Temporary QA workspace"), null);
+  assert.match(ui.getByRole("alert").textContent, /owner QA access has ended/);
+  assert.match(
+    ui.getByRole("alert").textContent,
+    /Signing in again will not extend/,
+  );
+  assert(ui.getByRole("link", { name: "Purchase and device backup options" }));
 });
 
 test("refund requests show pending separately from success and retain backup retrieval after a successful refund", async (t) => {
@@ -677,3 +683,55 @@ test("refund requests show pending separately from success and retain backup ret
   await waitFor(() => assert(ui.getByText(/Full refund succeeded/)));
   assert(ui.getByRole("button", { name: "Download my device backup" }));
 });
+
+for (const refunded of [false, true]) {
+  for (const salesOpen of [false, true]) {
+    test(`a blocked account gets plain-language ${refunded ? "confirmed refund" : "purchase recovery"} guidance with checkout ${salesOpen ? "open" : "paused"}`, async (t) => {
+      t.after(cleanup);
+      t.mock.method(globalThis, "fetch", async (url) =>
+        response(
+          url.endsWith("/status")
+            ? {
+                enabled: true,
+                required: true,
+                purchased: false,
+                connected: true,
+                account: "buyer@example.com",
+                subject: "buyer",
+                ...(refunded ? { guarantee: { state: "succeeded" } } : {}),
+              }
+            : {
+                enabled: salesOpen,
+                required: true,
+                checkoutMode: salesOpen ? "open" : "paused",
+                mode: "live",
+              },
+        ),
+      );
+      const ui = render(<Purchase accessBlocked />);
+      await ui.findByRole("heading", {
+        name: refunded ? "Your refund is complete" : "Let’s check your account",
+      });
+      if (refunded) {
+        assert(
+          ui.getByText(
+            /Your full refund is complete, so access from that purchase has ended/,
+          ),
+        );
+        assert.equal(
+          ui.queryByText(/We could not find an active Core purchase/),
+          null,
+        );
+      } else {
+        assert(ui.getByText(/use the Google account you purchased with/));
+        assert(ui.getByText(/You do not need to pay again/));
+        assert.equal(
+          ui.queryByRole("heading", { name: "Your refund is complete" }),
+          null,
+        );
+      }
+      assert(ui.getByRole("link", { name: "Check workspace access again" }));
+      assert(ui.getByRole("button", { name: "Download my device backup" }));
+    });
+  }
+}
