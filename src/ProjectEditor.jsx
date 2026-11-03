@@ -692,6 +692,14 @@ export default function ProjectEditor({
                           when no amounts are entered.
                         </p>
                       )}
+                      {field.key === "timeZone" && (
+                        <p className="hint">
+                          Required when a start or end time is entered. Use the
+                          visit location's time zone, such as America/New_York
+                          for New York. This keeps the scheduled clock time
+                          correct across daylight saving changes.
+                        </p>
+                      )}
                       {field.key === "deliverables" &&
                         usualDeliverables.length > 0 &&
                         !fields.deliverables.trim() && (
@@ -751,6 +759,17 @@ export default function ProjectEditor({
                       <button type="button" onClick={() => goTo(6)}>
                         Review currency in Payment
                       </button>
+                    )}
+                    {/time zone/i.test(exportError) && (
+                      <>
+                        <p className="hint">
+                          In step 5, Visit, set the time zone for the visit
+                          location. For New York, use America/New_York.
+                        </p>
+                        <button type="button" onClick={() => goTo(4)}>
+                          Review time zone in Visit
+                        </button>
+                      </>
                     )}
                   </>
                 )}

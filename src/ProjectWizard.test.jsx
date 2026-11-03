@@ -793,3 +793,64 @@ test("a saved invalid currency remains visible until corrected using the currenc
     "USD",
   );
 });
+
+for (const timeZone of ["", "New York city"]) {
+  test(`export explains and corrects a ${timeZone ? "invalid" : "missing"} visit time zone without changing the scheduled time`, (t) => {
+    t.after(cleanup);
+    localStorage.clear();
+    t.mock.method(URL, "createObjectURL", () => "blob:timezone-test");
+    t.mock.method(URL, "revokeObjectURL", () => {});
+    t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", () => {});
+    writeDraft(projectDraftKey("timezone-export"), {
+      fields: {
+        ...Object.fromEntries(PROJECT_FIELDS.map((f) => [f.key, ""])),
+        title: "Visit timezone QA",
+        startLocal: "2026-11-04T10:00",
+        timeZone,
+      },
+    });
+    const ui = render(
+      <ProjectEditor
+        draftScope="timezone-export"
+        onSave={async () => {}}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Step 9: Review and save" }),
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Download project details" }),
+    );
+    assert.match(ui.getByRole("alert").textContent, /time zone/i);
+    assert(ui.getByRole("alert").closest(".finish-review"));
+    assert(ui.getByText(/In step 5, Visit, set the time zone/));
+    fireEvent.click(
+      ui.getByRole("button", { name: "Review time zone in Visit" }),
+    );
+    assert.equal(
+      ui.getByLabelText("Start date and time").value,
+      "2026-11-04T10:00",
+    );
+    assert.equal(
+      ui.getByLabelText("Time zone (e.g. America/New_York)").value,
+      timeZone,
+    );
+    assert(ui.getByText(/Required when a start or end time is entered/));
+    fireEvent.change(ui.getByLabelText("Time zone (e.g. America/New_York)"), {
+      target: { value: "America/New_York" },
+    });
+    fireEvent.click(
+      ui.getByRole("button", { name: "Step 9: Review and save" }),
+    );
+    fireEvent.click(
+      ui.getByRole("button", { name: "Download project details" }),
+    );
+    assert.equal(ui.queryByRole("alert"), null);
+    const exported = JSON.parse(
+      ui.getByLabelText("Project details JSON").value,
+    );
+    assert.equal(exported.fields.timeZone, "America/New_York");
+    assert.equal(exported.fields.startLocal, "2026-11-04T10:00");
+  });
+}
