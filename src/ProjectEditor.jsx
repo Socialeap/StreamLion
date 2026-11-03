@@ -21,7 +21,8 @@ import {
   intakeFor,
 } from "./project-schema";
 import { readDraft, writeDraft, clearDraft, projectDraftKey } from "./drafts";
-import { download } from "./storage";
+import { downloadURL } from "./storage";
+import DownloadNotice from "./DownloadNotice.jsx";
 import { reusableFields } from "./workflow";
 import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
 import BriefImporter from "./BriefImporter.jsx";
@@ -89,6 +90,16 @@ export default function ProjectEditor({
     project ? STEPS.length - 1 : firstStep,
   );
   const [error, setError] = useState("");
+  const [exportText, setExportText] = useState("");
+  const [exportUrl, setExportUrl] = useState("");
+  useEffect(
+    () => () => {
+      if (exportUrl) setTimeout(() => URL.revokeObjectURL(exportUrl), 10000);
+    },
+    [exportUrl],
+  );
+  const [exportError, setExportError] = useState("");
+  const [downloadName, setDownloadName] = useState("");
   const [saveNotice, setSaveNotice] = useState(savedNotice);
   const [busy, setBusy] = useState(false);
   const [json, setJson] = useState("");
@@ -98,6 +109,13 @@ export default function ProjectEditor({
   const [reviewed, setReviewed] = useState(false);
   const progressRef = useRef(null);
   const current = STEPS[step];
+
+  useEffect(() => {
+    setExportText("");
+    setExportUrl("");
+    setExportError("");
+    setDownloadName("");
+  }, [fields]);
 
   useEffect(() => {
     const rail = progressRef.current;
@@ -230,15 +248,21 @@ export default function ProjectEditor({
   }
 
   function exportDraft() {
+    setExportError("");
+    setExportText("");
+    setExportUrl("");
+    setDownloadName("");
     try {
-      download(
-        new Blob([JSON.stringify(intakeFor(fields), null, 2)], {
-          type: "application/json",
-        }),
-        "streamlion-project.json",
+      const text = JSON.stringify(intakeFor(fields), null, 2);
+      setExportText(text);
+      const url = URL.createObjectURL(
+        new Blob([text], { type: "application/json" }),
       );
+      setExportUrl(url);
+      downloadURL(url, "streamlion-project.json");
+      setDownloadName("streamlion-project.json");
     } catch (exception) {
-      setError(exception.message);
+      setExportError(`Could not start the download: ${exception.message}`);
     }
   }
 
@@ -675,10 +699,50 @@ export default function ProjectEditor({
                 <button type="button" onClick={exportDraft}>
                   Download project details
                 </button>
+                <DownloadNotice
+                  fileName={downloadName}
+                  label="Project details"
+                  requested
+                />
+                {exportError && (
+                  <p role="alert" className="error">
+                    {exportError}
+                  </p>
+                )}
+                {exportUrl && (
+                  <p className="hint">
+                    If no file appears,{" "}
+                    <a href={exportUrl} download="streamlion-project.json">
+                      save the project details file directly
+                    </a>
+                    .
+                  </p>
+                )}
+                {exportText && (
+                  <details>
+                    <summary>Copy project details instead</summary>
+                    <p>
+                      If no file appears in Downloads, copy all the JSON below
+                      and keep it somewhere private. It contains your project
+                      details.
+                    </p>
+                    <textarea
+                      aria-label="Project details JSON"
+                      readOnly
+                      rows={8}
+                      value={exportText}
+                    />
+                  </details>
+                )}
               </details>
             </div>
           )}
 
+          {step !== STEPS.length - 1 && exportError && (
+            <p role="alert" className="error">
+              {exportError}
+            </p>
+          )}
           {stale && (
             <section className="error">
               <p>
