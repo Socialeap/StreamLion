@@ -28,6 +28,7 @@ import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
 import BriefImporter from "./BriefImporter.jsx";
 import { fillEmptyBriefFields, readPendingBrief } from "./brief-import.js";
 import { CURRENCIES } from "./setup-assistant.js";
+import LocationTimezone from "./LocationTimezone.jsx";
 import {
   TIME_ZONES,
   validTimeZone,
@@ -632,6 +633,12 @@ export default function ProjectEditor({
                         />
                       ) : field.key === "timeZone" ? (
                         <>
+                          <LocationTimezone
+                            fields={fields}
+                            onUse={(timeZone) =>
+                              update({ ...fields, timeZone })
+                            }
+                          />
                           <label htmlFor={`${id}-search`}>
                             Find a time zone
                           </label>
