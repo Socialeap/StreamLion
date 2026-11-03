@@ -25,7 +25,7 @@ const { render, fireEvent, act, cleanup, within, waitFor } =
 const { default: ProjectEditor } = await import("./ProjectEditor.jsx");
 const { FIELD_HELP } = await import("./FieldHelp.jsx");
 const { PROJECT_FIELDS, intakeFor } = await import("./project-schema.js");
-const { readDraft, projectDraftKey } = await import("./drafts.js");
+const { readDraft, writeDraft, projectDraftKey } = await import("./drafts.js");
 const { default: Jobs } = await import("./Jobs.jsx");
 const { keepPendingBrief, readPendingBrief } =
   await import("./brief-import.js");
@@ -738,12 +738,19 @@ test("invalid project fields explain the blocked export beside the Finish button
   assert.equal(ui.getByLabelText("Offered fee").value, "$200");
 });
 
-test("the reported currency error stays beside export and links to a correctable Payment field", (t) => {
+test("a saved invalid currency remains visible until corrected using the currency dropdown", (t) => {
   t.after(cleanup);
   localStorage.clear();
   t.mock.method(URL, "createObjectURL", () => "blob:currency-test");
   t.mock.method(URL, "revokeObjectURL", () => {});
   t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", () => {});
+  writeDraft(projectDraftKey("currency-export"), {
+    fields: {
+      ...Object.fromEntries(PROJECT_FIELDS.map((f) => [f.key, ""])),
+      title: "Currency QA",
+      currency: "US",
+    },
+  });
   const ui = render(
     <ProjectEditor
       onSave={async () => {}}
@@ -751,16 +758,7 @@ test("the reported currency error stays beside export and links to a correctable
       draftScope="currency-export"
     />,
   );
-  fireEvent.click(ui.getByRole("button", { name: "Enter details myself" }));
-  fireEvent.change(ui.getByLabelText("Project name"), {
-    target: { value: "Currency QA" },
-  });
-  for (let i = 0; i < 5; i++)
-    fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
-  fireEvent.change(ui.getByLabelText("Currency (ISO code)"), {
-    target: { value: "US Dollars" },
-  });
-  for (let i = 0; i < 2; i++)
+  for (let i = 0; i < 7; i++)
     fireEvent.click(ui.getByRole("button", { name: /Continue/ }));
   fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
   assert.match(
@@ -771,9 +769,19 @@ test("the reported currency error stays beside export and links to a correctable
   fireEvent.click(
     ui.getByRole("button", { name: "Review currency in Payment" }),
   );
-  assert.equal(ui.getByLabelText("Currency (ISO code)").value, "US DOLLARS");
+  const currency = ui.getByRole("combobox", { name: "Currency (ISO code)" });
+  assert.equal(currency.value, "US");
+  assert.equal(
+    within(currency).getByRole("option", { name: /US.*saved value/ }).disabled,
+    true,
+  );
+  assert(
+    [...currency.options]
+      .filter((o) => !o.disabled && o.value)
+      .every((o) => /^[A-Z]{3}$/.test(o.value)),
+  );
   fireEvent.change(ui.getByLabelText("Currency (ISO code)"), {
-    target: { value: "usd" },
+    target: { value: "USD" },
   });
   assert.equal(ui.getByLabelText("Currency (ISO code)").value, "USD");
   for (let i = 0; i < 2; i++)
