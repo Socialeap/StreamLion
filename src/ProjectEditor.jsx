@@ -28,7 +28,12 @@ import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
 import BriefImporter from "./BriefImporter.jsx";
 import { fillEmptyBriefFields, readPendingBrief } from "./brief-import.js";
 import { CURRENCIES } from "./setup-assistant.js";
-import { TIME_ZONES, validTimeZone, timeZoneLabel } from "./time-zones.js";
+import {
+  TIME_ZONES,
+  validTimeZone,
+  timeZoneLabel,
+  searchTimeZones,
+} from "./time-zones.js";
 
 const CURRENCY_CODES =
   typeof Intl.supportedValuesOf === "function"
@@ -107,6 +112,7 @@ export default function ProjectEditor({
   );
   const [exportError, setExportError] = useState("");
   const [zoneSearch, setZoneSearch] = useState("");
+  const zoneResults = searchTimeZones(zoneSearch);
   const [downloadName, setDownloadName] = useState("");
   const [saveNotice, setSaveNotice] = useState(savedNotice);
   const [busy, setBusy] = useState(false);
@@ -632,12 +638,25 @@ export default function ProjectEditor({
                           <input
                             id={`${id}-search`}
                             type="search"
-                            placeholder="City or region, e.g. New York"
+                            placeholder="Time-zone city or supported location"
                             value={zoneSearch}
                             onChange={(event) =>
                               setZoneSearch(event.target.value)
                             }
                           />
+                          {zoneResults.noMatches && (
+                            <p role="status" className="hint">
+                              No matching time-zone name or supported location.
+                              The full list is shown below. Choose a nearby
+                              major city in the same time zone, or clear the
+                              search to browse.
+                            </p>
+                          )}
+                          {zoneResults.note && (
+                            <p role="status" className="hint">
+                              {zoneResults.note}
+                            </p>
+                          )}
                           <select
                             id={id}
                             value={fields.timeZone}
@@ -661,13 +680,7 @@ export default function ProjectEditor({
                             {TIME_ZONES.filter(
                               (zone) =>
                                 zone === fields.timeZone ||
-                                timeZoneLabel(zone)
-                                  .toLowerCase()
-                                  .includes(
-                                    timeZoneLabel(
-                                      zoneSearch.trim(),
-                                    ).toLowerCase(),
-                                  ),
+                                zoneResults.options.includes(zone),
                             ).map((zone) => (
                               <option key={zone} value={zone}>
                                 {timeZoneLabel(zone)}
@@ -748,10 +761,11 @@ export default function ProjectEditor({
                       {field.key === "timeZone" && (
                         <p className="hint">
                           Required when a start or end time is entered. Use the
-                          visit location's time zone. Search for a city or
-                          region, then choose from the list (America / New York
-                          for New York). This keeps the scheduled clock time
-                          correct across daylight saving changes.
+                          visit location's time zone. Search listed time-zone
+                          cities or supported locations, then choose from the
+                          list (America / New York for New York). This keeps the
+                          scheduled clock time correct across daylight saving
+                          changes.
                         </p>
                       )}
                       {field.key === "deliverables" &&
