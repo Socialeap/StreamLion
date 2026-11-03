@@ -28,6 +28,7 @@ import HelpTip, { FIELD_HELP, GROUP_HELP } from "./FieldHelp";
 import BriefImporter from "./BriefImporter.jsx";
 import { fillEmptyBriefFields, readPendingBrief } from "./brief-import.js";
 import { CURRENCIES } from "./setup-assistant.js";
+import { TIME_ZONES, validTimeZone, timeZoneLabel } from "./time-zones.js";
 
 const CURRENCY_CODES =
   typeof Intl.supportedValuesOf === "function"
@@ -105,6 +106,7 @@ export default function ProjectEditor({
     [exportUrl],
   );
   const [exportError, setExportError] = useState("");
+  const [zoneSearch, setZoneSearch] = useState("");
   const [downloadName, setDownloadName] = useState("");
   const [saveNotice, setSaveNotice] = useState(savedNotice);
   const [busy, setBusy] = useState(false);
@@ -622,6 +624,57 @@ export default function ProjectEditor({
                             })
                           }
                         />
+                      ) : field.key === "timeZone" ? (
+                        <>
+                          <label htmlFor={`${id}-search`}>
+                            Find a time zone
+                          </label>
+                          <input
+                            id={`${id}-search`}
+                            type="search"
+                            placeholder="City or region, e.g. New York"
+                            value={zoneSearch}
+                            onChange={(event) =>
+                              setZoneSearch(event.target.value)
+                            }
+                          />
+                          <select
+                            id={id}
+                            value={fields.timeZone}
+                            onChange={(event) =>
+                              update({
+                                ...fields,
+                                timeZone: event.target.value,
+                              })
+                            }
+                          >
+                            <option value="">Select visit time zone</option>
+                            {fields.timeZone &&
+                              !TIME_ZONES.includes(fields.timeZone) && (
+                                <option
+                                  value={fields.timeZone}
+                                  disabled={!validTimeZone(fields.timeZone)}
+                                >
+                                  {fields.timeZone} (saved value)
+                                </option>
+                              )}
+                            {TIME_ZONES.filter(
+                              (zone) =>
+                                zone === fields.timeZone ||
+                                timeZoneLabel(zone)
+                                  .toLowerCase()
+                                  .includes(
+                                    timeZoneLabel(
+                                      zoneSearch.trim(),
+                                    ).toLowerCase(),
+                                  ),
+                            ).map((zone) => (
+                              <option key={zone} value={zone}>
+                                {timeZoneLabel(zone)}
+                              </option>
+                            ))}
+                          </select>
+                        </>
                       ) : field.key === "currency" ? (
                         <select
                           id={id}
@@ -695,8 +748,9 @@ export default function ProjectEditor({
                       {field.key === "timeZone" && (
                         <p className="hint">
                           Required when a start or end time is entered. Use the
-                          visit location's time zone, such as America/New_York
-                          for New York. This keeps the scheduled clock time
+                          visit location's time zone. Search for a city or
+                          region, then choose from the list (America / New York
+                          for New York). This keeps the scheduled clock time
                           correct across daylight saving changes.
                         </p>
                       )}
@@ -763,8 +817,8 @@ export default function ProjectEditor({
                     {/time zone/i.test(exportError) && (
                       <>
                         <p className="hint">
-                          In step 5, Visit, set the time zone for the visit
-                          location. For New York, use America/New_York.
+                          In step 5, Visit, select the time zone for the visit
+                          location. For New York, choose America / New York.
                         </p>
                         <button type="button" onClick={() => goTo(4)}>
                           Review time zone in Visit
