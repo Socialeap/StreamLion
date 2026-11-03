@@ -1,0 +1,3 @@
+Contains GeoNames data, https://www.geonames.org/, licensed CC BY 4.0: https://creativecommons.org/licenses/by/4.0/.
+Derived city/name/region/time-zone lookup; no accuracy or completeness warranty.
+Source SHA-256: {"admin1CodesASCII.txt": "2e4867f5397acb056ea26377601b57af37cb4c81399770225018e9e439e91ad3", "cities500.zip": "6da79f687d50f6a5c2035687697c70b7f830a2c8343c927e1d00ea8972c8b508", "countryInfo.txt": "79f8f59ea01cbb40438bf1856dd6c2ff201f03f8fc72d0530b2646aaf603ef04"}

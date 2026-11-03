@@ -975,3 +975,52 @@ test("location search never strands the visit selector and never chooses a zone 
     "Asia/Tokyo",
   );
 });
+
+test("project location suggestion confirms into the draft and exported project without another search", async (t) => {
+  t.after(cleanup);
+  localStorage.clear();
+  const { LOCATION_DATA_VERSION } = await import("./location-timezone.js");
+  t.mock.method(globalThis, "fetch", async (url) => {
+    assert.equal(url, `/location-data/${LOCATION_DATA_VERSION}/US.json`);
+    return Response.json({
+      version: LOCATION_DATA_VERSION,
+      country: "US",
+      cities: [[["Miami"], "FL", "America/New_York"]],
+    });
+  });
+  t.mock.method(URL, "createObjectURL", () => "blob:project-location");
+  t.mock.method(URL, "revokeObjectURL", () => {});
+  t.mock.method(dom.window.HTMLAnchorElement.prototype, "click", () => {});
+  writeDraft(projectDraftKey("auto-location"), {
+    fields: {
+      ...Object.fromEntries(PROJECT_FIELDS.map((f) => [f.key, ""])),
+      title: "Location export QA",
+      city: "Miami",
+      region: "Florida",
+      country: "US",
+      startLocal: "2026-11-04T10:00",
+    },
+  });
+  const ui = render(
+    <ProjectEditor
+      draftScope="auto-location"
+      onSave={async () => {}}
+      onCancel={() => {}}
+    />,
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: "Step 5: When is the visit?" }),
+  );
+  fireEvent.click(
+    await ui.findByRole("button", { name: "Use America / New York" }),
+  );
+  assert.equal(
+    readDraft(projectDraftKey("auto-location")).fields.timeZone,
+    "America/New_York",
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Step 9: Review and save" }));
+  fireEvent.click(ui.getByRole("button", { name: "Download project details" }));
+  const exported = JSON.parse(ui.getByLabelText("Project details JSON").value);
+  assert.equal(exported.fields.timeZone, "America/New_York");
+  assert.equal(exported.fields.startLocal, "2026-11-04T10:00");
+});

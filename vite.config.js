@@ -104,6 +104,19 @@ export default defineConfig({
         // Sign-in redirects and standalone policy/release pages must reach their
         // actual routes rather than receiving the offline workspace shell.
         navigateFallbackDenylist: navigationFallbackDenylist,
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.origin === self.location.origin &&
+              url.pathname.startsWith("/location-data/"),
+            handler: "CacheFirst",
+            options: {
+              cacheName: "streamlion-location-data",
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 8, purgeOnQuotaError: true },
+            },
+          },
+        ],
       },
     }),
   ],
