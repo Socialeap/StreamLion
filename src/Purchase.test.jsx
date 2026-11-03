@@ -621,6 +621,12 @@ test("owner QA expiry closes the workspace at its original deadline", async (t) 
   await waitFor(() => assert.equal(typeof expire, "function"));
   await act(async () => expire());
   assert.equal(ui.queryByText("Temporary QA workspace"), null);
+  assert.match(ui.getByRole("alert").textContent, /owner QA access has ended/);
+  assert.match(
+    ui.getByRole("alert").textContent,
+    /Signing in again will not extend/,
+  );
+  assert(ui.getByRole("link", { name: "Purchase and device backup options" }));
 });
 
 test("refund requests show pending separately from success and retain backup retrieval after a successful refund", async (t) => {

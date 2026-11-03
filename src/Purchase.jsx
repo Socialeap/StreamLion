@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { AppHeader, BottomNavigation } from "./AppNavigation.jsx";
 import { purchaseRequest } from "./purchase-api.js";
 import { coreRefundRequestText } from "./refund-policy.js";
-export default function Purchase({ onPurchased }) {
+export default function Purchase({ onPurchased, accessBlocked = false }) {
   const [config, setConfig] = useState(null),
     [account, setAccount] = useState(null);
   const [error, setError] = useState(""),
@@ -195,6 +195,22 @@ export default function Purchase({ onPurchased }) {
           {!config && !error && <p role="status">Checking purchase options…</p>}
           {config?.enabled === false && (
             <>
+              {accessBlocked && account?.connected && !account.purchased && (
+                <>
+                  <p role="status">
+                    You are signed in, but workspace access is not active for
+                    this account. Signing in again will not restore workspace
+                    access. Workspace navigation becomes available when access
+                    is restored. Your Google files remain in your Google
+                    account.
+                  </p>
+                  <p>
+                    <a href="/?page=Connections">
+                      Check workspace access again
+                    </a>
+                  </p>
+                </>
+              )}
               <p>
                 New purchases are paused. Existing purchases can still be
                 restored or confirmed.
@@ -414,7 +430,7 @@ export default function Purchase({ onPurchased }) {
           </footer>
         </section>
       </main>
-      <BottomNavigation page="Account" />
+      <BottomNavigation page="Account" disabled={accessBlocked} />
     </>
   );
 }

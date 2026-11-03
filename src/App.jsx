@@ -139,6 +139,7 @@ export default function App() {
   const [hasPending, setHasPending] = useState(false);
   const [noteEpoch, setNoteEpoch] = useState(0);
   const [restoreError, setRestoreError] = useState("");
+  const [workspaceAccessRequired, setWorkspaceAccessRequired] = useState(false);
   const [checkingConnection, setCheckingConnection] = useState(true);
   const [welcomeOpen, setWelcomeOpen] = useState(
     () =>
@@ -192,6 +193,7 @@ export default function App() {
     const epoch = ++restoreEpoch.current;
     setCheckingConnection(true);
     setRestoreError("");
+    setWorkspaceAccessRequired(false);
     setStatus("Restoring Google connection…");
     try {
       const connection = await restoreGoogleSession();
@@ -233,7 +235,13 @@ export default function App() {
     } catch (e) {
       if (epoch === restoreEpoch.current) {
         setRestoreError(e.message);
-        setStatus("Saved connection unavailable · retry in Connections");
+        const accessRequired = e.code === "WORKSPACE_ACCESS_REQUIRED";
+        setWorkspaceAccessRequired(accessRequired);
+        setStatus(
+          accessRequired
+            ? "Google connected · workspace access unavailable"
+            : "Saved connection unavailable · retry in Connections",
+        );
       }
     } finally {
       if (epoch === restoreEpoch.current) setCheckingConnection(false);
@@ -262,11 +270,12 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    if (!restoreError || captureBusy || syncBusy) return;
+    if (!restoreError || workspaceAccessRequired || captureBusy || syncBusy)
+      return;
     const retry = () => restoreConnection();
     window.addEventListener("online", retry);
     return () => window.removeEventListener("online", retry);
-  }, [restoreError, captureBusy, syncBusy]);
+  }, [restoreError, workspaceAccessRequired, captureBusy, syncBusy]);
   useEffect(() => {
     loadWorkspace()
       .then((w) => {
@@ -470,6 +479,7 @@ export default function App() {
     restoreEpoch.current++;
     setCheckingConnection(false);
     setRestoreError("");
+    setWorkspaceAccessRequired(false);
     if (!preserveSelection) {
       pending.current = null;
       setHasPending(false);
@@ -1089,6 +1099,7 @@ export default function App() {
         account={googleAccount()}
         bookId={bookId}
         error={restoreError || error}
+        workspaceAccessRequired={workspaceAccessRequired}
         busy={disabled}
         animate={animateWelcome}
         onProjects={() => enterWorkspace(bookId ? "Projects" : "Connections")}

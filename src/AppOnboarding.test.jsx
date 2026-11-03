@@ -669,3 +669,67 @@ test("eligible install prompts require a click, handle dismissal and hide after 
   await act(() => window.dispatchEvent(new window.Event("appinstalled")));
   assert.equal(ui.queryByText("Install app", { exact: true }), null);
 });
+
+test("a signed-in account without workspace access gets access guidance instead of a reconnect loop", async () => {
+  restoredWorkbook();
+  const base = globalThis.fetch;
+  const draftKey = "streamlion-draft-v1:saved-book:pending-write";
+  localStorage.setItem(draftKey, '{"original":"keep"}');
+  globalThis.fetch = async (url, options = {}) => {
+    if (url.startsWith("/api/google/sheets?"))
+      return Response.json(
+        { error: "Purchase StreamLion or restore your purchase to continue." },
+        { status: 402 },
+      );
+    if (url === "/api/purchase/status")
+      return Response.json({
+        enabled: true,
+        required: true,
+        connected: true,
+        purchased: false,
+        mode: "live",
+        account: "qa-a@example.com",
+        subject: "synthetic-a",
+      });
+    if (url === "/api/purchase/config")
+      return Response.json({
+        enabled: false,
+        required: true,
+        checkoutMode: "paused",
+        mode: "live",
+      });
+    if (url === "/api/free-pilot/status")
+      return Response.json({ enabled: false });
+    return base(url, options);
+  };
+  const ui = render(<App />);
+  await ui.findByRole("button", { name: "Review workspace access" });
+  assert.match(
+    ui.getByRole("alert").textContent,
+    /Google is connected.*workspace access/,
+  );
+  assert.equal(ui.queryByText("Your workspace is ready."), null);
+  assert.equal(
+    ui.queryByRole("button", { name: "Open saved workspace" }),
+    null,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Review workspace access" }));
+  await ui.findByText(/Signing in again will not restore workspace access/);
+  assert.equal(
+    ui
+      .getByRole("link", { name: "Check workspace access again" })
+      .getAttribute("href"),
+    "/?page=Connections",
+  );
+  const nav = ui.getByRole("navigation", { name: "Main" });
+  for (const link of nav.querySelectorAll("a")) {
+    assert.equal(link.getAttribute("aria-disabled"), "true");
+    assert.equal(fireEvent.click(link), false);
+  }
+  assert(ui.getByRole("button", { name: "Download my device backup" }));
+  assert.equal(localStorage.getItem(draftKey), '{"original":"keep"}');
+  assert.equal(
+    localStorage.getItem("streamlion-selected-workbook-v1"),
+    "saved-book",
+  );
+});

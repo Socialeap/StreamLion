@@ -374,6 +374,13 @@ async function request(path, options = {}) {
     throw new Error("Google session expired. Reconnect.");
   }
   if (!response.ok) {
+    if (persistentSession && response.status === 402) {
+      const error = new Error(
+        "Google is connected, but this account does not currently have StreamLion workspace access. Review workspace access; signing in again will not restore it. Your saved data is kept.",
+      );
+      error.code = "WORKSPACE_ACCESS_REQUIRED";
+      throw error;
+    }
     if (
       persistentSession &&
       response.status === 409 &&
