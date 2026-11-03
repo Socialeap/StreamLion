@@ -84,7 +84,7 @@ const states = {
   activation_pending: "Confirming — recovery in progress",
   delivery_pending:
     "Verifying Completion Brief delivery — retry the original operation",
-  confirmed: "Confirmed",
+  confirmed: "Brief agreed",
   in_progress: "In progress",
   work_completed: "Work completed · delivery pending",
   delivered: "Delivered",
@@ -686,7 +686,9 @@ export default function CoordinationPortal({
               : prospect
                 ? "Client access: work-order request"
                 : "Client access: verify your private link"
-            : undefined
+            : status?.email && status.workbook
+              ? `Account: ${status.email}. Google connected · workbook selected`
+              : undefined
         }
         connected={client ? verified : Boolean(status)}
         checking={access === "loading"}
@@ -2296,13 +2298,79 @@ function JobPanel({
             <span>Appointment</span>
             <strong>
               {job.fields.startLocal
-                ? job.fields.startLocal.replace("T", " ") +
-                  " · " +
-                  job.fields.timeZone
-                : "Not confirmed"}
+                ? (job.fields.appointmentStatus === "confirmed"
+                    ? ""
+                    : "Proposed · ") +
+                  job.fields.startLocal.replace("T", " ") +
+                  (job.fields.timeZone ? " · " + job.fields.timeZone : "")
+                : "Visit not scheduled"}
             </strong>
           </div>
         </div>
+        {!client && (
+          <details className="quiet-details">
+            <summary>Briefing highlights</summary>
+            <section aria-label="Briefing highlights">
+              <p className="coord-small">
+                {job.accepted
+                  ? "Agreed brief wording"
+                  : "Saved request wording"}
+                ; review and edit the fields below as needed.
+              </p>
+              <dl className="coord-terms">
+                <dt>Requested work and any exclusions</dt>
+                <dd className="coord-pre">
+                  {(job.accepted || job.fields).scope || "Not provided"}
+                </dd>
+                {(job.accepted || job.fields).exclusions && (
+                  <>
+                    <dt>Separate exclusions</dt>
+                    <dd className="coord-pre">
+                      {(job.accepted || job.fields).exclusions}
+                    </dd>
+                  </>
+                )}
+                {(job.accepted || job.fields).notes
+                  ?.split(/\r?\n/)
+                  .filter((line) =>
+                    line.startsWith("Exact dimensions needed for: "),
+                  )
+                  .map((line, i) => (
+                    <React.Fragment key={i}>
+                      <dt>Exact dimensions requested</dt>
+                      <dd className="coord-pre">
+                        {line.slice("Exact dimensions needed for: ".length)}
+                      </dd>
+                    </React.Fragment>
+                  ))}
+                {(job.accepted || job.fields).notes && (
+                  <>
+                    <dt>Additional notes</dt>
+                    <dd className="coord-pre">
+                      {(job.accepted || job.fields).notes}
+                    </dd>
+                  </>
+                )}
+                {(job.accepted || job.fields).unresolved && (
+                  <>
+                    <dt>Questions to resolve</dt>
+                    <dd className="coord-pre">
+                      {(job.accepted || job.fields).unresolved}
+                    </dd>
+                  </>
+                )}
+                {job.questions
+                  ?.filter((question) => !question.answer)
+                  .map((question) => (
+                    <React.Fragment key={question.id}>
+                      <dt>Unanswered question</dt>
+                      <dd className="coord-pre">{question.text}</dd>
+                    </React.Fragment>
+                  ))}
+              </dl>
+            </section>
+          </details>
+        )}
         {job.intake && (
           <section className="coord-notice" aria-label="Service intake">
             <h3>

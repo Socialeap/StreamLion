@@ -1052,6 +1052,10 @@ function availability(value, ctx) {
   if (!flexible && !slots.length)
     fail("Add at least one date, or choose I’m flexible.");
   if (slots.length > 3) fail("Choose up to three dates.");
+  if (slots.some((slot) => !slot?.date && slot?.window))
+    fail("Add a date or clear the selected time.");
+  if (slots.some((slot) => slot?.date && !slot?.window))
+    fail("Choose a time of day or clear the selected date.");
   const clean = slots.map((slot) => ({
     date: futureDate(
       slot?.date,

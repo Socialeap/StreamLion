@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { aiAvailabilityMessage, creditLabel } from "./managed-ai.js";
 import ThemeSwitch from "./ThemeSwitch.jsx";
+import BriefComparison from "./BriefComparison.jsx";
 
 // Presentation changes never replace the conversation owner or its media lifecycle.
 export default function FocusedAsk({
@@ -263,6 +264,10 @@ export default function FocusedAsk({
                     ))}
                     <p className="hint">{result.sourceLabel}</p>
                   </details>
+                  {result.kind === "answer" &&
+                    result.answers.some((item) => item.topic === "ai") && (
+                      <BriefComparison project={project} />
+                    )}
                 </>
               ) : null}
             </div>

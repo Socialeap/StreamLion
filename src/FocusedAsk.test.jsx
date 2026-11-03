@@ -30,6 +30,7 @@ const project = {
   id: "synthetic",
   title: "Harbor House",
   contact1Name: "Sam Example",
+  scope: "Capture the lobby and exclude the storage room.",
 };
 const props = {
   project,
@@ -95,6 +96,11 @@ test("AI consent appears only on submission, is scoped to the account/workbook/q
       config.preferenceScope,
     );
     assert.ok(ui.getByText("Sam Example is the contact."));
+    fireEvent.click(ui.getByText("Compare with this project brief"));
+    assert.ok(ui.getByText("Capture the lobby and exclude the storage room."));
+    assert.ok(
+      ui.getByText(/These displayed details are not exact AI citations/),
+    );
     cleanup();
     await open();
     await submit();

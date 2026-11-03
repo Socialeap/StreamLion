@@ -27,6 +27,54 @@ const project = {
   address: "123 Example Street",
 };
 
+test("an AI answer offers the displayed brief for comparison without claiming exact citations", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) =>
+    url.endsWith("config")
+      ? Response.json({
+          enabled: true,
+          preferenceScope: "a".repeat(43),
+          priceMicros: 12500,
+          balanceMicros: 100000,
+        })
+      : new Response(
+          '{"type":"start","source":"Google workbook · read now"}\n{"type":"text","delta":"Measure both rooms."}\n{"type":"text_done","balanceMicros":87500}\n{"type":"done"}\n',
+        );
+  try {
+    let ui;
+    await act(async () => {
+      ui = render(
+        <Answers
+          project={{
+            ...project,
+            scope: "Capture the lobby; exclude storage.",
+            notes: "Exact dimensions needed for: Both rooms",
+          }}
+          source="google"
+        />,
+      );
+    });
+    fireEvent.click(
+      ui.getByRole("checkbox", { name: "Use AI pilot · Luna + Kokoro" }),
+    );
+    fireEvent.change(ui.getByRole("textbox"), {
+      target: { value: "What needs measuring?" },
+    });
+    await act(async () =>
+      fireEvent.click(ui.getByRole("button", { name: "Get answer" })),
+    );
+    fireEvent.click(ui.getByText("Compare with this project brief"));
+    assert.ok(ui.getByText("Capture the lobby; exclude storage."));
+    assert.ok(ui.getByText("Exact dimensions needed for: Both rooms"));
+    assert.ok(
+      ui.getByText(/These displayed details are not exact AI citations/),
+    );
+  } finally {
+    cleanup();
+    globalThis.fetch = original;
+  }
+});
+
 test("a stalled config body times out, fails closed and cannot overwrite a successful retry", async (t) => {
   const original = globalThis.fetch;
   const enabled = {

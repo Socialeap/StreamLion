@@ -848,6 +848,9 @@ fieldset .form-row {gap:0 18px;}
 .quiet-details { border-top: 1px solid var(--line); margin-top: 27px; padding-top: 12px; }
 .quiet-details summary { font-size: 15px; font-weight: 650; }
 .quiet-details p { font-size: 14px; }
+.brief-comparison dl { display: grid; gap: 12px; }
+.brief-comparison dt { font-size: 14px; font-weight: 650; }
+.brief-comparison dd { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
 .wizard-fields {
   border: 0;
   border-radius: 0;

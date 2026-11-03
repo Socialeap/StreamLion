@@ -25,6 +25,7 @@ Object.defineProperty(dom.window.navigator, "clipboard", {
 const { render, fireEvent, cleanup, waitFor, within } =
   await import("@testing-library/react");
 const { default: RequestAssistant } = await import("./RequestAssistant.jsx");
+const { AvailabilityWidget } = await import("./RequestWidgets.jsx");
 const { INTAKE_PRESETS } = await import("./intake-templates.js");
 const { blankPricing, validatePricing } = await import("./provider-pricing.js");
 const { localDate, newRequest, requestFlow, writeRequest, readRequest } =
@@ -139,6 +140,53 @@ async function type(ui, label, value) {
   fireEvent.change(input, { target: { value } });
   fireEvent.submit(input.closest("form"));
 }
+
+test("a client can clear a time chosen without a date and continue with flexible timing", () => {
+  const submissions = [];
+  const ui = render(
+    <AvailabilityWidget onSubmit={(value) => submissions.push(value)} />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Morning" }));
+  fireEvent.click(ui.getByRole("checkbox", { name: "I’m flexible" }));
+  fireEvent.click(ui.getByRole("button", { name: "Clear time for option 1" }));
+  fireEvent.click(ui.getByRole("button", { name: "Continue — I’m flexible" }));
+  assert.deepEqual(submissions, [{ slots: [], flexible: true }]);
+});
+test("clearing one time keeps its date and the other proposed option", () => {
+  const ui = render(
+    <AvailabilityWidget
+      value={{
+        slots: [
+          { date: day(3), window: "morning" },
+          { date: day(4), window: "afternoon" },
+        ],
+        flexible: false,
+      }}
+      onSubmit={() => {}}
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Clear time for option 1" }));
+  assert.equal(ui.getByLabelText("Date for option 1").value, day(3));
+  assert.equal(ui.getByLabelText("Date for option 2").value, day(4));
+  assert.equal(
+    within(ui.getByRole("group", { name: "Time of day for option 2" }))
+      .getByRole("button", { name: "Afternoon" })
+      .getAttribute("aria-pressed"),
+    "true",
+  );
+});
+test("a client can clear a date without a time and continue with flexible timing", () => {
+  const submissions = [];
+  const ui = render(
+    <AvailabilityWidget
+      value={{ slots: [{ date: day(3), window: "" }], flexible: true }}
+      onSubmit={(value) => submissions.push(value)}
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "Clear date for option 1" }));
+  fireEvent.click(ui.getByRole("button", { name: "Continue — I’m flexible" }));
+  assert.deepEqual(submissions, [{ slots: [], flexible: true }]);
+});
 
 test("a client completes the provider's form one question at a time and keeps a private status link", async () => {
   const storage = memoryStorage();
