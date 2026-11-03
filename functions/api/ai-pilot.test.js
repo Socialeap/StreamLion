@@ -19,6 +19,7 @@ import {
   takePhrase,
 } from "../../server/ai-providers.js";
 import { TABS, rowFor, makeRevision } from "../../src/workbook.js";
+import { OWNER_EMAIL } from "../../server/admin-data.js";
 
 function fixture() {
   const sql = new DatabaseSync(":memory:");
@@ -302,6 +303,287 @@ async function routeFixture() {
     });
   return { sql, env, req, preferenceScope };
 }
+
+async function ownerQaFixture() {
+  const { sql, env } = await routeFixture();
+  sql.exec(`CREATE TABLE streamlion_admin_policy_v1(mode TEXT PRIMARY KEY,enabled INTEGER NOT NULL);
+    CREATE TABLE streamlion_admin_owners_v1(mode TEXT,google_subject TEXT,email TEXT,enabled INTEGER);
+    INSERT INTO streamlion_admin_policy_v1 VALUES('live',1);
+    INSERT INTO streamlion_admin_owners_v1 VALUES('live','a','${OWNER_EMAIL}',1);
+    UPDATE streamlion_google_sessions_v1 SET email='${OWNER_EMAIL}';`);
+  const now = Date.now(),
+    origin = "https://streamlion.transcendencemedia.com";
+  Object.assign(env, {
+    GOOGLE_AUTH_ORIGIN: origin,
+    STREAMLION_PAYMENTS_MODE: "live",
+    STREAMLION_CHECKOUT_MODE: "paused",
+    STREAMLION_AI_CREDITS_MODE: "live",
+    ENABLE_FREE_PILOT: "false",
+    ENABLE_AI_PILOT: "false",
+    STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify({
+      version: 1,
+      scope: "google-workspace",
+      mode: "live",
+      origin,
+      subject: "a",
+      issuedAt: now - 1000,
+      expiresAt: now + 3600000,
+      reason: "synthetic workspace QA",
+    }),
+    STREAMLION_OWNER_AI_QA: JSON.stringify({
+      version: 1,
+      scope: "synthetic-text-ai",
+      subject: "a",
+      workbookId: "selected",
+      projectId: "project",
+      requestId: uuid,
+      issuedAt: now - 1000,
+      expiresAt: now + 600000,
+    }),
+  });
+  const preferenceScope = await hash(
+    JSON.stringify(["ai-preference-v1", "a", "selected"]),
+  );
+  const req = (path, body = {}) =>
+    new Request(`${origin}/api/ai/${path}`, {
+      method: path === "config" ? "GET" : "POST",
+      headers: {
+        Cookie: `__Host-streamlion-session=${"a".repeat(43)}`,
+        Origin: origin,
+        "Content-Type": "application/json",
+      },
+      ...(path === "config"
+        ? {}
+        : {
+            body: JSON.stringify({
+              projectId: "project",
+              question: "Which rooms need measuring?",
+              requestId: "22222222-2222-4222-8222-222222222222",
+              speech: false,
+              priceMicros: 12500,
+              preferenceScope,
+              ...body,
+            }),
+          }),
+    });
+  return { sql, env, req };
+}
+
+test("owner text QA fails closed for invalid identity, windows, workbook, project and speech", async () => {
+  const { sql, env, req } = await ownerQaFixture(),
+    original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    throw new Error("unexpected provider call");
+  };
+  try {
+    const config = await (
+      await handleAI({ env, request: req("config") })
+    ).json();
+    assert.equal(config.enabled, true);
+    assert.equal(config.ownerQa, true);
+    assert.equal(
+      (await handleAI({ env, request: req("answer", { projectId: "other" }) }))
+        .status,
+      403,
+    );
+    assert.equal(
+      (await handleAI({ env, request: req("answer", { speech: true }) }))
+        .status,
+      403,
+    );
+    const base = JSON.parse(env.STREAMLION_OWNER_AI_QA);
+    for (const changes of [
+      { subject: "b" },
+      { workbookId: "other" },
+      { expiresAt: Date.now() - 1 },
+      { issuedAt: Date.now() - 1, expiresAt: Date.now() + 31 * 60000 },
+      { requestId: "not-a-uuid" },
+    ]) {
+      const result = await (
+        await handleAI({
+          env: {
+            ...env,
+            STREAMLION_OWNER_AI_QA: JSON.stringify({ ...base, ...changes }),
+          },
+          request: req("config"),
+        })
+      ).json();
+      assert.equal(result.enabled, false);
+    }
+    for (const changes of [
+      { STREAMLION_CHECKOUT_MODE: "open" },
+      { ENABLE_FREE_PILOT: "true" },
+      { OPENAI_API_KEY: "" },
+      { STREAMLION_OWNER_CORE_QA_LICENSE: "" },
+    ]) {
+      const result = await (
+        await handleAI({ env: { ...env, ...changes }, request: req("config") })
+      ).json();
+      assert.equal(result.enabled, false);
+    }
+    sql.exec("UPDATE streamlion_admin_owners_v1 SET enabled=0");
+    assert.equal(
+      (await (await handleAI({ env, request: req("config") })).json()).enabled,
+      false,
+    );
+    assert.equal(calls, 0);
+    assert.equal(
+      sql.prepare("SELECT COUNT(*) n FROM streamlion_ai_turns_v1").get().n,
+      0,
+    );
+  } finally {
+    globalThis.fetch = original;
+    sql.close();
+  }
+});
+
+test("owner QA makes at most one text-only model attempt across concurrent requests and retries", async () => {
+  const { sql, env, req } = await ownerQaFixture(),
+    original = globalThis.fetch,
+    calls = [];
+  const project = makeRevision(
+    { title: "Synthetic venue", notes: "Measure two meeting rooms." },
+    null,
+    "project",
+  );
+  globalThis.fetch = async (url, options) => {
+    calls.push(url);
+    if (url.includes("sheets.googleapis.com"))
+      return url.includes("batchGet")
+        ? Response.json({
+            valueRanges: Object.keys(TABS).map((tab) => ({
+              values: [
+                TABS[tab],
+                ...(tab === "Projects" ? [rowFor(project, TABS.Projects)] : []),
+              ],
+            })),
+          })
+        : Response.json({
+            properties: { title: "Synthetic workbook" },
+            sheets: Object.keys(TABS).map((title) => ({
+              properties: { title, gridProperties: { rowCount: 20 } },
+            })),
+          });
+    if (url.includes("openai"))
+      return stream([
+        {
+          type: "response.output_text.delta",
+          delta: "Measure the two meeting rooms.",
+        },
+        { type: "response.completed" },
+      ]);
+    throw new Error("Unexpected provider");
+  };
+  const tasks = [];
+  try {
+    const replies = await Promise.all([
+      handleAI({
+        env,
+        request: req("answer"),
+        waitUntil: (t) => tasks.push(t),
+      }),
+      handleAI({
+        env,
+        request: req("answer", {
+          requestId: "33333333-3333-4333-8333-333333333333",
+        }),
+        waitUntil: (t) => tasks.push(t),
+      }),
+    ]);
+    const success = replies.filter((r) => r.status === 200);
+    assert.equal(success.length, 1);
+    assert.match(await success[0].text(), /two meeting rooms/);
+    await Promise.all(tasks);
+    assert.equal(calls.filter((url) => url.includes("openai")).length, 1);
+    assert.equal(
+      sql.prepare("SELECT COUNT(*) n FROM streamlion_ai_turns_v1").get().n,
+      1,
+    );
+    assert.equal(
+      sql.prepare("SELECT request_id FROM streamlion_ai_turns_v1").get()
+        .request_id,
+      uuid,
+    );
+    assert.equal(
+      (await (await handleAI({ env, request: req("config") })).json()).enabled,
+      false,
+    );
+    assert.notEqual(
+      (await handleAI({ env, request: req("answer") })).status,
+      200,
+    );
+    assert.equal(calls.filter((url) => url.includes("openai")).length, 1);
+  } finally {
+    globalThis.fetch = original;
+    sql.close();
+  }
+});
+
+test("a failed owner QA provider attempt consumes the one-use authorization", async () => {
+  const { sql, env, req } = await ownerQaFixture(),
+    original = globalThis.fetch;
+  const project = makeRevision({ title: "Synthetic" }, null, "project");
+  let providerCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (url.includes("sheets.googleapis.com"))
+      return url.includes("batchGet")
+        ? Response.json({
+            valueRanges: Object.keys(TABS).map((tab) => ({
+              values: [
+                TABS[tab],
+                ...(tab === "Projects" ? [rowFor(project, TABS.Projects)] : []),
+              ],
+            })),
+          })
+        : Response.json({
+            properties: { title: "Synthetic" },
+            sheets: Object.keys(TABS).map((title) => ({
+              properties: { title, gridProperties: { rowCount: 20 } },
+            })),
+          });
+    if (url.includes("openai")) {
+      providerCalls++;
+      return new Response("unavailable", { status: 503 });
+    }
+    throw new Error("Unexpected provider");
+  };
+  const tasks = [];
+  try {
+    const response = await handleAI({
+      env,
+      request: req("answer"),
+      waitUntil: (t) => tasks.push(t),
+    });
+    await response.text();
+    await Promise.all(tasks);
+    assert.equal(providerCalls, 1);
+    assert.equal(
+      sql.prepare("SELECT state FROM streamlion_ai_turns_v1").get().state,
+      "failed",
+    );
+    assert.equal(
+      (await (await handleAI({ env, request: req("config") })).json()).enabled,
+      false,
+    );
+    assert.notEqual(
+      (
+        await handleAI({
+          env,
+          request: req("answer", {
+            requestId: "33333333-3333-4333-8333-333333333333",
+          }),
+        })
+      ).status,
+      200,
+    );
+    assert.equal(providerCalls, 1);
+  } finally {
+    globalThis.fetch = original;
+    sql.close();
+  }
+});
 
 test("configuration explains missing prerequisites without provider calls, credit debits or reservations", async () => {
   const { sql, env, req, preferenceScope } = await routeFixture(),

@@ -2,6 +2,46 @@ import { OWNER_EMAIL } from "./admin-data.js";
 import { hasPurchase } from "./purchase-access.js";
 import { ownerWorkspaceQa } from "./owner-core-qa.js";
 
+// A separate coordination window can coexist with the workspace-only window.
+// It remains constrained by the already-authorized workspace grant.
+function coordinationGrant(env) {
+  if (typeof env.STREAMLION_OWNER_COORDINATION_QA !== "string")
+    return env.STREAMLION_OWNER_CORE_QA_LICENSE;
+  try {
+    if (
+      typeof env.STREAMLION_OWNER_CORE_QA_LICENSE !== "string" ||
+      env.STREAMLION_OWNER_CORE_QA_LICENSE.length > 2048 ||
+      env.STREAMLION_OWNER_COORDINATION_QA.length > 2048
+    )
+      return null;
+    const workspace = JSON.parse(env.STREAMLION_OWNER_CORE_QA_LICENSE);
+    const coordination = JSON.parse(env.STREAMLION_OWNER_COORDINATION_QA);
+    const now = Date.now();
+    if (
+      workspace?.version !== 1 ||
+      workspace.scope !== "google-workspace" ||
+      workspace.mode !== "live" ||
+      workspace.origin !== env.GOOGLE_AUTH_ORIGIN ||
+      workspace.subject !== coordination.subject ||
+      !Number.isSafeInteger(workspace.issuedAt) ||
+      !Number.isSafeInteger(workspace.expiresAt) ||
+      workspace.issuedAt <= 0 ||
+      workspace.issuedAt > now ||
+      workspace.expiresAt <= now ||
+      workspace.expiresAt <= workspace.issuedAt ||
+      workspace.expiresAt - workspace.issuedAt > 72 * 3600000 ||
+      coordination.expiresAt > workspace.expiresAt ||
+      typeof workspace.reason !== "string" ||
+      !workspace.reason.trim() ||
+      workspace.reason.length > 200
+    )
+      return null;
+    return env.STREAMLION_OWNER_COORDINATION_QA;
+  } catch {
+    return null;
+  }
+}
+
 // This predicate is used inside the same atomic SQL statements that authorize
 // intake/verification. Never insert a fake purchase or expand hasPurchase.
 export function coordinationEligibilitySQL(env, connection, purchase = "p") {
@@ -9,12 +49,9 @@ export function coordinationEligibilitySQL(env, connection, purchase = "p") {
     throw new Error("Invalid eligibility alias");
   const paid = `EXISTS(SELECT 1 FROM streamlion_purchases_v1 ${purchase} WHERE ${purchase}.google_subject=${connection}.google_subject AND ${purchase}.mode=${connection}.mode AND ${purchase}.status='paid')`;
   try {
-    if (
-      typeof env.STREAMLION_OWNER_CORE_QA_LICENSE !== "string" ||
-      env.STREAMLION_OWNER_CORE_QA_LICENSE.length > 2048
-    )
-      return paid;
-    const g = JSON.parse(env.STREAMLION_OWNER_CORE_QA_LICENSE || "null");
+    const raw = coordinationGrant(env);
+    if (typeof raw !== "string" || raw.length > 2048) return paid;
+    const g = JSON.parse(raw || "null");
     const now = Date.now();
     if (
       env.STREAMLION_PAYMENTS_MODE !== "live" ||
@@ -48,19 +85,23 @@ export function coordinationEligibilitySQL(env, connection, purchase = "p") {
 
 export async function hasCoordinationAccess(env, subject) {
   if (await hasPurchase(env, subject)) return true;
+  const raw = coordinationGrant(env);
   let grant;
   try {
-    grant = JSON.parse(env.STREAMLION_OWNER_CORE_QA_LICENSE);
+    grant = JSON.parse(raw);
   } catch {
     return false;
   }
   return (
     grant?.scope === "google-workspace-and-coordination" &&
     Boolean(
-      await ownerWorkspaceQa(env, {
-        google_subject: subject,
-        email: OWNER_EMAIL,
-      }),
+      await ownerWorkspaceQa(
+        { ...env, STREAMLION_OWNER_CORE_QA_LICENSE: raw },
+        {
+          google_subject: subject,
+          email: OWNER_EMAIL,
+        },
+      ),
     )
   );
 }
