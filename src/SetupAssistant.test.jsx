@@ -217,16 +217,13 @@ test("a device-first setup branches by answers, applies the theme and finishes w
   await choose(ui, "Continue");
   await choose(ui, /^No$/);
   await choose(ui, "Not now");
-  await ui.findByText(/add your logo/);
-  await choose(ui, "Skip for now");
-  await choose(ui, "Use the standard greeting");
   await choose(ui, "Dark");
   assert.equal(document.documentElement.dataset.theme, "dark");
   await ui.findByText(/Here’s your setup, Alex/);
   const review = ui.getByRole("region", { name: "Pricing & units" });
   assert(within(review).getByText("0.16 USD per sq ft"));
   assert(
-    ui.getByText(/Keep your branding and pricing on this device/, {
+    ui.getByText(/Keep your business details and pricing on this device/, {
       exact: false,
     }),
   );
@@ -331,19 +328,12 @@ test("Google sign-in, workbook creation, offline copy and publishing happen only
   await choose(ui, "Continue");
   await choose(ui, /^Yes, let them propose one/);
   await choose(ui, "Not now");
-  await ui.findByText(/add your logo/);
-  await choose(ui, "Skip for now");
-  const welcome = await ui.findByLabelText("Welcome line for clients");
-  fireEvent.change(welcome, {
-    target: { value: "Welcome to Harbor Spatial! Let’s plan your capture." },
-  });
-  fireEvent.submit(welcome.closest("form"));
   await choose(ui, "Light");
   await ui.findByText(/Save “Harbor Spatial”/);
   assert(ui.getByText(/Publish this pricing as the default/));
   assert.equal(branding.length + pricing.length, 0);
   await choose(ui, "Save & finish");
-  await ui.findByText("Business branding saved to your client pages");
+  await ui.findByText("Business details saved for work orders");
   assert(ui.getByText("Default pricing published for new request forms"));
   assert.equal(branding.length, 2);
   assert.deepEqual(branding[1], [
@@ -354,7 +344,6 @@ test("Google sign-in, workbook creation, offline copy and publishing happen only
         website: "https://old.example/",
         logo: PNG,
         shape: "square",
-        welcome: "Welcome to Harbor Spatial! Let’s plan your capture.",
       },
     },
     "subject-a",
@@ -398,11 +387,9 @@ test("publishing problems are reported without losing the finished setup", async
   await choose(ui, "USD");
   await choose(ui, /^No$/);
   await choose(ui, "Not now");
-  await choose(ui, "Skip for now");
-  await choose(ui, "Use the standard greeting");
   await choose(ui, "Light");
   await choose(ui, "Save & finish");
-  await ui.findByText(/Business branding awaits activation/);
+  await ui.findByText(/Business details await activation/);
   assert(ui.getByText(/Pricing wasn’t published: Pricing is unavailable/));
   assert.equal(readSetup().status, "complete");
 });
@@ -499,8 +486,6 @@ test("saving publishes phone and service area with branding and keeps them for h
     ["storage", "device"],
     ["pricingMethod", "skip"],
     ["aiUses", []],
-    ["logo", null],
-    ["welcome", ""],
     ["theme", "light"],
   ])
     state = answerStep(state, id, value, { online: true });
@@ -536,7 +521,7 @@ test("saving publishes phone and service area with branding and keeps them for h
   );
   assert(ui.getByText(/Show your phone and service area on job handovers/));
   await choose(ui, "Save & finish");
-  await ui.findByText("Business branding saved to your client pages");
+  await ui.findByText("Business details saved for work orders");
   assert.deepEqual(writes[0][0].branding, {
     name: "Harbor Spatial",
     website: "https://old.example/",

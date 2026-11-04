@@ -326,7 +326,7 @@ export function usePageSections(root, scope, enabled = true) {
             {
               "Sign-in and security": "Security",
               "Setup assistant": "Setup",
-              "Your business branding": "Branding",
+              "Your business details": "Business",
               "Pricing & Estimates": "Pricing",
               "Rates & tiers": "Rates",
               "Named extras": "Extras",

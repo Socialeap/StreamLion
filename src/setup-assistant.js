@@ -1,10 +1,8 @@
 // The setup assistant is a chat flow (chat-flow.js): an ordered list of
 // conditional steps whose answers are committed to this device immediately.
 import {
-  WELCOME_LIMIT,
   brandingArea,
   brandingPhone,
-  brandingWelcome,
   formatPhone,
   validateBranding,
 } from "./provider-branding.js";
@@ -290,7 +288,7 @@ export const STEPS = [
     kind: "form",
     prompt: () => ({
       text: "Great. Which contact details should clients see on work orders and project summaries?",
-      hint: "Only the email is required. Phone, service area and website appear on your client request pages and handovers.",
+      hint: "Only the email is required. Phone and service area help coordinate work orders and handovers. Create your public business profile on Frontiers|3D.",
     }),
     fields: [
       {
@@ -306,13 +304,6 @@ export const STEPS = [
         label: "Service area or business address",
         autoComplete: "street-address",
         placeholder: "e.g., Portland, OR and surrounding areas",
-      },
-      {
-        key: "website",
-        label: "Website",
-        type: "url",
-        autoComplete: "url",
-        placeholder: "your-business.com",
       },
     ],
     defaultValue: (answers, ctx) => ({
@@ -768,41 +759,6 @@ export const STEPS = [
         : "I’ll add credits later",
   },
   {
-    id: "logo",
-    title: "Logo",
-    stage: 6,
-    kind: "logo",
-    when: (answers) => has(answers, "focus", "requests"),
-    prompt: () => ({
-      text: "Want to add your logo to your client request pages?",
-      hint: "PNG, JPEG or WebP up to 5 MB. It’s resized on this device first.",
-    }),
-    validate: (value) => {
-      if (value === null) return null;
-      const { logo, shape } = validateBranding({ name: "Logo", ...value });
-      if (!logo) fail("Upload a logo, or skip for now.");
-      return { logo, shape };
-    },
-    summary: (value) => (value ? "Logo added" : "No logo for now"),
-  },
-  {
-    id: "welcome",
-    title: "Client welcome",
-    label: "Welcome line for clients",
-    stage: 6,
-    kind: "text",
-    maxLength: WELCOME_LIMIT,
-    optional: "Use the standard greeting",
-    when: (answers) => has(answers, "focus", "requests"),
-    prompt: (answers) => ({
-      text: "When a client opens your request form, a request assistant walks them through it. What should it say first?",
-      hint: `Leave it to us and they’ll read: “Hi there! I’m ${answers.business}’s request assistant, and I’ll help you request a capture of your space.”`,
-    }),
-    placeholder: "e.g., Welcome to Harbor Spatial! Let’s plan your capture.",
-    validate: (value) => brandingWelcome(value),
-    summary: (value) => value || "Standard greeting",
-  },
-  {
     id: "theme",
     title: "Theme",
     stage: 6,
@@ -929,7 +885,7 @@ export function setupProfile(state = readSetup()) {
     email: a.contact?.email || "",
     phone: a.contact?.phone || "",
     area: a.contact?.area || "",
-    website: a.contact?.website || "",
+    website: "",
     focus: labels(FOCUS, a.focus),
     hardware: [
       ...labels(HARDWARE, a.hardware).filter((h) => h !== "Other / custom"),
@@ -940,8 +896,8 @@ export function setupProfile(state = readSetup()) {
     storage: a.storage || "",
     units: applies("units") ? a.units : "",
     pricing,
-    logo: applies("logo") ? a.logo : null,
-    welcome: applies("welcome") ? a.welcome : "",
+    logo: null,
+    welcome: "",
     theme: a.theme || "",
     ai: {
       uses: labels(AI_USES, a.aiUses),

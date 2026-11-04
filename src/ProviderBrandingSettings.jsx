@@ -3,10 +3,8 @@ import { fetchRead } from "./network.js";
 import {
   emptyBranding,
   LOGO_LIMIT,
-  WELCOME_LIMIT,
   validateBranding,
 } from "./provider-branding.js";
-import ProviderBrand from "./ProviderBrand.jsx";
 import { rememberProviderContact } from "./provider-contact.js";
 function F3DProviderIntro() {
   return (
@@ -117,7 +115,6 @@ export default function ProviderBrandingSettings({
   disabled = false,
   onBusy = () => {},
   api = brandingAPI,
-  convertLogo = prepareLogo,
   suggestion = null,
 }) {
   const [state, setState] = useState(null),
@@ -162,14 +159,8 @@ export default function ProviderBrandingSettings({
                 ? {
                     ...data.branding,
                     name: data.branding.name || suggested.name,
-                    website: data.branding.website || suggested.website,
                     phone: data.branding.phone || suggested.phone,
                     area: data.branding.area || suggested.area,
-                    welcome: data.branding.welcome || suggested.welcome,
-                    logo: data.branding.logo || suggested.logo,
-                    shape: data.branding.logo
-                      ? data.branding.shape
-                      : suggested.shape,
                   }
                 : data.branding,
             );
@@ -191,25 +182,6 @@ export default function ProviderBrandingSettings({
     };
   }, [connected, account, attempt, api]);
   const locked = busy || disabled || !state?.available;
-  async function upload(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    const id = generation.current;
-    changeBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const logo = await convertLogo(file);
-      if (generation.current === id) setDraft((old) => ({ ...old, logo }));
-    } catch (e) {
-      if (generation.current === id) setError(e.message);
-    } finally {
-      if (generation.current === id) {
-        changeBusy(false);
-      }
-    }
-  }
   async function save(event) {
     event.preventDefault();
     const id = generation.current;
@@ -224,7 +196,7 @@ export default function ProviderBrandingSettings({
         setState(result);
         setDraft(result.branding);
         setNotice(
-          "Business branding saved. Your client links keep the same recipient and show these details when opened again.",
+          "Business details saved. Requests continue to reach the same provider.",
         );
       }
     } catch (e) {
@@ -239,26 +211,27 @@ export default function ProviderBrandingSettings({
     <section className="branding-settings" aria-labelledby="branding-title">
       <h2 id="branding-title">Your business details</h2>
       <p>
-        Add the basic details clients see on your StreamLion intake pages and
-        job handovers.
+        Use these details to identify your business on work orders and job
+        handovers. Manage your public profile and marketing presence on
+        Frontiers|3D.
       </p>
       {!connected ? (
         <p>
-          Sign in to Google to save your business name, logo, website, phone and
-          service area.
+          Sign in to Google to save your business name, phone and service area.
         </p>
       ) : (
         <>
-          {!state && !error && <p role="status">Loading business branding…</p>}
+          {!state && !error && <p role="status">Loading business details…</p>}
           {state && !state.available && (
             <p>
-              Branding updates await activation. Your existing forms are kept.
+              Business detail updates await activation. Your existing forms are
+              kept.
             </p>
           )}
           {error && <p role="alert">{error}</p>}
           {!state && error && (
             <button type="button" onClick={() => setAttempt((v) => v + 1)}>
-              Retry branding load
+              Retry loading details
             </button>
           )}
           {state && (
@@ -271,19 +244,6 @@ export default function ProviderBrandingSettings({
                   value={draft.name}
                   disabled={locked}
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                />
-              </label>
-              <label>
-                Business website (optional)
-                <input
-                  type="url"
-                  placeholder="https://your-business.com"
-                  maxLength={500}
-                  value={draft.website}
-                  disabled={locked}
-                  onChange={(e) =>
-                    setDraft({ ...draft, website: e.target.value })
-                  }
                 />
               </label>
               <label>
@@ -315,91 +275,6 @@ export default function ProviderBrandingSettings({
                 </button>
               </div>
               <F3DProviderIntro />
-              <details className="branding-appearance">
-                <summary>Customize your intake appearance (optional)</summary>
-                <div className="branding-appearance-fields">
-                  <label>
-                    Request assistant welcome (optional)
-                    <textarea
-                      rows={2}
-                      maxLength={WELCOME_LIMIT}
-                      placeholder={`Hi there! I’m ${draft.name.trim() || "your business"}’s request assistant, and I’ll help you request a capture of your space.`}
-                      value={draft.welcome || ""}
-                      disabled={locked}
-                      onChange={(e) =>
-                        setDraft({ ...draft, welcome: e.target.value })
-                      }
-                    />
-                    <small>
-                      The first line clients read when they open your request
-                      form or invitation. Leave blank for the standard greeting.
-                    </small>
-                  </label>
-                  <label>
-                    Upload your logo (optional)
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      disabled={locked}
-                      onChange={upload}
-                    />
-                  </label>
-                  <p>
-                    PNG, JPEG or WebP, up to 5 MB. StreamLion resizes the image
-                    on this device and removes its original metadata before
-                    saving. Your logo, website, phone and service area are
-                    visible to people with your client links and on your job
-                    handovers.
-                  </p>
-                  <label>
-                    Logo display shape
-                    <select
-                      value={draft.shape}
-                      disabled={locked}
-                      onChange={(e) =>
-                        setDraft({ ...draft, shape: e.target.value })
-                      }
-                    >
-                      <option value="rounded">Rounded square</option>
-                      <option value="square">Square</option>
-                      <option value="rectangle">Rectangle</option>
-                    </select>
-                  </label>
-                  <p>
-                    Client preview · unsaved changes stay here until you save.
-                  </p>
-                  <ProviderBrand
-                    branding={{
-                      ...draft,
-                      website: (() => {
-                        try {
-                          return validateBranding({
-                            name: "Preview",
-                            website: draft.website,
-                          }).website;
-                        } catch {
-                          return "";
-                        }
-                      })(),
-                    }}
-                    recipient
-                  />
-                  <div className="branding-actions">
-                    <button disabled={locked}>
-                      {busy ? "Saving branding…" : "Save intake appearance"}
-                    </button>
-                    {draft.logo && (
-                      <button
-                        type="button"
-                        disabled={locked}
-                        onClick={() => setDraft({ ...draft, logo: "" })}
-                      >
-                        Remove logo
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </details>
             </form>
           )}
           {notice && <p role="status">{notice}</p>}

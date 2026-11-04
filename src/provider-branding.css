@@ -102,22 +102,6 @@
   padding-block: 10px;
 }
 
-.branding-appearance {
-  border-top: 1px solid var(--line);
-  padding-top: 1rem;
-}
-.branding-appearance summary {
-  cursor: pointer;
-  min-height: 44px;
-  display: list-item;
-  align-content: center;
-  font-weight: 700;
-}
-.branding-appearance-fields {
-  display: grid;
-  gap: 1rem;
-  padding-top: 1rem;
-}
 .f3d-provider-eyebrow {
   font-size: 0.8rem;
   font-weight: 800;

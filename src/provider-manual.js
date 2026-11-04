@@ -23,7 +23,7 @@ export const MANUAL_STAGES = [
         where:
           "Client requests → Enable your client workspace / Service intake templates",
         action:
-          "Set your business name, logo, logo shape and website in Account → Your business branding. Publish default or named service pricing in Account → Pricing & Estimates; choose a profile in each service template. If client coordination is available to your account, complete the setup shown there. Review the service questions your customers will answer, including required details and conditional questions.",
+          "Set your business name, phone and service area in Account → Your business details. Create your free public profile, business page and Directory presence on Frontiers|3D. Publish default or named service pricing in Account → Pricing & Estimates; choose a profile in each service template. If client coordination is available to your account, complete the setup shown there. Review the service questions your customers will answer, including required details and conditional questions.",
         benefit:
           "Ask for the information your service needs before you spend time chasing it.",
         tip: "An existing request keeps its template version. Editing a template changes future requests. If coordination is unavailable, you can still create a project in Projects.",
