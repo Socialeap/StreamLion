@@ -73,7 +73,7 @@ test("Account saves business name, normalized logo shape and website explicitly;
   });
   await ui.findByRole("img", { name: "Provider A logo" });
   assert.equal(writes.length, 0);
-  fireEvent.click(ui.getByRole("button", { name: "Save business branding" }));
+  fireEvent.click(ui.getByRole("button", { name: "Save business details" }));
   await ui.findByText(/Business branding saved/);
   assert.equal(writes[0].subject, "a");
   assert.equal(writes[0].body.branding.logo, PNG);
@@ -86,14 +86,14 @@ test("Account saves business name, normalized logo shape and website explicitly;
   fireEvent.change(ui.getByLabelText("Business name clients will see"), {
     target: { value: "Unsaved business" },
   });
-  fireEvent.click(ui.getByRole("button", { name: "Save business branding" }));
+  fireEvent.click(ui.getByRole("button", { name: "Save business details" }));
   await ui.findByRole("alert");
   assert.equal(
     ui.getByLabelText("Business name clients will see").value,
     "Unsaved business",
   );
   assert.equal(
-    ui.getByRole("button", { name: "Save business branding" }).disabled,
+    ui.getByRole("button", { name: "Save business details" }).disabled,
     false,
   );
 });
@@ -217,7 +217,7 @@ test("phone and service area are previewed for clients, saved explicitly and kep
   assert.equal(phone.getAttribute("href"), "tel:+15035550100");
   assert(ui.getByText("Portland, OR"));
   assert.equal(writes.length, 0);
-  fireEvent.click(ui.getByRole("button", { name: "Save business branding" }));
+  fireEvent.click(ui.getByRole("button", { name: "Save business details" }));
   await ui.findByText(/Business branding saved/);
   assert.equal(writes[0].branding.phone, "+1 503 555 0100");
   assert.equal(writes[0].branding.area, "Portland, OR");
@@ -229,7 +229,7 @@ test("phone and service area are previewed for clients, saved explicitly and kep
   fireEvent.change(ui.getByLabelText("Business phone (optional)"), {
     target: { value: "call me" },
   });
-  fireEvent.click(ui.getByRole("button", { name: "Save business branding" }));
+  fireEvent.click(ui.getByRole("button", { name: "Save business details" }));
   await ui.findByText(/7 to 15 digits/);
   assert.equal(writes.length, 1);
 });
@@ -272,4 +272,47 @@ test("loaded branding refreshes this device's handover contact, and setup answer
   );
   await prefilled.findByDisplayValue("(206) 555-0199");
   assert(prefilled.getByDisplayValue("Seattle, WA"));
+});
+
+test("business basics precede the free partner invitation and collapsed customization preserves saved branding", async (t) => {
+  t.after(cleanup);
+  const saved = { ...profile, welcome: "Welcome to Harbor", logo: PNG };
+  const writes = [];
+  const ui = render(
+    <Settings
+      connected
+      account="a@example.com"
+      api={async (body) => {
+        if (body) writes.push(body.branding);
+        return {
+          subject: "a",
+          available: true,
+          version: 1,
+          branding: body?.branding || saved,
+        };
+      }}
+    />,
+  );
+  const save = await ui.findByRole("button", { name: "Save business details" });
+  const details = ui.container.querySelector("details.branding-appearance");
+  assert.equal(details.open, false);
+  const partner = ui.getByRole("complementary");
+  assert(
+    save.compareDocumentPosition(partner) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  assert(
+    partner.compareDocumentPosition(details) &
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  assert.equal(
+    ui.getByRole("link", { name: /Create your free F/ }).getAttribute("href"),
+    "https://www.frontiers3d.com/signup?brief_role=provider",
+  );
+  fireEvent.click(save);
+  await waitFor(() => assert.equal(writes.length, 1));
+  assert.equal(writes[0].welcome, saved.welcome);
+  assert.equal(writes[0].logo, saved.logo);
+  fireEvent.click(details.querySelector("summary"));
+  assert.equal(details.open, true);
 });

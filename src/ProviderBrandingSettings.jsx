@@ -8,6 +8,48 @@ import {
 } from "./provider-branding.js";
 import ProviderBrand from "./ProviderBrand.jsx";
 import { rememberProviderContact } from "./provider-contact.js";
+function F3DProviderIntro() {
+  return (
+    <aside className="f3d-provider-intro" aria-labelledby="f3d-provider-title">
+      <span className="f3d-provider-eyebrow">StreamLion platform partner</span>
+      <h3 id="f3d-provider-title">
+        Get your free public profile on Frontiers|3D
+      </h3>
+      <p>
+        StreamLion partners with Frontiers|3D to offer spatial-capture providers
+        free access to its provider network and Directory participation. Create
+        your profile, build a public business page, and join the F|3D Directory.
+      </p>
+      <ul>
+        <li>Show clients your services and service area.</li>
+        <li>Connect your public page to your StreamLion intake link.</li>
+        <li>Join the provider network ahead of public Directory discovery.</li>
+      </ul>
+      <p>
+        No paid Studio plan is required. Provider enrollment comes first; public
+        Directory discovery will open separately in a later stage.
+      </p>
+      <div className="f3d-provider-actions">
+        <a
+          className="f3d-provider-primary"
+          href="https://www.frontiers3d.com/signup?brief_role=provider"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Create your free F|3D profile ↗
+        </a>
+        <a
+          href="https://www.frontiers3d.com/dashboard/profile"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Manage an existing profile ↗
+        </a>
+      </div>
+    </aside>
+  );
+}
+
 export async function brandingAPI(body, subject) {
   const response = await fetchRead("/api/provider-branding", {
     credentials: "same-origin",
@@ -195,11 +237,10 @@ export default function ProviderBrandingSettings({
   }
   return (
     <section className="branding-settings" aria-labelledby="branding-title">
-      <h2 id="branding-title">Your business branding</h2>
+      <h2 id="branding-title">Your business details</h2>
       <p>
-        Clients see these details on your StreamLion request pages. Requests
-        belong to the provider who created the link. A service template never
-        changes who receives them.
+        Add the basic details clients see on your StreamLion intake pages and
+        job handovers.
       </p>
       {!connected ? (
         <p>
@@ -268,96 +309,103 @@ export default function ProviderBrandingSettings({
                   onChange={(e) => setDraft({ ...draft, area: e.target.value })}
                 />
               </label>
-              <label>
-                Request assistant welcome (optional)
-                <textarea
-                  rows={2}
-                  maxLength={WELCOME_LIMIT}
-                  placeholder={`Hi there! I’m ${draft.name.trim() || "your business"}’s request assistant, and I’ll help you request a capture of your space.`}
-                  value={draft.welcome || ""}
-                  disabled={locked}
-                  onChange={(e) =>
-                    setDraft({ ...draft, welcome: e.target.value })
-                  }
-                />
-                <small>
-                  The first line clients read when they open your request form
-                  or invitation. Leave blank for the standard greeting.
-                </small>
-              </label>
-              <label>
-                Upload your logo (optional)
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  disabled={locked}
-                  onChange={upload}
-                />
-              </label>
-              <p>
-                PNG, JPEG or WebP, up to 5 MB. StreamLion resizes the image on
-                this device and removes its original metadata before saving.
-                Your logo, website, phone and service area are visible to people
-                with your client links and on your job handovers.
-              </p>
-              <label>
-                Logo display shape
-                <select
-                  value={draft.shape}
-                  disabled={locked}
-                  onChange={(e) =>
-                    setDraft({ ...draft, shape: e.target.value })
-                  }
-                >
-                  <option value="rounded">Rounded square</option>
-                  <option value="square">Square</option>
-                  <option value="rectangle">Rectangle</option>
-                </select>
-              </label>
-              <p>Client preview · unsaved changes stay here until you save.</p>
-              <ProviderBrand
-                branding={{
-                  ...draft,
-                  website: (() => {
-                    try {
-                      return validateBranding({
-                        name: "Preview",
-                        website: draft.website,
-                      }).website;
-                    } catch {
-                      return "";
-                    }
-                  })(),
-                }}
-                recipient
-              />
               <div className="branding-actions">
                 <button disabled={locked}>
-                  {busy ? "Saving branding…" : "Save business branding"}
+                  {busy ? "Saving details…" : "Save business details"}
                 </button>
-                {draft.logo && (
-                  <button
-                    type="button"
-                    disabled={locked}
-                    onClick={() => setDraft({ ...draft, logo: "" })}
-                  >
-                    Remove logo
-                  </button>
-                )}
               </div>
+              <F3DProviderIntro />
+              <details className="branding-appearance">
+                <summary>Customize your intake appearance (optional)</summary>
+                <div className="branding-appearance-fields">
+                  <label>
+                    Request assistant welcome (optional)
+                    <textarea
+                      rows={2}
+                      maxLength={WELCOME_LIMIT}
+                      placeholder={`Hi there! I’m ${draft.name.trim() || "your business"}’s request assistant, and I’ll help you request a capture of your space.`}
+                      value={draft.welcome || ""}
+                      disabled={locked}
+                      onChange={(e) =>
+                        setDraft({ ...draft, welcome: e.target.value })
+                      }
+                    />
+                    <small>
+                      The first line clients read when they open your request
+                      form or invitation. Leave blank for the standard greeting.
+                    </small>
+                  </label>
+                  <label>
+                    Upload your logo (optional)
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={locked}
+                      onChange={upload}
+                    />
+                  </label>
+                  <p>
+                    PNG, JPEG or WebP, up to 5 MB. StreamLion resizes the image
+                    on this device and removes its original metadata before
+                    saving. Your logo, website, phone and service area are
+                    visible to people with your client links and on your job
+                    handovers.
+                  </p>
+                  <label>
+                    Logo display shape
+                    <select
+                      value={draft.shape}
+                      disabled={locked}
+                      onChange={(e) =>
+                        setDraft({ ...draft, shape: e.target.value })
+                      }
+                    >
+                      <option value="rounded">Rounded square</option>
+                      <option value="square">Square</option>
+                      <option value="rectangle">Rectangle</option>
+                    </select>
+                  </label>
+                  <p>
+                    Client preview · unsaved changes stay here until you save.
+                  </p>
+                  <ProviderBrand
+                    branding={{
+                      ...draft,
+                      website: (() => {
+                        try {
+                          return validateBranding({
+                            name: "Preview",
+                            website: draft.website,
+                          }).website;
+                        } catch {
+                          return "";
+                        }
+                      })(),
+                    }}
+                    recipient
+                  />
+                  <div className="branding-actions">
+                    <button disabled={locked}>
+                      {busy ? "Saving branding…" : "Save intake appearance"}
+                    </button>
+                    {draft.logo && (
+                      <button
+                        type="button"
+                        disabled={locked}
+                        onClick={() => setDraft({ ...draft, logo: "" })}
+                      >
+                        Remove logo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </details>
             </form>
           )}
           {notice && <p role="status">{notice}</p>}
         </>
       )}
-      <aside className="f3d-provider-intro" aria-labelledby="f3d-provider-title">
-        <h3 id="f3d-provider-title">Grow your public presence with Frontiers|3D</h3>
-        <p>Create a public business profile to introduce your spatial-capture services and connect clients to your StreamLion intake. F|3D also offers branded interactive tour presentations that help clients explore a space and make an inquiry.</p>
-        <p>Free provider participation and optional Directory listing are separate from paid Studio plans. Public Directory discovery opens in a later release stage.</p>
-        <a href="https://www.frontiers3d.com/signup?brief_role=provider" target="_blank" rel="noopener noreferrer">Explore free provider participation ↗</a>
-        {" · "}
-        <a href="https://www.frontiers3d.com/dashboard/profile" target="_blank" rel="noopener noreferrer">Manage your F|3D profile ↗</a>
-      </aside>
+      {!state && <F3DProviderIntro />}
     </section>
   );
 }
