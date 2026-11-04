@@ -14,10 +14,14 @@ No production/credential changes, no service role for user reads, no publication
 Wrong-account approval; expired/replayed assertion; malformed snapshot/private-data leakage; absent profile or conflicting source names; interrupted popup/request must not misreport connection.
 
 ## Tasks
-- [ ] 1. Pin strict shared snapshot/signature contract in identical fixtures, RED then GREEN in both repos.
-- [ ] 2. F|3D owner-scoped projection/signing server function and popup consent page. Sign only server reads; never accept snapshot from browser. Build/typecheck.
-- [ ] 3. SL D1 nonce/snapshot migration, authenticated start/complete/read/unlink handler. RED then GREEN negative/positive API tests; preserve session/credit ownership.
-- [ ] 4. SL reusable profile connection UI in Account/setup, popup handshake, explicit manual refresh/freshness and recovery. Component tests.
-- [ ] 5. Record cross-repo audit/release packets and generated maps, run verification, fresh-context review, commit/push separate PRs. No merge or activation.
+- [x] 1. Pin strict shared snapshot/signature contract in identical fixtures, RED then GREEN in both repos.
+- [x] 2. F|3D owner-scoped projection/signing server function and popup consent page. Sign only server reads; never accept snapshot from browser. Build/typecheck.
+- [x] 3. SL D1 nonce/snapshot migration, authenticated start/complete/read/unlink handler. RED then GREEN negative/positive API tests; preserve session/credit ownership.
+- [x] 4. SL reusable profile connection UI in Account/setup, popup handshake, explicit manual refresh/freshness and recovery. Component tests.
+- [x] 5. Record cross-repo audit/release packets and generated maps, run verification, fresh-context review, commit/push separate PRs. No merge or activation.
 
 Ruling: shared saves cannot safely precede the existing F|3D public/Directory profile ownership reconciliation. Increment 1 makes the verified existing sources visible without adding a third canonical profile or pretending that global SSO exists. Subsequent increments remain explicit in the spec.
+
+## Increment 1 completion receipt
+
+Implementation source SLb008ac9 / F3Dbc1172a0c; companion review PRs SL160 and F3D971. Full local suites1285SL/4963F3D passed; both production builds passed; F3D typecheck/scoped lint/maps passed. Fresh source review raised two P2 findings, fixed RED->GREEN and independently rechecked. Hosted CI and authenticated deployed/device QA are separate gates. Private signing key, public verification configuration, D1 migration0027, F3D app/configuration activation and frontend releases are all HELD. Subsequent shared writes/SSO increments remain open in the spec.
