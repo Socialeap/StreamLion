@@ -220,15 +220,15 @@ test("a client completes the provider's form one question at a time and keeps a 
   });
   await choose(ui, "Continue");
   // The template's own wording is used for the size question.
-  await ui.findByText("Approximate area to capture (sq ft)");
-  fireEvent.change(ui.getByLabelText("Approximate size in square feet"), {
+  await ui.findByLabelText("Approximate area to capture (sq ft)");
+  fireEvent.change(ui.getByLabelText("Approximate area to capture (sq ft)"), {
     target: { value: "5000" },
   });
   await choose(ui, "Continue");
   await choose(ui, /^2$/);
   await choose(ui, /^No$/);
-  await ui.findByText("Which areas need a 3D capture?");
-  await type(ui, "What to capture", "Ballroom, lobby and terrace");
+  await ui.findByLabelText("Which areas need a 3D capture?");
+  await type(ui, "Which areas need a 3D capture?", "Ballroom, lobby and terrace");
   await choose(ui, /^3D virtual tour/);
   await choose(ui, /^Floor plan/);
   await choose(ui, "Confirm selection");
@@ -355,7 +355,7 @@ test("an invitation can be changed and sent again before the email is confirmed"
   fireEvent.click(
     (await ui.findAllByRole("button", { name: "Edit what to capture" }))[0],
   );
-  await type(ui, "What to capture", "Ballroom only");
+  await type(ui, "Which areas need a 3D capture?", "Ballroom only");
   await choose(ui, "Send & confirm my email");
   await waitFor(() => assert.equal(calls.length, 2));
   assert.equal(calls[1].body.fields.scope, "Ballroom only");
@@ -489,7 +489,7 @@ test("shared form links open the assistant, and the one-page form keeps the answ
     ui.getByRole("textbox", { name: /Additional notes/ }).value,
     /Space type: Event venue/,
   );
-  await choose(ui, "Answer one question at a time instead");
+  await choose(ui, "Guided intake");
   await ui.findByText(/Nice to meet you, Jordan!/);
   window.history.replaceState(null, "", "/api/client-portal");
 });

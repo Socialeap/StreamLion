@@ -69,7 +69,7 @@
 }
 .request-screen .setup-segment button[aria-pressed="true"] {
   background: var(--surface);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .request-screen input:not([type="checkbox"]),
 .request-screen textarea,

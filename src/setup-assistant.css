@@ -171,7 +171,7 @@
 }
 .setup-user.is-automatic .setup-bubble {
   background: var(--accent-soft);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   border: 1px solid var(--line);
 }
 .setup-answer-lines {
@@ -202,7 +202,7 @@
   font-weight: 600;
 }
 .setup-edit:hover {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   background: transparent;
 }
 .setup-dock {
@@ -293,7 +293,7 @@
 }
 .setup-option svg {
   flex: none;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .setup-option strong,
 .setup-tag small,
@@ -343,7 +343,7 @@
   flex: none;
   border-radius: 50%;
   background: var(--surface-raised);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .setup-tag[aria-pressed="true"] {
   background: var(--green);
@@ -356,7 +356,7 @@
 }
 .setup-tag[aria-pressed="true"] .setup-tag-mark {
   background: var(--on-accent);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .setup-tag[aria-pressed="true"]:hover {
   background: var(--accent-hover);
@@ -447,7 +447,7 @@
 }
 .setup-segment button[aria-pressed="true"] {
   background: var(--surface);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   box-shadow: 0 1px 4px #1d354920;
 }
 .setup-tiers {
@@ -525,7 +525,7 @@
 .setup-plan svg {
   flex: none;
   margin-top: 1px;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .setup-plan-title {
   font-size: 14px;
@@ -548,7 +548,7 @@
   margin-top: 2px;
 }
 .setup-results .is-ok {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .setup-results .is-warn {
   color: var(--warning);
@@ -606,7 +606,7 @@
   padding: 4px 6px;
   border: 0;
   background: transparent;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   font-size: 13px;
   text-decoration: underline;
 }
@@ -731,7 +731,7 @@
 }
 .account-setup button {
   border-color: var(--green);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .usual-deliverables {
   justify-self: start;
@@ -740,5 +740,5 @@
   padding: 8px 14px;
   border-style: dashed;
   border-color: var(--green);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }

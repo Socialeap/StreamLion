@@ -1,27 +1,24 @@
 :root {
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  --font-ui: WelcomeManrope, system-ui, sans-serif;
+  --font-display: "Instrument Serif", Georgia, serif;
+  font-family: var(--font-ui);
   font-synthesis: none;
   color-scheme: light;
-  --background: #f3f6f8;
+  --background: #f4f0fb;
   --surface: #ffffff;
-  --surface-raised: #edf2f5;
+  --surface-raised: #f0eafb;
   --sidebar: #ffffff;
-  --text: #182a34;
-  --muted: #506571;
-  --green: #176047;
-  --accent-hover: #124d39;
-  --accent-soft: #e5f3ed;
+  --text: #211936;
+  --muted: #595170;
+  --green: #5a3cf0;
+  --accent-hover: #482bcb;
+  --accent-soft: #ece5ff;
   --on-accent: #ffffff;
-  --line: #d6e1e8;
-  --line-strong: #9bafb8;
-  --control-line: #768d99;
-  --hover: #e8f0f4;
-  --focus: #176047;
+  --line: #ddd4ed;
+  --line-strong: #a195b6;
+  --control-line: #817298;
+  --hover: #f1ebfc;
+  --focus: #5a3cf0;
   --blue: #236191;
   --blue-soft: #e4f0fa;
   --warning: #805015;
@@ -33,27 +30,36 @@
   --danger-soft: #fff0f0;
   --danger-line: #ca8589;
   --icon-on: #ffffff;
-  --shadow: 0 8px 24px #1d354908;
+  --glass: rgb(255 255 255 / 75%);
+  --glass-chrome: rgb(255 255 255 / 91%);
+  --glow-lilac: #e7dcff;
+  --glow-peach: #ffe4d6;
+  --glow-sky: #d9f0ff;
+  --shadow-floating: 0 14px 42px -12px #41278155;
+  --scrim: #160d3766;
+  --success: #176047;
+  --success-soft: #e5f3ed;
+  --shadow: 0 8px 24px #3a227d20;
   color: var(--text);
   background: var(--background);
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #101923;
-  --surface: #182633;
-  --surface-raised: #203242;
-  --sidebar: #121f2b;
-  --text: #edf4f6;
-  --muted: #b0c1cb;
-  --green: #7bd6b3;
-  --accent-hover: #9ce5c8;
-  --accent-soft: #18392f;
-  --on-accent: #0c251d;
-  --line: #354b5d;
-  --line-strong: #587184;
-  --control-line: #608094;
-  --hover: #273c4d;
-  --focus: #91e5c4;
+  --background: #0e0b1a;
+  --surface: #211a36;
+  --surface-raised: #2a2243;
+  --sidebar: #171127;
+  --text: #f4f1ff;
+  --muted: #c6bddb;
+  --green: #9d88ff;
+  --accent-hover: #b8a8ff;
+  --accent-soft: #35285c;
+  --on-accent: #140e27;
+  --line: #463a5e;
+  --line-strong: #786a91;
+  --control-line: #8f80aa;
+  --hover: #30264b;
+  --focus: #b8a8ff;
   --blue: #8dc8f8;
   --blue-soft: #233e55;
   --warning: #f1c27c;
@@ -65,5 +71,66 @@
   --danger-soft: #432b31;
   --danger-line: #b87880;
   --icon-on: #102331;
-  --shadow: 0 8px 24px #00000014;
+  --glass: rgb(32 25 53 / 80%);
+  --glass-chrome: rgb(33 26 54 / 94%);
+  --glow-lilac: #2a1d5c;
+  --glow-peach: #3a1630;
+  --glow-sky: #0f2a44;
+  --shadow-floating: 0 14px 42px -12px #09031bcc;
+  --scrim: #080413b3;
+  --success: #7bd6b3;
+  --success-soft: #18392f;
+  --shadow: 0 8px 24px #09031b66;
+}
+
+
+@font-face {
+  font-family: WelcomeManrope;
+  src: url("/fonts/manrope-400.ttf");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: WelcomeManrope;
+  src: url("/fonts/manrope-600.ttf");
+  font-weight: 500 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: WelcomeManrope;
+  src: url("/fonts/manrope-800.ttf");
+  font-weight: 750 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif-400.ttf");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --workspace-wash:
+    radial-gradient(ellipse 70% 50% at 0 0, var(--glow-lilac), transparent),
+    radial-gradient(ellipse 60% 45% at 100% 0, var(--glow-peach), transparent),
+    radial-gradient(ellipse 95% 40% at 50% 100%, var(--glow-sky), transparent),
+    var(--background);
+}
+
+:root {
+  --green-ink: #34654f;
+}
+:root[data-theme="dark"] {
+  --green-ink: #a8d9bc;
+}
+@media (max-width: 640px) {
+  :root {
+    --mobile-accent-ink: var(--green-ink);
+  }
+}
+
+:root {
+  --tile-projects: linear-gradient(145deg, #438fdb, #235da0);
+  --tile-notes: linear-gradient(145deg, #9773e3, #5c399e);
+  --tile-review: linear-gradient(145deg, #ffc168, #e78c28);
 }

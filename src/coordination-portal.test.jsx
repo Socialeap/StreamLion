@@ -1097,7 +1097,7 @@ test("client sign-out waits for server acknowledgement and then clears its local
   );
   unavailable = false;
   fireEvent.click(ui.getByRole("button", { name: "Sign out" }));
-  await ui.findByRole("heading", { name: "Let’s get your project ready" });
+  await ui.findByRole("heading", { name: "Your capture project" });
   assert.equal(ui.queryByLabelText(/Scope of work/), null);
   assert.equal(
     window.localStorage.getItem(

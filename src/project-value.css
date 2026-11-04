@@ -19,7 +19,7 @@
   background: var(--surface-raised);
 }
 .project-benefits svg {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .project-benefits h3 {
   margin: 12px 0 8px;
@@ -64,7 +64,7 @@
   height: 56px;
   border-radius: 50%;
   background: var(--accent-soft);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .project-workflow-step {
   font-size: 11px;
@@ -95,7 +95,7 @@
 }
 .project-value-more summary {
   cursor: pointer;
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   min-height: 44px;
   padding: 10px 0;
   font-weight: 650;
