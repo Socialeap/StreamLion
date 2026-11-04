@@ -1,4 +1,5 @@
 import ProviderPricingSettings from "./ProviderPricingSettings.jsx";
+import F3DProfileConnection from "./F3DProfileConnection.jsx";
 import ProviderBrandingSettings from "./ProviderBrandingSettings.jsx";
 import {
   readDraft,
@@ -1541,6 +1542,7 @@ export default function App() {
                         : "Start setup assistant"}
                   </button>
                 </section>
+                <F3DProfileConnection connected={hasGoogleSession()} account={googleAccount()} disabled={disabled || checkingConnection} />
                 <ProviderBrandingSettings
                   connected={hasGoogleSession()}
                   account={googleAccount()}

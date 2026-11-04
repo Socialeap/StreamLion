@@ -1,3 +1,4 @@
+import F3DProfileConnection from "./F3DProfileConnection.jsx";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   CircleAlert,
@@ -865,6 +866,7 @@ export default function SetupAssistant({
           </button>
         )}
       </ChatHeader>
+      {(["business", "contact"].includes(current?.id) || complete) && <F3DProfileConnection connected={ctx.connected} account={ctx.account} disabled={disabled || !!busy} />}
       {deviceAnswers && !accountChecking && (
         <section className="setup-notice" aria-label="Device setup recovery">
           <p>
