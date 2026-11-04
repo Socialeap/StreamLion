@@ -86,3 +86,13 @@
     height: 54px;
   }
 }
+
+.f3d-provider-intro {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--accent-soft);
+}
+.f3d-provider-intro p { max-inline-size: 62ch; }
+.f3d-provider-intro a { display: inline-block; padding-block: 10px; }

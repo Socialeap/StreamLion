@@ -11,6 +11,7 @@ import {
   readRequest,
   requestBody,
   requestFields,
+  requestFromForm,
   requestFlow,
   requestKey,
   welcomeLine,
@@ -612,4 +613,35 @@ test("a multi-choice template question sends one answer per line and drives an i
   state = start.flow.editStep(state, "deliverables");
   state = start.flow.answerStep(state, "deliverables", ["3D tour"], {});
   assert.notEqual(start.flow.walk(state, {}).current?.id, "q:exclusions");
+});
+
+
+test("form edits preserve standard outputs and timing with or without template questions", () => {
+  for (const questions of [[], [{ field: "deliverables", label: "Outputs" }]]) {
+    const descriptor = { intake: { questions } };
+    const state = { ...newRequest(), answers: { deliverables: ["tour"], times: { flexible: true, slots: [] }, deadline: "date", deadlineDate: "2026-12-01" } };
+    const originalFields = requestFields(descriptor, state.answers);
+    for (const value of ["Updated details", ""]) {
+      const fields = { ...originalFields, deliverables: value, proposedTimes: value, deliveryDeadline: value };
+      const next = requestFromForm(descriptor, { fromForm: true, guidedState: state, originalFields, fields });
+      const result = requestFields(descriptor, next.answers);
+      for (const field of ["deliverables", "proposedTimes", "deliveryDeadline"]) assert.equal(result[field] || "", value);
+      assert.equal(next.answers.deadlineDate, undefined);
+    }
+  }
+});
+
+test("form contact edits respect requester and alternate on-site roles", () => {
+  for (const siteContact of ["me", "other"]) {
+    const descriptor = {};
+    const state = { ...newRequest(), answers: { siteContact, contact: { name: "Requester", phone: "111" }, sitePerson: { name: "Site", phone: "222" } } };
+    const originalFields = requestFields(descriptor, state.answers);
+    const fields = { ...originalFields, contact1Name: "Site updated", contact1Phone: "333", contact2Phone: "444" };
+    const next = requestFromForm(descriptor, { fromForm: true, guidedState: state, originalFields, fields });
+    assert.equal(next.answers.contact.phone, siteContact === "other" ? "444" : "333");
+    if (siteContact === "other") {
+      assert.equal(next.answers.sitePerson.phone, "333");
+      assert.equal(requestFields(descriptor, next.answers).contact1Name, "Site updated");
+    }
+  }
 });

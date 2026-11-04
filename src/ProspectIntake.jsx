@@ -31,6 +31,7 @@ export default function ProspectIntake({
   api,
   initial,
   onShowAssistant,
+  preview = false,
 }) {
   const [pricingNotice, setPricingNotice] = useState("");
   const [descriptor, setDescriptor] = useState(initialDescriptor),
@@ -81,15 +82,22 @@ export default function ProspectIntake({
       <h2>Estimate & work-order request</h2>
       {onShowAssistant && (
         <p>
+          <strong>One-page form</strong>{" "}
           <button
             type="button"
             className="coord-secondary"
-            onClick={onShowAssistant}
+            onClick={() => onShowAssistant({
+              fields, email, quantities, budget,
+              guidedState: initial?.guidedState,
+              originalFields: initial?.fields,
+              originalEmail: initial?.email,
+              fromForm: true,
+            })}
           >
-            Answer one question at a time instead
+            Guided intake
           </button>{" "}
           {initial &&
-            "Your assistant answers are copied here. Changes on this page stay on this page."}
+            "Review and edit your answers here or continue in Guided intake."}
         </p>
       )}
       <p>
@@ -118,6 +126,10 @@ export default function ProspectIntake({
       <form
         onSubmit={async (e) => {
           e.preventDefault();
+          if (preview) {
+            setNotice("Sample complete. Your answers stayed in this tab.");
+            return;
+          }
           setBusy(true);
           setError("");
           try {
@@ -494,7 +506,9 @@ export default function ProspectIntake({
             : "This invitation is for one client."}
         </p>
         <button disabled={busy || Boolean(notice) || pricingChanged}>
-          {busy
+          {preview
+            ? "Try sample submission"
+            : busy
             ? "Submitting…"
             : attempt.current && error
               ? "Retry original submission"

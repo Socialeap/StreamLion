@@ -290,6 +290,7 @@ export function requestSteps(descriptor) {
     const q = asked(field);
     return {
       ...base,
+      label: q?.label || base.label,
       prompt: (answers, ctx) => {
         const own = fallback.prompt(answers, ctx);
         return q ? { text: q.label, hint: q.help || own.hint } : own;
@@ -444,7 +445,7 @@ export function requestSteps(descriptor) {
     {
       id: "size",
       title: "Size",
-      label: "Approximate size in square feet",
+      label: asked("propertySizeSqFt")?.label || "Approximate size in square feet",
       stage: stage("Your space"),
       kind: "number",
       step: "500",
@@ -1179,6 +1180,47 @@ export function requestFields(descriptor, given) {
   set("notes", [answers.notes, ...facts].filter(Boolean).join("\n"));
   return fields;
 }
+export function requestFromForm(descriptor, draft) {
+  const state = draft?.guidedState || newRequest();
+  if (!draft?.fromForm) return state;
+  const fields = draft.fields;
+  const answers = { ...state.answers };
+  const changed = (field) => !draft.guidedState || fields[field] !== draft.originalFields?.[field];
+  for (const [field, id] of Object.entries({
+    title: "title", propertySizeSqFt: "size", scope: "scope",
+    accessInstructions: "accessDetail", notes: "notes",
+    deliverables: "deliverables", proposedTimes: "times", deliveryDeadline: "deadline",
+  })) {
+    if (changed(field) && Object.hasOwn(fields, field)) answers[id] = fields[field];
+  }
+  if (changed("deliveryDeadline")) delete answers.deadlineDate;
+  if (ADDRESS_KEYS.some(changed)) {
+    answers.address = Object.fromEntries(ADDRESS_KEYS.map((key) => [key, fields[key] || ""]));
+  }
+  const requesterPhone = answers.siteContact === "other" ? "contact2Phone" : "contact1Phone";
+  if (answers.siteContact === "other" && ["contact1Name", "contact1Phone"].some(changed)) {
+    answers.sitePerson = { ...answers.sitePerson, name: fields.contact1Name || "", phone: fields.contact1Phone || "" };
+  }
+  if (["requesterName", "companyName", requesterPhone].some(changed) || draft.email !== draft.originalEmail) {
+    answers.contact = {
+      ...answers.contact,
+      name: fields.requesterName || "",
+      company: fields.companyName || "",
+      phone: fields[requesterPhone] || "",
+      email: draft.email || "",
+    };
+  }
+  for (const question of descriptor.intake?.questions || []) {
+    if (!changed(question.field) || !Object.hasOwn(fields, question.field)) continue;
+    const id = CHOICE_STEPS[question.field] || `q:${question.field}`;
+    const value = fields[question.field];
+    answers[id] = question.multiple && question.options?.length ? value.split("\n").filter(Boolean) : value;
+  }
+  for (const [id, value] of Object.entries(draft.quantities || {})) answers[`extra:${id}`] = value;
+  if (draft.budget !== undefined) answers.budget = draft.budget;
+  return { ...state, answers };
+}
+
 export function requestQuantities(descriptor, answers) {
   const config = pricingConfig(descriptor);
   if (!config) return {};

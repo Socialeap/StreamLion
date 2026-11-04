@@ -5,12 +5,7 @@
 @import "./app-navigation.css";
 
 :root {
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-ui);
   color: var(--text);
   background: var(--background);
   font-synthesis: none;
@@ -23,7 +18,7 @@ body {
   margin: 0;
 }
 a {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   text-underline-offset: 3px;
 }
 button,
@@ -205,7 +200,7 @@ h3 {
   letter-spacing: 0.14em;
   font-size: 11px;
   font-weight: 750;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   margin-bottom: 12px;
 }
 .coord-wallet {
@@ -240,7 +235,7 @@ h3 {
 }
 .coord-notice {
   background: var(--accent-soft);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   border-color: var(--line);
 }
 .coord-signin {
@@ -297,7 +292,7 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 30px;
   padding: 5px 10px;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   font-weight: 600;
 }
 .coord-tabs,
@@ -322,7 +317,7 @@ h3 {
 .coord-tabs button[aria-current],
 .coord-groups button[aria-pressed="true"] {
   background: var(--accent-soft);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   border-color: var(--line);
 }
 .coord-summary {
@@ -540,7 +535,7 @@ h3 {
 .coord-identity { overflow-wrap: anywhere; }
 .coord-job-title { margin-bottom: 8px; }
 .coord-qr { display: block; width: min(100%, 240px); height: auto; margin: 16px auto; shape-rendering: crispEdges; }
-.coord-share-action { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; color: var(--green); text-decoration: none; font-weight: 600; }
+.coord-share-action { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; color: var(--mobile-accent-ink, var(--green)); text-decoration: none; font-weight: 600; }
 .coord-estimate { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin: 20px 0; }
 .coord-estimate-total { display: block; font-size: 24px; }
 .coord-prospect { max-width: 1000px; margin: 0 auto; }
@@ -621,4 +616,101 @@ h3 {
 }
 .coord-milestones-stopped {
   font-weight: 600;
+}
+
+body {
+  background: var(--workspace-wash);
+}
+.coord-shell :is(h1, .section-directory h2) {
+  font: 400 clamp(40px, 5vw, 64px)/1 var(--font-display);
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+.coord-shell .section-directory h2 {
+  font-size: 34px;
+}
+.coord-shell :is(.coord-card, .coord-progress, .coord-wallet) {
+  border-radius: clamp(20px, 3vw, 28px);
+  background: var(--glass);
+  box-shadow: var(--shadow);
+}
+.coord-shell .coord-card {
+  backdrop-filter: blur(14px);
+}
+.coord-shell :is(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea) {
+  border-radius: 14px;
+}
+.coord-shell .eyebrow {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+@media (max-width: 640px) {
+  .coord-shell .coord-card {
+    padding: 20px;
+  }
+  .coord-shell .coord-wallet {
+    border: 1px solid var(--line);
+    border-inline-start: 4px solid var(--mobile-accent-ink);
+    background: var(--glass-chrome);
+  }
+  .coord-shell .coord-invite {
+    border-block-start: 4px solid #e78c28;
+  }
+  .coord-shell .coord-projects {
+    border-block-start: 4px solid #438fdb;
+  }
+  .coord-shell .coord-actions > button {
+    min-height: 52px;
+    border-radius: 14px;
+    font-weight: 800;
+  }
+  .coord-shell .coord-actions > button.secondary {
+    border-color: var(--control-line);
+  }
+}
+
+.coord-page-status {
+  margin-block: 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.coord-page-status summary {
+  width: fit-content;
+  min-height: 44px;
+  padding-block: 10px;
+  cursor: pointer;
+  font-weight: 650;
+}
+.coord-page-status p {
+  max-inline-size: 62ch;
+  margin-block: 0 8px;
+}
+
+.coord-form-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+.coord-form-comparison > button {
+  display: block;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.coord-form-comparison > .is-selected {
+  border-color: var(--green-ink);
+  background: var(--accent-soft);
+}
+.coord-form-comparison strong {
+  font-weight: 800;
+}
+.coord-form-comparison span {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--muted);
 }

@@ -16,7 +16,7 @@
   cursor: pointer;
 }
 .provider-manual-trigger svg {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   flex-shrink: 0;
 }
 .provider-manual {
@@ -100,7 +100,7 @@
   gap: 12px;
 }
 .manual-header > div > svg {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   flex-shrink: 0;
 }
 .manual-header strong {
@@ -210,7 +210,7 @@
   flex-shrink: 0;
   border-radius: 50%;
   border: 1px solid var(--line-strong);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   font-size: 19px;
   font-weight: 700;
 }
@@ -254,7 +254,7 @@ details[open] > summary > .manual-chevron {
 }
 .manual-step-icon {
   flex-shrink: 0;
-  color: var(--blue);
+  color: var(--mobile-accent-ink, var(--blue));
 }
 .manual-step h3 {
   flex: 1;
@@ -269,7 +269,7 @@ details[open] > summary > .manual-chevron {
 }
 .manual-where {
   font-size: 13px;
-  color: var(--blue) !important;
+  color: var(--mobile-accent-ink, var(--blue)) !important;
 }
 .manual-step-body p > strong {
   display: block;
@@ -308,7 +308,7 @@ details[open] > summary > .manual-chevron {
 }
 .manual-example-rows svg {
   flex-shrink: 0;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   margin-top: 2px;
 }
 .manual-example-rows strong {
@@ -334,12 +334,12 @@ details[open] > summary > .manual-chevron {
 }
 .manual-stage-end > p > svg {
   flex-shrink: 0;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   margin-top: 3px;
 }
 .manual-stage-end strong {
   display: block;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   font-size: 12px;
 }
 .manual-stage-end button {

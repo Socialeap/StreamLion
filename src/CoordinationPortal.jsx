@@ -38,7 +38,8 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import { estimateMoney } from "./capture-estimate.js";
-import { activeIntakeQuestions } from "./intake-templates.js";
+import { activeIntakeQuestions, pinIntakeTemplate, TM_CAPTURE_PRESET } from "./intake-templates.js";
+import { openIntakePreview } from "./IntakePreview.jsx";
 import { startCoordinationRefresh } from "./coordination-refresh.js";
 import { subscribeUpdate, updateReady, applyUpdate } from "./updates.js";
 import { downloadClientWorkOrder } from "./client-work-order.js";
@@ -665,7 +666,8 @@ export default function CoordinationPortal({
     return (
       <RequestAssistant
         key={prospectToken}
-        descriptor={prospect}
+        initial={intakeSeed}
+              descriptor={prospect}
         token={prospectToken}
         api={api}
         onShowForm={(seed) => {
@@ -726,16 +728,16 @@ export default function CoordinationPortal({
             </button>
           </p>
         )}
-        {synthetic && (
-          <p className="coord-notice" role="status">
-            Local synthetic preview — no email, Google writes or charges.
-          </p>
-        )}
-        {refreshStatus && (
-          <p className="coord-notice">
-            Last verified {date(refreshStatus.verifiedAt)}. Updates refresh
-            while this page is open.
-          </p>
+        {(synthetic || refreshStatus) && (
+          <details className="coord-page-status">
+            <summary>{synthetic ? "Test preview status" : "Data refresh status"}</summary>
+            {synthetic && (
+              <p>This preview uses sample data. It sends no email, writes nothing to Google, and makes no charges.</p>
+            )}
+            {refreshStatus && (
+              <p>Last verified {date(refreshStatus.verifiedAt)}. Data refreshes while this page is open.</p>
+            )}
+          </details>
         )}
         {!client && status?.delivery?.email === false && (
           <p className="coord-notice" role="status">
@@ -757,17 +759,12 @@ export default function CoordinationPortal({
           tabIndex={-1}
         >
           <div>
-            <p className="eyebrow">
-              {client
-                ? "Your capture project, in one place"
-                : "Clear instructions. Fewer follow-ups."}
-            </p>
             <h1>
               {selectedJob
                 ? selectedJob.fields.title || "New request"
                 : client
-                  ? "Let’s get your project ready"
-                  : "From request to completed work"}
+                  ? "Your capture project"
+                  : "Client requests"}
             </h1>
             <p>
               {client
@@ -787,7 +784,6 @@ export default function CoordinationPortal({
             </div>
           )}
         </div>
-        {!selectedJob && <ProjectValue client={client} compact />}
         {error && (
           <div role="alert" className="coord-alert">
             {error}
@@ -817,7 +813,7 @@ export default function CoordinationPortal({
               initial={intakeSeed}
               onShowAssistant={
                 assistantSupported(prospect)
-                  ? () => setIntakeView("chat")
+                  ? (draft) => { setIntakeSeed(draft); setIntakeView("chat"); }
                   : undefined
               }
             />
@@ -1157,6 +1153,43 @@ export default function CoordinationPortal({
                         ))}
                     </select>
                   </label>
+                  <button
+                    type="button"
+                    className="coord-secondary"
+                    onClick={() => {
+                      const pinned = createdInvitation ? selectedJob?.intake : null;
+                      const preset = { ...TM_CAPTURE_PRESET, id: "intake-tm-spatial" };
+                      const options = [
+                        ["", "Standard work order", null],
+                        ["preset:tm-spatial", "Optional TM service questions", pinned?.id === preset.id ? pinned : preset],
+                        ...templates.filter((template) => template.id !== pinned?.id).map((template) => {
+                          const intake = pinIntakeTemplate(template);
+                          return [intake.id, intake.name + " · version " + intake.version, intake];
+                        }),
+                      ];
+                      if (pinned && pinned.id !== preset.id) {
+                        options.push([pinned.id, pinned.name + " · version " + pinned.version + " (this request)", pinned]);
+                      }
+                      const forms = options.map(([id, label, intake]) => ({
+                        id,
+                        label,
+                        descriptor: {
+                          brand: branding?.name || brand || "Sample provider",
+                          reusable: Boolean(shareLink && status.publicForms),
+                          verificationRequired,
+                          intake,
+                          pricing: (status.pricingProfiles || []).find(
+                            (profile) => profile.id === (intake?.pricingProfile || "default"),
+                          ) || null,
+                        },
+                      }));
+                      if (!openIntakePreview({ selected: selectedTemplate, forms })) {
+                        setError("Allow pop-ups for StreamLion to open the sample forms.");
+                      }
+                    }}
+                  >
+                    View sample forms ↗
+                  </button>
                 </fieldset>
                 <fieldset className="coord-invite-step">
                   <legend>
@@ -1742,6 +1775,7 @@ export default function CoordinationPortal({
           <a href="/api/terms">Terms</a>
           <a href="mailto:info@transcendencemedia.com">Support</a>
         </footer>
+        {!selectedJob && <ProjectValue client={client} compact />}
       </main>
       <SectionNavigation
         sections={sections}

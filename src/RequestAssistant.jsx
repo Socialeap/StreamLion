@@ -41,6 +41,7 @@ import {
   requestBody,
   requestEstimate,
   requestFields,
+  requestFromForm,
   requestFlow,
   requestQuantities,
   writeRequest,
@@ -127,13 +128,15 @@ export default function RequestAssistant({
   token,
   api,
   onShowForm,
+  preview = false,
+  initial,
   storage = globalThis.localStorage,
   today = localDate(),
 }) {
   const [descriptor, setDescriptor] = useState(initialDescriptor);
   const flow = useMemo(() => requestFlow(descriptor), [descriptor]);
   const [state, setState] = useState(
-    () => readRequest(token, storage) || newRequest(),
+    () => initial?.fromForm ? requestFromForm(initialDescriptor, initial) : readRequest(token, storage) || newRequest(),
   );
   const stateRef = useRef(state);
   const [editing, setEditing] = useState(""),
@@ -168,7 +171,7 @@ export default function RequestAssistant({
   function commit(next) {
     stateRef.current = next;
     setState(next);
-    setStorageWarning(!writeRequest(token, next, storage));
+    if (!preview) setStorageWarning(!writeRequest(token, next, storage));
   }
   function fail(e) {
     setError(e.message);
@@ -223,6 +226,10 @@ export default function RequestAssistant({
     setPricingChanged(false);
   }
   async function send() {
+    if (preview) {
+      setNotice("Sample complete. Your answers stayed in this tab.");
+      return;
+    }
     const reusable = descriptor.reusable;
     let attempt = stateRef.current.attempt;
     if (reusable && !attempt) {
@@ -304,8 +311,9 @@ export default function RequestAssistant({
   }
   function showForm() {
     onShowForm({
-      fields: requestFields(descriptor, answers),
-      email: answers.contact?.email || "",
+      fields: { ...initial?.fields, ...requestFields(descriptor, answers) },
+      guidedState: stateRef.current,
+      email: answers.contact?.email ?? initial?.email ?? "",
       quantities: requestQuantities(descriptor, answers),
       budget: budgetAllowed(descriptor) ? answers.budget || "" : "",
     });
@@ -443,8 +451,9 @@ export default function RequestAssistant({
     }
   }
 
+  const Container = preview ? "section" : "main";
   return (
-    <main className="setup-screen request-screen" aria-labelledby="setup-title">
+    <Container className="setup-screen request-screen" aria-labelledby="setup-title">
       <ChatHeader
         title={brand}
         label="Request progress"
@@ -473,6 +482,9 @@ export default function RequestAssistant({
           <RotateCcw size={16} aria-hidden="true" />
           <span>{complete ? "New request" : "Start over"}</span>
         </button>
+        {!complete && !locked && onShowForm && (
+          <span className="setup-quiet">Guided intake</span>
+        )}
         {!complete && !locked && onShowForm && (
           <button
             type="button"
@@ -644,6 +656,6 @@ export default function RequestAssistant({
             : `Your answers stay on this device for ${REQUEST_KEEP_DAYS} days until you send them.`}
         </p>
       </section>
-    </main>
+    </Container>
   );
 }

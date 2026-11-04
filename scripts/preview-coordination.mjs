@@ -85,8 +85,10 @@ job = reduceClientJob(
 );
 let previewBranding = {
   name: "Harbor Capture Studio",
-  website: "https://example.com",
-  logo: "",
+  website: "https://harborcapture.example",
+  logo: "data:image/svg+xml," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" rx="22" fill="#123b46"/><path d="M25 44V28h16m14 0h16v16M25 54v15h16m14 0h16V54M31 49l11-9 11 9 12-9" fill="none" stroke="#a8e4ce" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  ),
   shape: "rounded",
 };
 let brandingVersion = 0;

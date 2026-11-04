@@ -350,6 +350,14 @@ export default function ProviderBrandingSettings({
           {notice && <p role="status">{notice}</p>}
         </>
       )}
+      <aside className="f3d-provider-intro" aria-labelledby="f3d-provider-title">
+        <h3 id="f3d-provider-title">Grow your public presence with Frontiers|3D</h3>
+        <p>Create a public business profile to introduce your spatial-capture services and connect clients to your StreamLion intake. F|3D also offers branded interactive tour presentations that help clients explore a space and make an inquiry.</p>
+        <p>Free provider participation and optional Directory listing are separate from paid Studio plans. Public Directory discovery opens in a later release stage.</p>
+        <a href="https://www.frontiers3d.com/signup?brief_role=provider" target="_blank" rel="noopener noreferrer">Explore free provider participation ↗</a>
+        {" · "}
+        <a href="https://www.frontiers3d.com/dashboard/profile" target="_blank" rel="noopener noreferrer">Manage your F|3D profile ↗</a>
+      </aside>
     </section>
   );
 }

@@ -25,7 +25,7 @@
   align-items: center;
   gap: 12px;
   min-height: 44px;
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   text-decoration: none;
   flex-shrink: 0;
   font-size: 24px;
@@ -36,7 +36,7 @@
   width: 42px;
   height: 44px;
   display: block;
-  background: var(--green);
+  background: var(--green-ink, var(--green));
   mask: url("/lion-mint-512.png") center/contain no-repeat;
   -webkit-mask: url("/lion-mint-512.png") center/contain no-repeat;
 }
@@ -97,7 +97,7 @@
   min-width: 40px;
 }
 .workspace-header-tools .theme-switch button[aria-pressed="true"] {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   background: var(--accent-soft);
 }
 .workspace-header-tools .profile-avatar {
@@ -106,7 +106,7 @@
   min-width: 44px;
   height: 44px;
   padding: 0;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   background: var(--accent-soft);
   flex-shrink: 0;
 }
@@ -171,7 +171,7 @@
 .workspace-bottom-nav [aria-current],
 .workspace-bottom-nav .active {
   background: var(--accent-soft);
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   box-shadow: inset 0 3px var(--green);
 }
 .workspace-bottom-nav [aria-disabled="true"] {
@@ -233,6 +233,7 @@
   margin-left: auto;
 }
 .section-directory-list [aria-current] {
+  color: var(--green-ink, var(--green));
   border-color: var(--green);
 }
 .account-overview {
@@ -301,4 +302,84 @@
   .workspace-bottom-nav .nav-short-label {
     display: block;
   }
+}
+
+.workspace-header {
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-left: max(clamp(12px, 3vw, 36px), env(safe-area-inset-left));
+  padding-right: max(clamp(12px, 3vw, 36px), env(safe-area-inset-right));
+  background: var(--glass-chrome);
+  backdrop-filter: blur(18px);
+}
+.workspace-header-tools button,
+.workspace-header-tools .theme-switch {
+  border-radius: 999px;
+}
+.workspace-header-tools .theme-switch button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.workspace-bottom-nav {
+  inset-inline: max(10px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  width: min(620px, calc(100% - max(10px, env(safe-area-inset-left)) - max(10px, env(safe-area-inset-right))));
+  margin-inline: auto;
+  padding: 5px;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--glass-chrome);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-floating);
+}
+.workspace-bottom-nav > :is(button, a) {
+  border-radius: 18px;
+  font-weight: 800;
+}
+.workspace-bottom-nav :is([aria-current], .active) {
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+.section-directory {
+  border-radius: 28px;
+  box-shadow: var(--shadow-floating);
+}
+.section-directory::backdrop {
+  background: var(--scrim);
+}
+.section-directory h2 {
+  font: 400 34px/1 var(--font-display);
+}
+@media (max-width: 620px) {
+  .section-directory {
+    margin-block: auto max(10px, env(safe-area-inset-bottom));
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .workspace-bottom-nav > :is(button, a) {
+    transition: scale 160ms cubic-bezier(.2, .8, .3, 1.25), background-color 160ms ease;
+  }
+  .workspace-bottom-nav > :is(button, a):active:not(:disabled, [aria-disabled="true"]) {
+    scale: .96;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-bottom-nav > :is(button, a) {
+    gap: 4px;
+  }
+  .workspace-bottom-nav > :is(button, a) > svg {
+    width: 24px;
+    height: 24px;
+  }
+  .section-directory-list > button {
+    min-height: 52px;
+    border-radius: 14px;
+  }
+}
+
+.workspace-header-tools .theme-switch button {
+  border-radius: 50%;
+}
+.workspace-header-tools .theme-switch button:focus-visible {
+  outline-offset: -3px;
 }

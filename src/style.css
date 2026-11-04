@@ -12,7 +12,7 @@
 .home-section h2 { margin-top: 0; }
 .site-overview { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
 .site-overview section { min-width: 0; }
-.visit-time { font-size: 22px; font-weight: 650; color: var(--green); }
+.visit-time { font-size: 22px; font-weight: 650; color: var(--mobile-accent-ink, var(--green)); }
 .access-card { padding: 20px; background: var(--accent-soft); border-radius: 8px; }
 .brief-summary { margin: 18px 0; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .site-copy-control { margin: 24px 0; }
@@ -37,7 +37,7 @@
 .leave-checks { padding: 0; list-style: none; }
 .leave-checks li { border-left: 3px solid var(--warning); padding: 8px 16px; margin: 12px 0; background: var(--warning-soft); }
 .leave-checks p { margin: 5px 0; }
-.success { display: flex; gap: 10px; color: var(--green); }
+.success { display: flex; gap: 10px; color: var(--mobile-accent-ink, var(--green)); }
 .payment-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
 .payment-facts div { border: 1px solid var(--line); padding: 16px; border-radius: 8px; }
 .payment-facts dt { text-transform: capitalize; color: var(--muted); font-size: 13px; }
@@ -82,7 +82,7 @@
 .context-preview { max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .intake-choices { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 18px; margin-bottom: 24px; }
 .intake-choices section { border: 1px solid var(--line); border-radius: 10px; padding: 22px; }
-.intake-choices svg { color: var(--green); }
+.intake-choices svg { color: var(--mobile-accent-ink, var(--green)); }
 .intake-choices .primary svg { color: var(--on-accent); }
 .intake-choices h3 { margin: 12px 0 8px; }
 .intake-choices p { min-height: 70px; }
@@ -226,7 +226,7 @@ nav button {
 }
 nav button.active {
   background: var(--accent-soft);
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .workspace-status {
   margin-top: auto;
@@ -347,7 +347,7 @@ h3 {
   overflow-wrap: anywhere;
 }
 .job-icon {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
 }
 .job-count {
   margin-left: auto;
@@ -363,11 +363,11 @@ h3 {
 .project-table td { font-size: 14px; }
 .project-table td:first-child { min-width: 200px; }
 .project-table small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
-.project-name-button { min-height: 0; padding: 0; border: 0; background: none; color: var(--green); text-align: left; justify-content: flex-start; font-weight: 700; }
+.project-name-button { min-height: 0; padding: 0; border: 0; background: none; color: var(--mobile-accent-ink, var(--green)); text-align: left; justify-content: flex-start; font-weight: 700; }
 .project-name-button:hover { background: none; text-decoration: underline; }
 .project-status { display: inline-block; padding: 5px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
 .project-status.pending { background: var(--warning-soft); color: var(--warning); }
-.project-status.complete { background: var(--accent-soft); color: var(--green); }
+.project-status.complete { background: var(--accent-soft); color: var(--mobile-accent-ink, var(--green)); }
 .project-row-actions { display: flex; gap: 8px; }
 .project-row-actions button { min-height: 36px; padding: 7px 10px; font-size: 12px; }
 .deleted-projects { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 16px; }
@@ -691,7 +691,7 @@ summary {
 }
 .intake-panel {background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:22px;margin-bottom:28px;}
 .intake-panel summary {font-size:17px;font-weight:650;}
-.button-link {display:inline-flex;align-items:center;min-height:44px;padding:11px 18px;border:1px solid var(--line);border-radius:6px;background:var(--surface);text-decoration:none;color:var(--green);font-size:14px;font-weight:600;}
+.button-link {display:inline-flex;align-items:center;min-height:44px;padding:11px 18px;border:1px solid var(--line);border-radius:6px;background:var(--surface);text-decoration:none;color:var(--mobile-accent-ink, var(--green));font-size:14px;font-weight:600;}
 .project-sections {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start;}
 fieldset {border:1px solid var(--line);border-radius:8px;padding:22px;margin:0;min-width:0;}
 legend {font-size:18px;font-weight:650;padding:0 8px;}
@@ -763,7 +763,7 @@ fieldset .form-row {gap:0 18px;}
 }
 .wizard-progress button:hover { background: var(--hover); }
 .wizard-progress button.current,
-.wizard-progress button.visited { color: var(--green); }
+.wizard-progress button.visited { color: var(--mobile-accent-ink, var(--green)); }
 .step-number {
   display: grid;
   place-items: center;
@@ -788,7 +788,7 @@ fieldset .form-row {gap:0 18px;}
 .wizard-body { max-width: 970px; margin: 0 auto; }
 .wizard-heading { margin-bottom: 28px; }
 .wizard-eyebrow {
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   text-transform: uppercase;
   font-size: 12px;
   font-weight: 750;
@@ -806,7 +806,7 @@ fieldset .form-row {gap:0 18px;}
 .workbook-guide h3 { margin-bottom: 8px; }
 .workbook-guide p { margin: 4px 0 12px; }
 .workbook-guide .hint { font-size: 13px; margin: 12px 0 0; }
-.workbook-guide a { color: var(--green); font-weight: 650; }
+.workbook-guide a { color: var(--mobile-accent-ink, var(--green)); font-weight: 650; }
 .starter-steps {
   list-style: none;
   counter-reset: guide;
@@ -832,7 +832,7 @@ fieldset .form-row {gap:0 18px;}
   background: var(--surface-raised);
   font-weight: 700;
 }
-.starter-icon { display: flex; color: var(--green); }
+.starter-icon { display: flex; color: var(--mobile-accent-ink, var(--green)); }
 .starter-steps strong { display: block; font-size: 17px; }
 .starter-steps small { display: block; color: var(--muted); font-size: 14px; margin-top: 4px; line-height: 1.5; }
 .start-actions { align-items: center; margin-bottom: 18px; }
@@ -841,7 +841,7 @@ fieldset .form-row {gap:0 18px;}
 .text-action {
   background: transparent;
   border: 0;
-  color: var(--green);
+  color: var(--mobile-accent-ink, var(--green));
   font-weight: 650;
   padding-left: 0;
 }
@@ -911,7 +911,7 @@ fieldset .form-row {gap:0 18px;}
 .finish-review .check { margin: 22px 0 8px; }
 .finish-review .check input { flex: 0 0 auto; }
 .finish-review .hint { margin: 8px 0; }
-.import-status { color: var(--green); }
+.import-status { color: var(--mobile-accent-ink, var(--green)); }
 .chat-panel { max-width: 850px; }
 .chat-panel .quiet-details { margin-top: 20px; }
 .chat-panel .quiet-details p { overflow-wrap: anywhere; }
@@ -943,7 +943,7 @@ fieldset .form-row {gap:0 18px;}
 .measurement-room { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; }
 .measurement-list { list-style: none; padding: 0; }
 .measurement-list > li { border: 1px solid var(--line); border-radius: 9px; padding: 16px; margin: 10px 0; }
-.measurement-list strong { display: block; font-size: 22px; color: var(--green); }
+.measurement-list strong { display: block; font-size: 22px; color: var(--mobile-accent-ink, var(--green)); }
 .measurement-list span, .measurement-list small { display: block; margin-top: 6px; }
 .measurement-issue { border-left: 4px solid var(--warning); background: var(--warning-soft); padding: 14px; margin: 14px 0; }
 .measurement-check { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
@@ -1024,7 +1024,7 @@ fieldset .form-row {gap:0 18px;}
 
 /* Shared workspace surfaces: one palette for controls, records and cards. */
 body { background: var(--background); color: var(--text); }
-a { color: var(--blue); text-underline-offset: 3px; }
+a { color: var(--mobile-accent-ink, var(--blue)); text-underline-offset: 3px; }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 input[type="checkbox"] { accent-color: var(--green); }
 .app main { min-width: 0; }
@@ -1048,8 +1048,8 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
 .tone-amber .section-icon { background: var(--warning); }
 .tone-violet .section-icon { background: var(--violet); }
 .icon-label { display: flex; align-items: center; gap: 10px; }
-.icon-label svg { color: var(--green); flex-shrink: 0; }
-.download-feedback { display: flex; align-items: flex-start; gap: 12px; padding: 16px; margin: 16px 0; border: 1px solid var(--green); border-radius: 10px; background: var(--accent-soft); color: var(--green); scroll-margin-top: 16px; scroll-margin-bottom: 110px; }
+.icon-label svg { color: var(--mobile-accent-ink, var(--green)); flex-shrink: 0; }
+.download-feedback { display: flex; align-items: flex-start; gap: 12px; padding: 16px; margin: 16px 0; border: 1px solid var(--green); border-radius: 10px; background: var(--accent-soft); color: var(--mobile-accent-ink, var(--green)); scroll-margin-top: 16px; scroll-margin-bottom: 110px; }
 .download-feedback > svg { flex: 0 0 24px; margin-top: 2px; }
 .download-feedback strong { display: block; font-size: 15px; }
 .download-feedback p { margin: 6px 0 0; font-size: 13px; color: var(--text); }
@@ -1075,8 +1075,8 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
 
 
 .app .metric { background: var(--surface); border-radius: 14px; }
-.app .metric > svg { flex-shrink: 0; color: var(--blue); }
-.app .metric:nth-child(2) > svg { color: var(--green); }
+.app .metric > svg { flex-shrink: 0; color: var(--mobile-accent-ink, var(--blue)); }
+.app .metric:nth-child(2) > svg { color: var(--mobile-accent-ink, var(--green)); }
 .app .metric:nth-child(3) > svg { color: var(--warning); }
 .app .project-voice, .app .chat-panel { background: var(--surface); border-radius: 16px; }
 .app .sidebar nav button[aria-label="Ask"] svg { color: var(--violet); }
@@ -1206,7 +1206,7 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
 }
 
 /* Keep field work ahead of connection status and guidance. */
-.brand { color: var(--green); }
+.brand { color: var(--mobile-accent-ink, var(--green)); }
 .brand-mark {
   display: inline-block;
   width: 44px;
@@ -1236,7 +1236,7 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
 .project-overview summary,
 .measurement-guide summary,
 .scope summary { cursor: pointer; min-height: 44px; padding: 10px 0; font-size: 16px; font-weight: 650; }
-.app .metric:nth-child(3) svg { color: var(--green); }
+.app .metric:nth-child(3) svg { color: var(--mobile-accent-ink, var(--green)); }
 .connection-records {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px; flex-wrap: wrap; padding: 18px; margin: 20px 0;
@@ -1278,7 +1278,7 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
   .connection-records { padding: 16px; }
 }
 .sidebar nav .client-coordination-link { display: flex; align-items: center; justify-content: flex-start; gap: 10px; color: var(--text); text-decoration: none; padding: 14px 16px; border-radius: 12px; font-size: 15px; font-weight: 500; }
-.sidebar nav .client-coordination-link:hover { background: var(--accent-soft); color: var(--green); }
+.sidebar nav .client-coordination-link:hover { background: var(--accent-soft); color: var(--mobile-accent-ink, var(--green)); }
 .app .app-utility { position: static; display: flex; align-items: flex-start; justify-content: flex-end; gap: 12px; flex-shrink: 0; }
 @media print { .app .app-utility { display: none; } }
 @media (max-width: 640px) {
@@ -1304,3 +1304,112 @@ section[aria-label="Saved measurement batches"], .home-section, .empty {
 .voice-options audio, .voice-options select, .voice-options input[type="range"] { width: 100%; max-width: 100%; min-width: 0; }
 .voice-options label { display: grid; gap: .4rem; }
 .voice-options .note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.app {
+  background: var(--workspace-wash);
+}
+.app > main {
+  padding-top: clamp(24px, 4vw, 48px);
+  padding-inline: max(clamp(14px, 4vw, 48px), env(safe-area-inset-left))
+    max(clamp(14px, 4vw, 48px), env(safe-area-inset-right));
+}
+.app h1,
+.welcome-screen h1,
+.ask-dialog h2,
+.handover-dialog h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -.025em;
+}
+.app h1 {
+  font-size: clamp(40px, 5vw, 66px);
+  line-height: .98;
+  overflow-wrap: anywhere;
+}
+.app :is(.page-head, .workspace-page-head, .card-heading) p {
+  max-inline-size: 62ch;
+}
+.app :is(.home-section, .project-voice, .chat-panel, .metric, .account-security, .intake-choices > section) {
+  min-width: 0;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: clamp(20px, 3vw, 28px);
+  box-shadow: var(--shadow);
+}
+.app :is(.home-section, .project-voice, .chat-panel) {
+  backdrop-filter: blur(14px);
+}
+.app .requirement.done {
+  border-left-color: var(--success);
+}
+.app .success {
+  color: var(--success);
+}
+.app main :is(button, .button-link, input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea) {
+  border-radius: 14px;
+}
+.app main :is(input, textarea, select, summary):focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.ask-dialog,
+.handover-dialog {
+  border-radius: 28px;
+  box-shadow: var(--shadow-floating);
+}
+.app .metric > svg {
+  box-sizing: content-box;
+  padding: 10px;
+  border-radius: 14px;
+  color: var(--mobile-accent-ink, var(--blue));
+  background: var(--blue-soft);
+}
+.app .metric:nth-child(2) > svg {
+  color: var(--violet);
+  background: var(--violet-soft);
+}
+.app .metric:nth-child(3) > svg {
+  color: var(--success);
+  background: var(--success-soft);
+}
+@media (max-width: 620px) {
+  .app .metrics,
+  .app .site-overview,
+  .app .intake-choices {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .app .home-section {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app .metric {
+    gap: 14px;
+    padding: 14px;
+  }
+  .app .metric:nth-child(n) > svg {
+    width: 26px;
+    height: 26px;
+    padding: 14px;
+    border-radius: 16px;
+    background: var(--tile-projects);
+    color: white;
+    stroke-width: 2.4;
+  }
+  .app .metric:nth-child(2) > svg {
+    background: var(--tile-notes);
+  }
+  .app .metric:nth-child(3) > svg {
+    background: var(--tile-review);
+    color: #30200b;
+  }
+  .app main .actions :is(.primary, .button-link) {
+    min-height: 52px;
+    font-weight: 800;
+  }
+  .app main .actions .button-link:not(.primary) {
+    border-color: var(--control-line);
+  }
+}

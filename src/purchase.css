@@ -48,7 +48,7 @@
   color: var(--muted, #52635a);
 }
 .purchase-card a {
-  color: var(--green, #194f39);
+  color: var(--mobile-accent-ink, var(--green, #194f39));
 }
 .purchase-card .purchase-primary {
   display: block;
@@ -70,7 +70,7 @@
 .credit-packs button {
   border: 1px solid var(--control-line, #c7d7cd);
   background: var(--surface-raised, #f7faf8);
-  color: var(--green, #194f39);
+  color: var(--mobile-accent-ink, var(--green, #194f39));
   padding: 10px 14px;
   border-radius: 8px;
   font: inherit;
@@ -107,7 +107,7 @@
 .purchase-steps li.current,
 .purchase-steps li.done {
   border-color: var(--green, #194f39);
-  color: var(--green, #194f39);
+  color: var(--mobile-accent-ink, var(--green, #194f39));
 }
 .purchase-card .purchase-price {
   font-size: 38px;
@@ -438,7 +438,7 @@ body:has(> .purchase-shell) {
   min-height: 44px;
   border: 1px solid var(--control-line, #c7d7cd);
   background: var(--surface-raised, #f7faf8);
-  color: var(--green, #194f39);
+  color: var(--mobile-accent-ink, var(--green, #194f39));
   padding: 10px 14px;
   border-radius: 8px;
   font: inherit;
@@ -465,4 +465,23 @@ body:has(> .purchase-shell) {
   display: block;
   margin-top: 0.35rem;
   font-size: 0.875rem;
+}
+
+.purchase-shell {
+  background: var(--workspace-wash, var(--background, #f4f0fb));
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+.purchase-shell .purchase-card {
+  border-radius: clamp(20px, 4vw, 32px);
+  background: var(--glass, var(--surface, #fff));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+.purchase-card h1 {
+  font: 400 clamp(38px, 5vw, 56px)/1 var(--font-display, Georgia, serif);
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+.purchase-card .purchase-primary {
+  border-radius: 999px;
 }
