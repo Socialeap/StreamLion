@@ -1,3 +1,4 @@
+import { profilePanelQa } from "./profile-panel-qa.js";
 import {
   requireBusinessSchema,
   requireBusinessConsent,
@@ -719,6 +720,9 @@ export async function handlePurchase({ request, env, params }) {
             }
           : {}),
         ...(ownerQa ? { ownerQa } : {}),
+        ...(!purchased && profilePanelQa(env, identity)
+          ? { profileQa: profilePanelQa(env, identity) }
+          : {}),
       });
     }
     if (path === "webhook" && request.method === "POST")

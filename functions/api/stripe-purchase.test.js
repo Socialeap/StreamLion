@@ -1841,3 +1841,46 @@ test("refund receipt survives a cold Stripe preflight outage", async (t) => {
     1,
   );
 });
+
+test("profile panel QA status is account bound, expiring and never a purchase", async (t) => {
+  const f = fixture(t, { mode: "live" }),
+    now = Date.now(),
+    origin = "https://streamlion.transcendencemedia.com";
+  const cookie = await f.login("account-b"),
+    other = await f.login("account-a");
+  Object.assign(f.env, {
+    GOOGLE_AUTH_ORIGIN: origin,
+    STREAMLION_CHECKOUT_MODE: "paused",
+    STREAMLION_PROFILE_PANEL_QA: JSON.stringify({
+      version: 1,
+      scope: "profile-panel",
+      subject: "account-b",
+      email: "account-b@example.com",
+      issuedAt: now,
+      expiresAt: now + 3600000,
+    }),
+  });
+  const status = async (c) =>
+    (
+      await handlePurchase({
+        env: f.env,
+        params: { path: ["status"] },
+        request: new Request(origin + "/api/purchase/status", {
+          headers: { Cookie: "__Host-streamlion-session=" + c },
+        }),
+      })
+    ).json();
+  const receipt = await status(cookie);
+  assert.equal(receipt.purchased, false);
+  assert.equal(receipt.ownerQa, undefined);
+  assert.deepEqual(receipt.profileQa, {
+    scope: "profile-panel",
+    expiresAt: now + 3600000,
+  });
+  assert.equal((await status(other)).profileQa, undefined);
+  assert.equal(await hasPurchase(f.env, "account-b"), false);
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) n FROM streamlion_purchases_v1").get().n,
+    0,
+  );
+});

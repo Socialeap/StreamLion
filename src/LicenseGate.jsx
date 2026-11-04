@@ -1,3 +1,4 @@
+import ProfilePanelQa from "./ProfilePanelQa.jsx";
 import { useEffect, useState } from "react";
 import { pilotRequest, pilotReceipt, pilotDate } from "./pilot-api.js";
 import { purchaseRequest } from "./purchase-api.js";
@@ -7,11 +8,13 @@ const KEY = "streamlion-purchase-receipt-v1";
 export default function LicenseGate({ children }) {
   const [pilot, setPilot] = useState(null);
   const [ownerQa, setOwnerQa] = useState(null);
+  const [profileQa, setProfileQa] = useState(null);
   const [allowed, setAllowed] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
   async function check(background = false) {
     if (!background) setLoading(true);
+    setProfileQa(null);
     setError("");
     try {
       const receipt = await purchaseRequest("status");
@@ -26,6 +29,19 @@ export default function LicenseGate({ children }) {
           ? receipt.ownerQa
           : null;
       setOwnerQa(qa);
+      if (
+        navigator.onLine &&
+        receipt.connected === true &&
+        receipt.profileQa?.scope === "profile-panel" &&
+        typeof receipt.account === "string" &&
+        Number.isSafeInteger(receipt.profileQa.expiresAt) &&
+        receipt.profileQa.expiresAt > Date.now() &&
+        receipt.profileQa.expiresAt <= Date.now() + 3600000
+      )
+        setProfileQa({
+          account: receipt.account,
+          expiresAt: receipt.profileQa.expiresAt,
+        });
       let free = null;
       if (receipt.required && !receipt.purchased && !qa) {
         try {
@@ -157,6 +173,8 @@ export default function LicenseGate({ children }) {
         {children}
       </>
     );
+  if (profileQa)
+    return <ProfilePanelQa key={profileQa.account} {...profileQa} />;
   if (error)
     return (
       <div className="purchase-shell">

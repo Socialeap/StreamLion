@@ -735,3 +735,35 @@ for (const refunded of [false, true]) {
     });
   }
 }
+
+test("profile-only QA mounts the real connection panel without unlocking workspace children", async (t) => {
+  t.after(cleanup);
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (String(url).includes("/api/f3d-profile"))
+      return response({
+        account: "second@example.com",
+        subject: "second",
+        available: true,
+        connected: false,
+        snapshot: null,
+      });
+    if (String(url).includes("/api/pilot")) return response({ enabled: false });
+    return response({
+      enabled: true,
+      required: true,
+      purchased: false,
+      connected: true,
+      account: "second@example.com",
+      profileQa: { scope: "profile-panel", expiresAt: Date.now() + 60000 },
+    });
+  });
+  const ui = render(
+    <LicenseGate>
+      <p>Licensed workspace secret</p>
+    </LicenseGate>,
+  );
+  await ui.findByRole("heading", { name: "Profile connection QA" });
+  await ui.findByRole("button", { name: "Connect F|3D account" });
+  assert.equal(ui.queryByText("Licensed workspace secret"), null);
+  assert.equal(localStorage.getItem("streamlion-purchase-receipt-v1"), null);
+});
