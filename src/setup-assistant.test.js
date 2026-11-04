@@ -350,8 +350,6 @@ test("editing re-asks only that answer, while dependent answers are asked again"
     ["rate", "0.15"],
     ["budget", "no"],
     ["aiUses", []],
-    ["logo", null],
-    ["welcome", ""],
     ["theme", "light"],
     ["review", true],
   ]);
@@ -407,8 +405,8 @@ test("answers persist on the device and invalid saved state is ignored", () => {
   assert.equal(writeSetup(state, blocked), false);
 });
 
-test("client-request providers can write the request assistant's welcome line", () => {
-  const lead = [
+test("setup sends public branding to F3D rather than asking for it locally", () => {
+  const state = run([
     ...identity,
     ["focus", ["requests"]],
     ["hardware", ["dslr"]],
@@ -416,37 +414,21 @@ test("client-request providers can write the request assistant's welcome line", 
     ["storage", "device"],
     ["pricingMethod", "skip"],
     ["aiUses", []],
-    ["logo", null],
-  ];
-  const state = run(lead);
-  const step = walk(state, online).current;
-  assert.equal(step.id, "welcome");
-  assert.match(step.prompt(walk(state, online).answers).hint, /Harbor Spatial/);
-  assert.throws(
-    () => answerStep(state, "welcome", "x".repeat(281), online),
-    /under 280 characters/,
-  );
-  const written = answerStep(
-    state,
-    "welcome",
-    "  Welcome to Harbor!\n Let’s plan your capture. ",
-    online,
-  );
-  assert.equal(
-    written.answers.welcome,
-    "Welcome to Harbor! Let’s plan your capture.",
-  );
-  assert.equal(
-    brandingSuggestion(setupProfile(written)).welcome,
-    "Welcome to Harbor! Let’s plan your capture.",
-  );
-  // The standard greeting is an empty welcome; other providers are not asked.
-  assert.equal(
-    setupProfile(answerStep(state, "welcome", "", online)).welcome,
-    "",
-  );
-  const briefsOnly = run([...identity, ["focus", ["briefs"]]]);
-  assert.equal(setupProfile(briefsOnly).welcome, "");
+  ]);
+  assert.equal(walk(state, online).current.id, "theme");
+  const legacy = {
+    ...state,
+    answers: {
+      ...state.answers,
+      logo: { logo: "old" },
+      welcome: "Old welcome",
+      contact: { ...state.answers.contact, website: "https://old.example" },
+    },
+  };
+  const profile = setupProfile(legacy);
+  assert.equal(profile.logo, null);
+  assert.equal(profile.welcome, "");
+  assert.equal(profile.website, "");
 });
 
 test("progress, locale currency and profile defaults stay small and predictable", () => {

@@ -1,3 +1,4 @@
+import F3DProfileConnection from "./F3DProfileConnection.jsx";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   CircleAlert,
@@ -36,13 +37,12 @@ import {
   ChoiceWidget,
   CurrencyWidget,
   FormWidget,
-  LogoWidget,
   MultiWidget,
   NumberWidget,
   TextWidget,
   TiersWidget,
 } from "./SetupWidgets.jsx";
-import { brandingAPI, prepareLogo } from "./ProviderBrandingSettings.jsx";
+import { brandingAPI } from "./ProviderBrandingSettings.jsx";
 import { pricingAPI } from "./ProviderPricingSettings.jsx";
 import { validateBranding } from "./provider-branding.js";
 import { loadGoogleConfig } from "./google-config.js";
@@ -109,7 +109,7 @@ function applyPlan(profile, connected) {
     plan.push("Publish this pricing as the default for new request forms");
   if (!connected && (profile.business || profile.pricing))
     plan.push(
-      "Keep your branding and pricing on this device. Connect Google later to publish them from Account",
+      "Keep your business details and pricing on this device. Connect Google later to publish them from Account",
     );
   if (profile.business)
     plan.push("Start new projects with your business name and email");
@@ -135,7 +135,6 @@ export default function SetupAssistant({
   google = googleActions,
   brandingApi = brandingAPI,
   pricingApi = pricingAPI,
-  convertLogo = prepareLogo,
   loadConfig = loadGoogleConfig,
   loadCredits = loadCreditConfig,
   setupApi = setupAPI,
@@ -463,18 +462,18 @@ export default function SetupAssistant({
       if (!current.available)
         done.push({
           ok: false,
-          text: "Business branding awaits activation. Your answers are kept and prefilled in Account.",
+          text: "Business details await activation. Your answers are kept and prefilled in Account.",
         });
       else {
         const saved = current.branding || {};
         const branding = validateBranding({
           name: profile.business,
-          website: profile.website || saved.website || "",
+          website: saved.website || "",
           phone: profile.phone || saved.phone || "",
           area: profile.area || saved.area || "",
-          welcome: profile.welcome || saved.welcome || "",
-          logo: profile.logo?.logo || saved.logo || "",
-          shape: profile.logo ? profile.logo.shape : saved.shape || "rounded",
+          welcome: saved.welcome || "",
+          logo: saved.logo || "",
+          shape: saved.shape || "rounded",
         });
         await brandingApi(
           { branding, version: current.version },
@@ -483,13 +482,13 @@ export default function SetupAssistant({
         rememberProviderContact(branding);
         done.push({
           ok: true,
-          text: "Business branding saved to your client pages",
+          text: "Business details saved for work orders",
         });
       }
     } catch (e) {
       done.push({
         ok: false,
-        text: `Business branding wasn’t saved: ${e.message} Your answers are kept for Account.`,
+        text: `Business details weren’t saved: ${e.message} Your answers are kept for Account.`,
       });
     }
     if (profile.pricing)
@@ -595,8 +594,6 @@ export default function SetupAssistant({
         return <CurrencyWidget key={key} {...common} options={options} />;
       case "tiers":
         return <TiersWidget key={key} {...common} />;
-      case "logo":
-        return <LogoWidget key={key} {...common} convertLogo={convertLogo} />;
       case "google":
         return (
           <div className="setup-card">
@@ -869,6 +866,7 @@ export default function SetupAssistant({
           </button>
         )}
       </ChatHeader>
+      {(["business", "contact"].includes(current?.id) || complete) && <F3DProfileConnection connected={ctx.connected} account={ctx.account} disabled={disabled || !!busy} />}
       {deviceAnswers && !accountChecking && (
         <section className="setup-notice" aria-label="Device setup recovery">
           <p>

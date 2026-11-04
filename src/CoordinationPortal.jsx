@@ -921,8 +921,8 @@ export default function CoordinationPortal({
           >
             <h2>Enable your client workspace</h2>
             <p>
-              Set your business name, logo and website in{" "}
-              <a href="/?page=Account">Account → Your business branding</a>.
+              Set your business name and operational contact details in{" "}
+              <a href="/?page=Account">Account → Your business details</a>.
               Choose your workbook and private Drive folder in{" "}
               <a href="/?page=Connections">Connections</a>, then enable
               background coordination here.
@@ -1024,8 +1024,8 @@ export default function CoordinationPortal({
               />
               <p>
                 Requests go to the provider who creates this link, even if
-                someone else forwards it. Set your name, logo and website in{" "}
-                <a href="/?page=Account">Account → Your business branding</a>.
+                someone else forwards it. Set your business name and operational contact details in{" "}
+                <a href="/?page=Account">Account → Your business details</a>.
               </p>
               <p>
                 Choose an invitation, set the details, then create and share.
