@@ -1189,18 +1189,24 @@ export function requestFromForm(descriptor, draft) {
   for (const [field, id] of Object.entries({
     title: "title", propertySizeSqFt: "size", scope: "scope",
     accessInstructions: "accessDetail", notes: "notes",
+    deliverables: "deliverables", proposedTimes: "times", deliveryDeadline: "deadline",
   })) {
     if (changed(field) && Object.hasOwn(fields, field)) answers[id] = fields[field];
   }
+  if (changed("deliveryDeadline")) delete answers.deadlineDate;
   if (ADDRESS_KEYS.some(changed)) {
     answers.address = Object.fromEntries(ADDRESS_KEYS.map((key) => [key, fields[key] || ""]));
   }
-  if (["requesterName", "companyName", "contact1Phone"].some(changed) || draft.email !== draft.originalEmail) {
+  const requesterPhone = answers.siteContact === "other" ? "contact2Phone" : "contact1Phone";
+  if (answers.siteContact === "other" && ["contact1Name", "contact1Phone"].some(changed)) {
+    answers.sitePerson = { ...answers.sitePerson, name: fields.contact1Name || "", phone: fields.contact1Phone || "" };
+  }
+  if (["requesterName", "companyName", requesterPhone].some(changed) || draft.email !== draft.originalEmail) {
     answers.contact = {
       ...answers.contact,
       name: fields.requesterName || "",
       company: fields.companyName || "",
-      phone: fields.contact1Phone || "",
+      phone: fields[requesterPhone] || "",
       email: draft.email || "",
     };
   }
