@@ -34,54 +34,34 @@ const { providerContact, PROVIDER_CONTACT_KEY } =
   await import("./provider-contact.js");
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7XcAAAAASUVORK5CYII=";
-test("Account saves business name, normalized logo shape and website explicitly; failed save retains edits", async (t) => {
+test("Account saves operational details and retains edits after a failed save", async (t) => {
   t.after(cleanup);
   const writes = [];
   let fail = false;
-  const api = async (body, subject) => {
-    if (body) {
-      writes.push({ body, subject });
-      if (fail) throw new Error("Network unavailable");
-      return {
-        subject: "a",
-        available: true,
-        version: 1,
-        branding: body.branding,
-      };
-    }
-    return { subject: "a", available: true, version: 0, branding: profile };
-  };
   const ui = render(
     <Settings
       connected
       account="a@example.com"
-      api={api}
-      convertLogo={async () => PNG}
+      api={async (body) => {
+        if (body) {
+          if (fail) throw new Error("Network unavailable");
+          writes.push(body);
+        }
+        return {
+          subject: "a",
+          available: true,
+          version: 1,
+          branding: body?.branding || profile,
+        };
+      }}
     />,
   );
-  await ui.findByDisplayValue("Harbor Capture");
-  fireEvent.change(ui.getByLabelText("Business name clients will see"), {
+  fireEvent.change(await ui.findByLabelText("Business name clients will see"), {
     target: { value: "Provider A" },
   });
-  fireEvent.change(ui.getByLabelText("Logo display shape"), {
-    target: { value: "rectangle" },
-  });
-  fireEvent.change(ui.getByLabelText("Upload your logo (optional)"), {
-    target: {
-      files: [new dom.window.File(["logo"], "logo.png", { type: "image/png" })],
-    },
-  });
-  await ui.findByRole("img", { name: "Provider A logo" });
-  assert.equal(writes.length, 0);
   fireEvent.click(ui.getByRole("button", { name: "Save business details" }));
-  await ui.findByText(/Business branding saved/);
-  assert.equal(writes[0].subject, "a");
-  assert.equal(writes[0].body.branding.logo, PNG);
-  assert.equal(writes[0].body.branding.shape, "rectangle");
-  assert.equal(
-    ui.getByRole("link", { name: /example.com/ }).getAttribute("rel"),
-    "noopener noreferrer",
-  );
+  await ui.findByText(/Business details saved/);
+  assert.equal(writes[0].branding.name, "Provider A");
   fail = true;
   fireEvent.change(ui.getByLabelText("Business name clients will see"), {
     target: { value: "Unsaved business" },
@@ -91,10 +71,6 @@ test("Account saves business name, normalized logo shape and website explicitly;
   assert.equal(
     ui.getByLabelText("Business name clients will see").value,
     "Unsaved business",
-  );
-  assert.equal(
-    ui.getByRole("button", { name: "Save business details" }).disabled,
-    false,
   );
 });
 test("account switch ignores a stale branding load and never copies another account profile", async (t) => {
@@ -165,10 +141,7 @@ test("unsaved branding starts from setup answers, while saved branding is never 
     />,
   );
   await ui.findByDisplayValue("Setup Studio");
-  assert.equal(
-    ui.getByLabelText("Business website (optional)").value,
-    "https://setup.example/",
-  );
+  assert.equal(ui.queryByLabelText("Business website (optional)"), null);
   assert(ui.getByText(/Filled in from your setup assistant answers/));
   cleanup();
   const saved = async () => ({
@@ -189,7 +162,7 @@ test("unsaved branding starts from setup answers, while saved branding is never 
   assert.equal(kept.queryByText(/setup assistant/), null);
 });
 
-test("phone and service area are previewed for clients, saved explicitly and kept for handovers", async (t) => {
+test("phone and service area are saved explicitly and kept for handovers", async (t) => {
   t.after(cleanup);
   localStorage.clear();
   const writes = [];
@@ -213,12 +186,9 @@ test("phone and service area are previewed for clients, saved explicitly and kep
     ui.getByLabelText("Service area or business address (optional)"),
     { target: { value: "Portland, OR" } },
   );
-  const phone = ui.getByRole("link", { name: "+1 503 555 0100" });
-  assert.equal(phone.getAttribute("href"), "tel:+15035550100");
-  assert(ui.getByText("Portland, OR"));
   assert.equal(writes.length, 0);
   fireEvent.click(ui.getByRole("button", { name: "Save business details" }));
-  await ui.findByText(/Business branding saved/);
+  await ui.findByText(/Business details saved/);
   assert.equal(writes[0].branding.phone, "+1 503 555 0100");
   assert.equal(writes[0].branding.area, "Portland, OR");
   assert.deepEqual(providerContact(), {
@@ -274,7 +244,7 @@ test("loaded branding refreshes this device's handover contact, and setup answer
   assert(prefilled.getByDisplayValue("Seattle, WA"));
 });
 
-test("business basics precede the free partner invitation and collapsed customization preserves saved branding", async (t) => {
+test("business basics lead to F3D with no local marketing controls", async (t) => {
   t.after(cleanup);
   const saved = { ...profile, welcome: "Welcome to Harbor", logo: PNG };
   const writes = [];
@@ -294,15 +264,20 @@ test("business basics precede the free partner invitation and collapsed customiz
     />,
   );
   const save = await ui.findByRole("button", { name: "Save business details" });
-  const details = ui.container.querySelector("details.branding-appearance");
-  assert.equal(details.open, false);
+  for (const label of [
+    "Business website (optional)",
+    "Upload your logo (optional)",
+    "Logo display shape",
+    "Request assistant welcome (optional)",
+  ])
+    assert.equal(ui.queryByLabelText(label), null);
+  assert.equal(
+    ui.container.querySelector('input[type="file"], textarea, select, details'),
+    null,
+  );
   const partner = ui.getByRole("complementary");
   assert(
     save.compareDocumentPosition(partner) &
-      window.Node.DOCUMENT_POSITION_FOLLOWING,
-  );
-  assert(
-    partner.compareDocumentPosition(details) &
       window.Node.DOCUMENT_POSITION_FOLLOWING,
   );
   assert.equal(
@@ -313,6 +288,4 @@ test("business basics precede the free partner invitation and collapsed customiz
   await waitFor(() => assert.equal(writes.length, 1));
   assert.equal(writes[0].welcome, saved.welcome);
   assert.equal(writes[0].logo, saved.logo);
-  fireEvent.click(details.querySelector("summary"));
-  assert.equal(details.open, true);
 });
