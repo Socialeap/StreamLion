@@ -1,18 +1,20 @@
 import React, { useEffect, useRef, useState } from "react";
-import { f3dProfileAPI, awaitProfileApproval } from "./f3d-profile-connect.js";
+import { f3dProfileAPI, awaitProfileApproval, sharedDraftUrl } from "./f3d-profile-connect.js";
 
 export function ProfileConnection({
   connected,
   account,
   disabled = false,
+  showDraftEditor = false,
   api = f3dProfileAPI,
 }) {
-  const [data, setData] = useState(null),
+  const [storedData, setData] = useState(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [retry, setRetry] = useState(0);
   const generation = useRef(0),
     operation = useRef(null);
+  const data = connected && storedData?.account === account ? storedData : null;
   useEffect(() => {
     const id = ++generation.current,
       controller = new AbortController();
@@ -124,6 +126,9 @@ export function ProfileConnection({
   }
   const b = data?.snapshot?.businessProfile,
     d = data?.snapshot?.directoryProfile;
+  const draftUrl = showDraftEditor && data?.available && data?.connected
+    ? sharedDraftUrl(data.snapshot)
+    : null;
   return (
     <section
       className="f3d-provider-intro"
@@ -187,6 +192,15 @@ export function ProfileConnection({
                   </p>
                 )}
               </>
+            )}
+            {draftUrl && !busy && !disabled && (
+              <p>
+                <a href={draftUrl} target="_blank" rel="noopener noreferrer">
+                  Edit your F|3D provider draft ↗
+                </a>
+                {" "}Save your shared profile details on F|3D, then return here to
+                continue saving your StreamLion settings.
+              </p>
             )}
             <div className="f3d-provider-actions">
               <button
