@@ -866,7 +866,12 @@ export default function SetupAssistant({
           </button>
         )}
       </ChatHeader>
-      {(["business", "contact"].includes(current?.id) || complete) && <F3DProfileConnection connected={ctx.connected} account={ctx.account} disabled={disabled || !!busy} />}
+      {(["business", "contact"].includes(current?.id) || complete) && <F3DProfileConnection
+        connected={ctx.connected}
+        account={ctx.account}
+        disabled={disabled || !!busy}
+        showDraftEditor
+      />}
       {deviceAnswers && !accountChecking && (
         <section className="setup-notice" aria-label="Device setup recovery">
           <p>

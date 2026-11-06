@@ -212,3 +212,32 @@ test("lost completion response reconciles saved state without retrying the appro
     window.open = old;
   }
 });
+
+test("wizard launches only its current account's linked draft in a separate tab", async () => {
+  const owner = "a0000000-0000-4000-8000-000000000001";
+  const profile = "b0000000-0000-4000-8000-000000000001";
+  const api = async () => ({
+    ...result,
+    snapshot: { ...result.snapshot, accountId: owner,
+      businessProfile: { ...result.snapshot.businessProfile, id: profile } },
+  });
+  const ui = render(<ProfileConnection connected account="a@example.com" showDraftEditor api={api} />);
+  const link = await ui.findByRole("link", { name: /Edit your F/ });
+  assert.equal(link.href, `https://www.frontiers3d.com/dashboard/profile?connect=streamlion-draft#owner=${owner}&profile=${profile}`);
+  assert.equal(link.target, "_blank");
+  assert.equal(link.rel, "noopener noreferrer");
+  ui.rerender(<ProfileConnection connected account="b@example.com" showDraftEditor api={api} />);
+  assert.equal(ui.queryByRole("link", { name: /Edit your F/ }), null);
+  await ui.findByRole("alert");
+  assert.equal(ui.queryByText(/Harbor/), null);
+});
+
+test("a connected snapshot without a business profile cannot open the draft editor", async () => {
+  const api = async () => ({
+    ...result, snapshot: { ...result.snapshot,
+      accountId: "a0000000-0000-4000-8000-000000000001", businessProfile: null },
+  });
+  const ui = render(<ProfileConnection connected account="a@example.com" showDraftEditor api={api} />);
+  await ui.findByText(/Profile snapshot connected/);
+  assert.equal(ui.queryByRole("link", { name: /Edit your F/ }), null);
+});

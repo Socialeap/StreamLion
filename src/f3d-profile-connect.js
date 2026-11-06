@@ -1,3 +1,4 @@
+import { PROFILE_ISSUER } from "./f3d-profile.js";
 import { fetchRead } from "./network.js";
 export async function f3dProfileAPI(body, subject, signal) {
   const response = await fetchRead("/api/f3d-profile", {
@@ -72,4 +73,18 @@ export function awaitProfileApproval(popup, nonce, signal, host = window) {
         fail("The F|3D window was closed. Start again when ready.");
     }, 1000);
   });
+}
+
+
+// Use the account-bound snapshot only to identify the expected F|3D draft.
+// The F|3D editor authenticates and authorizes the writer independently.
+export function sharedDraftUrl(snapshot) {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const owner = snapshot?.accountId;
+  const profile = snapshot?.businessProfile?.id;
+  if (typeof owner !== "string" || typeof profile !== "string" ||
+      !uuid.test(owner) || !uuid.test(profile)) return null;
+  const target = new URL("/dashboard/profile?connect=streamlion-draft", PROFILE_ISSUER);
+  target.hash = new URLSearchParams({ owner, profile }).toString();
+  return target.href;
 }
