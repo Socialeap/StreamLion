@@ -7,6 +7,11 @@ import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
 import { hasPurchase, licenseRequired } from "./purchase-access.js";
 import { pilotAccess, pilotHistory } from "./pilot-access.js";
 import { ownerWorkspaceQa } from "./owner-core-qa.js";
+import {
+  selectedAccountWorkspaceStatement,
+  restoreAccountWorkspace,
+  workspacePreferencesReady,
+} from "./account-workspace.js";
 import { managedAppend } from "./coordination-engine.js";
 const SESSION = "__Host-streamlion-session";
 const WORKSPACE = "__Host-streamlion-workspace";
@@ -597,10 +602,56 @@ export async function handleGoogle({ request, env, params }) {
         ],
       );
     }
-    const row = await getSession(request, env);
+    let row = await getSession(request, env);
     if (route === "session" && request.method === "GET") {
       if (!row) return json({ enabled: true, connected: false });
       await accessToken(env, row);
+      let recovery;
+      if (
+        !row.workbook_id &&
+        (await workspacePreferencesReady(env.GOOGLE_SESSIONS)) &&
+        (!licenseRequired(env) ||
+          (await hasPurchase(env, row.google_subject)) ||
+          (await ownerWorkspaceQa(env, row)) ||
+          (await pilotAccess(env, row.google_subject)))
+      ) {
+        const restored = await restoreAccountWorkspace(
+          env.GOOGLE_SESSIONS,
+          row,
+          async (kind, id) => {
+            const capacity = await reserveGoogleRequest(
+              env.GOOGLE_SESSIONS,
+              row.google_subject,
+              "GET",
+            );
+            if (!capacity.allowed) throw Error("temporary");
+            const check = await googleFetch(
+              kind === "workbook"
+                ? `https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=spreadsheetId`
+                : `https://www.googleapis.com/drive/v3/files/${id}?fields=id,mimeType,trashed,capabilities(canAddChildren)`,
+              {
+                headers: {
+                  Authorization: `Bearer ${await accessToken(env, row)}`,
+                },
+              },
+            );
+            if ([403, 404].includes(check.status)) return false;
+            if (!check.ok) throw Error("temporary");
+            const file = await check.json();
+            return kind === "workbook"
+              ? file.spreadsheetId === id
+              : file.id === id &&
+                  file.mimeType === FOLDER_MIME &&
+                  !file.trashed &&
+                  !!file.capabilities?.canAddChildren;
+          },
+        );
+        if (restored?.unavailable) recovery = "unavailable";
+        else if (restored) row = restored;
+        // A concurrent sign-out cannot acquire a new session or selection cookie.
+        else if (!(await getSession(request, env)))
+          return json({ enabled: true, connected: false });
+      }
       const response = json({
         enabled: true,
         connected: true,
@@ -608,6 +659,7 @@ export async function handleGoogle({ request, env, params }) {
         subject: row.google_subject,
         bookId: row.workbook_id,
         folderId: row.folder_id,
+        ...(recovery ? { workbookRecovery: recovery } : {}),
       });
       // Deliver recovery metadata before sign-out is offered, so a lost
       // sign-out acknowledgment cannot strand the workbook-scoped drafts.
@@ -650,6 +702,12 @@ export async function handleGoogle({ request, env, params }) {
         401,
       );
     if (route === "disconnect" && request.method === "POST") {
+      if (await workspacePreferencesReady(env.GOOGLE_SESSIONS))
+        await env.GOOGLE_SESSIONS.prepare(
+          "DELETE FROM streamlion_account_workspace_v1 WHERE google_subject=?",
+        )
+          .bind(row.google_subject)
+          .run();
       const coordination = await env.GOOGLE_SESSIONS.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='streamlion_coordination_connections_v1'",
       ).first();
@@ -748,13 +806,24 @@ export async function handleGoogle({ request, env, params }) {
         )
           return json({ error: "Choose a writable Drive folder." }, 403);
       }
-      const saved = await env.GOOGLE_SESSIONS.prepare(
+      const selection = env.GOOGLE_SESSIONS.prepare(
         isFolder
           ? "UPDATE streamlion_google_sessions_v1 SET folder_id = ? WHERE session_hash = ? AND expires_at > ?"
           : "UPDATE streamlion_google_sessions_v1 SET workbook_id = ? WHERE session_hash = ? AND expires_at > ?",
-      )
-        .bind(bookId, row.session_hash, Date.now())
-        .run();
+      ).bind(bookId, row.session_hash, Date.now());
+      const saved = (await workspacePreferencesReady(env.GOOGLE_SESSIONS))
+        ? (
+            await env.GOOGLE_SESSIONS.batch([
+              selection,
+              selectedAccountWorkspaceStatement(
+                env.GOOGLE_SESSIONS,
+                row,
+                isFolder ? "folder_id" : "workbook_id",
+                Date.now(),
+              ),
+            ])
+          )[0]
+        : await selection.run();
       if (!saved.meta.changes) return json({ error: "Reconnect Google." }, 401);
       const response = json(isFolder ? { folderId: bookId } : { bookId });
       response.headers.append(

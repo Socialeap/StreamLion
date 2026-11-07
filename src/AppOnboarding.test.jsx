@@ -70,6 +70,34 @@ test.after(() => {
   dom.window.close();
 });
 
+test("an inaccessible saved workbook opens selection guidance instead of an empty Projects list", async () => {
+  session = {
+    enabled: true,
+    connected: true,
+    subject: "synthetic-a",
+    account: "qa-a@example.com",
+    bookId: "",
+    folderId: "",
+    workbookRecovery: "unavailable",
+  };
+  const ui = render(<App />);
+  await ui.findByText("qa-a@example.com");
+  const review = await ui.findByRole("button", {
+    name: "Review connection",
+    exact: true,
+  });
+  await waitFor(() => assert.equal(review.disabled, false));
+  fireEvent.click(review);
+  await ui.findByText(
+    "Your saved workbook is no longer accessible. Choose it again or select another workbook in Connections. Your Google records have not been deleted.",
+  );
+  assert(ui.getByRole("button", { name: "Choose workbook", exact: true }));
+  assert.equal(
+    ui.queryByRole("heading", { name: "Projects", exact: true }),
+    null,
+  );
+});
+
 test("cold start presents the branded opener, the setup assistant and explicit Google account choices before workspace navigation", async () => {
   const ui = render(<App />);
   await ui.findByRole("heading", { name: "StreamLion", exact: true });
