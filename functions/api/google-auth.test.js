@@ -121,6 +121,134 @@ function fixture() {
   return { db, env, session, request };
 }
 
+test("a fresh browser restores the verified account workbook, persists explicit changes, and rejects revoked access", async (t) => {
+  const { db, env, session, request } = fixture();
+  db.exec(
+    readFileSync(
+      new URL("../../migrations/0027_account_workspace.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  const first = await session();
+  let denied = false;
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    calls++;
+    assert.match(
+      String(url),
+      /^https:\/\/sheets.googleapis.com\/v4\/spreadsheets\//,
+    );
+    return denied
+      ? new Response("", { status: 403 })
+      : Response.json({ spreadsheetId: "shared-book" });
+  });
+  assert.equal(
+    (
+      await request("workbook", {
+        cookie: first,
+        method: "POST",
+        body: JSON.stringify({ bookId: "shared-book" }),
+      })
+    ).status,
+    200,
+  );
+  const second = await session({ id: "b".repeat(43) });
+  db.prepare(
+    "UPDATE streamlion_google_sessions_v1 SET workbook_id='' WHERE session_hash=?",
+  ).run(await hash(second));
+  let status = await request("session", { cookie: second });
+  assert.equal(status.status, 200);
+  assert.equal((await status.json()).bookId, "shared-book");
+  assert.match(
+    status.headers.get("Set-Cookie"),
+    /__Host-streamlion-workspace=/,
+  );
+  const other = await session({ id: "c".repeat(43), subject: "account-b" });
+  db.prepare(
+    "UPDATE streamlion_google_sessions_v1 SET workbook_id='' WHERE session_hash=?",
+  ).run(await hash(other));
+  assert.equal(
+    (await (await request("session", { cookie: other })).json()).bookId,
+    "",
+  );
+  await request("signout", { cookie: second, method: "POST" });
+  assert.equal(
+    (await (await request("session", { cookie: second })).json()).connected,
+    false,
+  );
+  assert.equal(
+    db
+      .prepare(
+        "SELECT workbook_id FROM streamlion_account_workspace_v1 WHERE google_subject=?",
+      )
+      .get("account-a").workbook_id,
+    "shared-book",
+  );
+  denied = true;
+  const third = await session({ id: "d".repeat(43) });
+  db.prepare(
+    "UPDATE streamlion_google_sessions_v1 SET workbook_id='' WHERE session_hash=?",
+  ).run(await hash(third));
+  const unavailable = await (
+    await request("session", { cookie: third })
+  ).json();
+  assert.equal(unavailable.bookId, "");
+  assert.equal(unavailable.workbookRecovery, "unavailable");
+  assert.equal(
+    (
+      await request("workbook", {
+        cookie: third,
+        method: "POST",
+        body: JSON.stringify({ bookId: "forbidden" }),
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    db
+      .prepare(
+        "SELECT workbook_id FROM streamlion_account_workspace_v1 WHERE google_subject=?",
+      )
+      .get("account-a").workbook_id,
+    "shared-book",
+  );
+  assert.equal(calls, 4);
+  await request("disconnect", { cookie: first, method: "POST" });
+  assert.equal(
+    db
+      .prepare(
+        "SELECT * FROM streamlion_account_workspace_v1 WHERE google_subject=?",
+      )
+      .get("account-a"),
+    undefined,
+  );
+});
+
+test("saved workbook preferences do not bypass a required Core entitlement", async (t) => {
+  const { db, env, session, request } = fixture();
+  db.exec(
+    readFileSync(
+      new URL("../../migrations/0027_account_workspace.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  db.exec(
+    "CREATE TABLE streamlion_purchases_v1(order_id TEXT,mode TEXT,google_subject TEXT,status TEXT); INSERT INTO streamlion_account_workspace_v1 VALUES('account-a','private-book','',1)",
+  );
+  const id = await session();
+  db.prepare(
+    "UPDATE streamlion_google_sessions_v1 SET workbook_id='' WHERE session_hash=?",
+  ).run(await hash(id));
+  env.STREAMLION_REQUIRE_LICENSE = "true";
+  env.STREAMLION_PAYMENTS_MODE = "live";
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("Unlicensed recovery must not read Google files");
+  });
+  const response = await request("session", { cookie: id });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).bookId, "");
+});
+
 test("browser sign-out removes only its session and preserves background grants and other devices", async (t) => {
   t.mock.method(globalThis, "fetch", async () => {
     throw new Error("Sign-out must not call Google or another provider");

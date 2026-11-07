@@ -227,6 +227,10 @@ export default function App() {
       refreshDrafts(connection.bookId);
       if (!connection.bookId) {
         setStatus("Google connected · choose a workbook");
+        if (connection.workbookRecovery === "unavailable")
+          setRestoreError(
+            "Your saved workbook is no longer accessible. Choose it again or select another workbook in Connections. Your Google records have not been deleted.",
+          );
         if (entryPage.current !== "Account") setPage("Connections");
         return;
       }
@@ -235,6 +239,7 @@ export default function App() {
       await connectBook(connection.bookId, data, true);
     } catch (e) {
       if (epoch === restoreEpoch.current) {
+        if (!bookId && entryPage.current !== "Account") setPage("Connections");
         setRestoreError(e.message);
         const accessRequired = e.code === "WORKSPACE_ACCESS_REQUIRED";
         setWorkspaceAccessRequired(accessRequired);
@@ -1542,7 +1547,11 @@ export default function App() {
                         : "Start setup assistant"}
                   </button>
                 </section>
-                <F3DProfileConnection connected={hasGoogleSession()} account={googleAccount()} disabled={disabled || checkingConnection} />
+                <F3DProfileConnection
+                  connected={hasGoogleSession()}
+                  account={googleAccount()}
+                  disabled={disabled || checkingConnection}
+                />
                 <ProviderBrandingSettings
                   connected={hasGoogleSession()}
                   account={googleAccount()}
