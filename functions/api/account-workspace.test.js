@@ -159,6 +159,39 @@ test("revoked permission and temporary errors do not bind or erase the saved pre
     "book-a",
   );
 });
+test("concurrent folder selection survives workbook restoration", async () => {
+  for (const initialFolder of ["", "previous-folder"]) {
+    const f = fixture();
+    f.apply();
+    await seedSelection(f.store, "alice", "workbook_id", "book-a");
+    await seedSelection(f.store, "alice", "folder_id", "saved-folder");
+    const row = f.add("new", "alice", "", initialFolder);
+    const restored = await restoreAccountWorkspace(f.store, row, async () => {
+      f.db
+        .prepare(
+          "UPDATE streamlion_google_sessions_v1 SET folder_id='chosen-folder' WHERE session_hash='new'",
+        )
+        .run();
+      await selectedAccountWorkspaceStatement(
+        f.store,
+        row,
+        "folder_id",
+        Date.now(),
+      ).run();
+      return true;
+    });
+    assert.equal(restored.workbook_id, "book-a");
+    assert.equal(restored.folder_id, "chosen-folder");
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT folder_id FROM streamlion_account_workspace_v1 WHERE google_subject='alice'",
+        )
+        .get().folder_id,
+      "chosen-folder",
+    );
+  }
+});
 test("concurrent sign-out cannot resurrect a session and explicit selection wins a restore race", async () => {
   const f = fixture();
   f.apply();

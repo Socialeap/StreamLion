@@ -37,10 +37,11 @@ export async function restoreAccountWorkspace(db, row, verify) {
   // Do not resurrect a signed-out session or overwrite a concurrent explicit choice.
   await db
     .prepare(
-      "UPDATE streamlion_google_sessions_v1 SET workbook_id=?,folder_id=? WHERE session_hash=? AND google_subject=? AND expires_at>? AND workbook_id=''",
+      "UPDATE streamlion_google_sessions_v1 SET workbook_id=?,folder_id=CASE WHEN folder_id=? THEN ? ELSE folder_id END WHERE session_hash=? AND google_subject=? AND expires_at>? AND workbook_id=''",
     )
     .bind(
       saved.workbook_id,
+      row.folder_id || "",
       folder,
       row.session_hash,
       row.google_subject,
