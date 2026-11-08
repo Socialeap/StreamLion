@@ -767,3 +767,110 @@ test("profile-only QA mounts the real connection panel without unlocking workspa
   assert.equal(ui.queryByText("Licensed workspace secret"), null);
   assert.equal(localStorage.getItem("streamlion-purchase-receipt-v1"), null);
 });
+
+// All paid responses below are isolated fixtures; no purchase or live entitlement is created.
+test("paid licence cache permits offline cold starts for seven days and clears on online revocation", async (t) => {
+  const key = "streamlion-purchase-receipt-v1";
+  localStorage.removeItem(key);
+  let now = 1800000000000;
+  t.mock.method(Date, "now", () => now);
+  let online = true;
+  const onlineDescriptor = Object.getOwnPropertyDescriptor(navigator, "onLine");
+  Object.defineProperty(navigator, "onLine", {
+    get: () => online,
+    configurable: true,
+  });
+  t.after(() => {
+    if (onlineDescriptor)
+      Object.defineProperty(navigator, "onLine", onlineDescriptor);
+    else delete navigator.onLine;
+  });
+  let purchased = true;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (!online) throw new TypeError("Device is offline");
+    if (url === "/api/pilot/status") return response({ enabled: false });
+    return response({ ...config, connected: true, purchased });
+  });
+  t.after(() => {
+    cleanup();
+    localStorage.removeItem(key);
+  });
+  const open = () =>
+    render(
+      <LicenseGate>
+        <div>Paid offline workspace</div>
+      </LicenseGate>,
+    );
+  let ui = open();
+  await ui.findByText("Paid offline workspace");
+  const expiry = JSON.parse(localStorage.getItem(key)).expires;
+  assert.equal(expiry, now + 7 * 86400000);
+  cleanup();
+  online = false;
+  now = expiry - 1;
+  ui = open();
+  await ui.findByText("Paid offline workspace");
+  assert.equal(
+    JSON.parse(localStorage.getItem(key)).expires,
+    expiry,
+    "Offline use cannot extend the cache",
+  );
+  cleanup();
+  now = expiry;
+  ui = open();
+  await ui.findByRole("alert");
+  assert.equal(ui.queryByText("Paid offline workspace"), null);
+  cleanup();
+  online = true;
+  purchased = true;
+  ui = open();
+  await ui.findByText("Paid offline workspace");
+  cleanup();
+  purchased = false;
+  ui = open();
+  await waitFor(() => assert.equal(localStorage.getItem(key), null));
+  assert.equal(ui.queryByText("Paid offline workspace"), null);
+  cleanup();
+  online = false;
+  ui = open();
+  await ui.findByRole("alert");
+  assert.equal(ui.queryByText("Paid offline workspace"), null);
+});
+
+test("offline cold starts reject missing, malformed and expired paid cache", async (t) => {
+  const key = "streamlion-purchase-receipt-v1";
+  const onlineDescriptor = Object.getOwnPropertyDescriptor(navigator, "onLine");
+  Object.defineProperty(navigator, "onLine", {
+    value: false,
+    configurable: true,
+  });
+  t.after(() => {
+    if (onlineDescriptor)
+      Object.defineProperty(navigator, "onLine", onlineDescriptor);
+    else delete navigator.onLine;
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    throw new TypeError("Device is offline");
+  });
+  t.after(() => {
+    cleanup();
+    localStorage.removeItem(key);
+  });
+  for (const cached of [
+    null,
+    "invalid",
+    JSON.stringify({ expires: "forever" }),
+    JSON.stringify({ expires: Date.now() - 1 }),
+  ]) {
+    if (cached === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, cached);
+    const ui = render(
+      <LicenseGate>
+        <div>Paid offline workspace</div>
+      </LicenseGate>,
+    );
+    await ui.findByRole("alert");
+    assert.equal(ui.queryByText("Paid offline workspace"), null);
+    cleanup();
+  }
+});
