@@ -129,11 +129,11 @@ test("two-hour coordination QA is owner-only, atomic, revocable and never a purc
     ...f.env,
     STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify(grant),
   };
-  const selected = (e = env) =>
+  const selected = async (e = env) =>
     f.sql
       .prepare(
         "SELECT * FROM connections c WHERE " +
-          coordinationEligibilitySQL(e, "c"),
+          (await coordinationEligibilitySQL(e, "c")),
       )
       .all();
   assert.equal(
@@ -144,10 +144,10 @@ test("two-hour coordination QA is owner-only, atomic, revocable and never a purc
   assert.equal(await hasCoordinationAccess(env, "other"), false);
   assert.equal(await hasPurchase(env, "owner-sub"), false);
   assert.deepEqual(
-    selected().map((r) => ({ ...r })),
+    (await selected()).map((r) => ({ ...r })),
     [{ mode: "live", google_subject: "owner-sub" }],
   );
-  const atomic = coordinationEligibilitySQL(env, "c");
+  const atomic = await coordinationEligibilitySQL(env, "c");
   f.sql.exec("UPDATE streamlion_admin_owners_v1 SET enabled=0");
   assert.equal(
     f.sql.prepare("SELECT * FROM connections c WHERE " + atomic).all().length,
@@ -166,24 +166,25 @@ test("two-hour coordination QA is owner-only, atomic, revocable and never a purc
       ...env,
       STREAMLION_OWNER_CORE_QA_LICENSE: JSON.stringify({ ...grant, ...patch }),
     };
-    assert.equal(selected(e).length, 0);
+    assert.equal((await selected(e)).length, 0);
     assert.equal(await hasCoordinationAccess(e, "owner-sub"), false);
   }
   assert.equal(
-    selected({ ...env, STREAMLION_OWNER_CORE_QA_LICENSE: undefined }).length,
+    (await selected({ ...env, STREAMLION_OWNER_CORE_QA_LICENSE: undefined }))
+      .length,
     0,
   );
   assert.equal(
-    selected({ ...env, STREAMLION_CHECKOUT_MODE: "open" }).length,
+    (await selected({ ...env, STREAMLION_CHECKOUT_MODE: "open" })).length,
     0,
   );
   f.sql.exec(
     "INSERT INTO streamlion_purchases_v1 VALUES('real','live','other','paid')",
   );
   assert.deepEqual(
-    selected({ ...env, STREAMLION_OWNER_CORE_QA_LICENSE: undefined }).map(
-      (r) => r.google_subject,
-    ),
+    (
+      await selected({ ...env, STREAMLION_OWNER_CORE_QA_LICENSE: undefined })
+    ).map((r) => r.google_subject),
     ["other"],
   );
 });

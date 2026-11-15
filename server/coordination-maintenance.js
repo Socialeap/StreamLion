@@ -102,7 +102,7 @@ export async function maintainCoordination(env, now = Date.now()) {
   if (hasPublic) {
     const rows = await db
       .prepare(
-        `SELECT s.*,j.connection_id FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='recovery' AND w.id=s.operation WHERE j.archived=0 AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${coordinationEligibilitySQL(env, "c", "b")}  AND COALESCE(w.next_attempt_at,0)<=? AND s.state IN('pending','expired') ORDER BY s.created_at LIMIT 5`,
+        `SELECT s.*,j.connection_id FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='recovery' AND w.id=s.operation WHERE j.archived=0 AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${await coordinationEligibilitySQL(env, "c", "b")}  AND COALESCE(w.next_attempt_at,0)<=? AND s.state IN('pending','expired') ORDER BY s.created_at LIMIT 5`,
       )
       .bind(now, env.STREAMLION_PAYMENTS_MODE, now)
       .all();
@@ -131,7 +131,7 @@ export async function maintainCoordination(env, now = Date.now()) {
   if (hasProspects) {
     const claims = await db
       .prepare(
-        `SELECT p.job_id,p.claim_operation,j.connection_id FROM streamlion_prospect_links_v1 p JOIN streamlion_coordination_jobs_v1 j ON j.id=p.job_id JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='recovery' AND w.id=p.claim_operation WHERE p.claimed_at IS NOT NULL AND p.synced_at IS NULL AND j.archived=0 AND j.closed_at IS NULL AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${coordinationEligibilitySQL(env, "c", "b")}  AND COALESCE(w.next_attempt_at,0)<=? ORDER BY p.claimed_at LIMIT 5`,
+        `SELECT p.job_id,p.claim_operation,j.connection_id FROM streamlion_prospect_links_v1 p JOIN streamlion_coordination_jobs_v1 j ON j.id=p.job_id JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='recovery' AND w.id=p.claim_operation WHERE p.claimed_at IS NOT NULL AND p.synced_at IS NULL AND j.archived=0 AND j.closed_at IS NULL AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${await coordinationEligibilitySQL(env, "c", "b")}  AND COALESCE(w.next_attempt_at,0)<=? ORDER BY p.claimed_at LIMIT 5`,
       )
       .bind(now, env.STREAMLION_PAYMENTS_MODE, now)
       .all();
@@ -160,7 +160,7 @@ export async function maintainCoordination(env, now = Date.now()) {
   // Bounded batches. One unresolved operation always blocks later workbook writes.
   const pending = await db
     .prepare(
-      `SELECT o.id,o.connection_id FROM streamlion_coordination_operations_v1 o JOIN streamlion_coordination_connections_v1 c ON c.id=o.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='recovery' AND w.id=o.id WHERE o.state='pending' AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${coordinationEligibilitySQL(env, "c", "p")}  AND COALESCE(w.next_attempt_at,0)<=? ORDER BY o.created_at LIMIT 10`,
+      `SELECT o.id,o.connection_id FROM streamlion_coordination_operations_v1 o JOIN streamlion_coordination_connections_v1 c ON c.id=o.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='recovery' AND w.id=o.id WHERE o.state='pending' AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${await coordinationEligibilitySQL(env, "c", "p")}  AND COALESCE(w.next_attempt_at,0)<=? ORDER BY o.created_at LIMIT 10`,
     )
     .bind(now, env.STREAMLION_PAYMENTS_MODE, now)
     .all();
@@ -188,7 +188,7 @@ export async function maintainCoordination(env, now = Date.now()) {
   }
   const due = await db
     .prepare(
-      `SELECT j.* FROM streamlion_coordination_jobs_v1 j JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='archive' AND w.id=j.id WHERE j.archived=0 AND j.archive_at IS NOT NULL AND j.archive_at<=? AND (j.archive_at<=? OR j.reminder_at IS NULL) AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${coordinationEligibilitySQL(env, "c", "p")}  AND COALESCE(w.next_attempt_at,0)<=? AND NOT EXISTS(SELECT 1 FROM streamlion_coordination_operations_v1 o WHERE o.connection_id=j.connection_id AND o.state='pending') ORDER BY j.archive_at LIMIT 10`,
+      `SELECT j.* FROM streamlion_coordination_jobs_v1 j JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id LEFT JOIN streamlion_coordination_work_schedule_v1 w ON w.kind='archive' AND w.id=j.id WHERE j.archived=0 AND j.archive_at IS NOT NULL AND j.archive_at<=? AND (j.archive_at<=? OR j.reminder_at IS NULL) AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${await coordinationEligibilitySQL(env, "c", "p")}  AND COALESCE(w.next_attempt_at,0)<=? AND NOT EXISTS(SELECT 1 FROM streamlion_coordination_operations_v1 o WHERE o.connection_id=j.connection_id AND o.state='pending') ORDER BY j.archive_at LIMIT 10`,
     )
     .bind(now + 14 * DAY, now, now, env.STREAMLION_PAYMENTS_MODE, now)
     .all();

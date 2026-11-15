@@ -30,7 +30,7 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
         "session_id",
       );
       // Verified buyers can reopen their workspace during a pricing outage.
-      if (a.purchased) {
+      if (a.purchased || a.ownerLicensed === true) {
         if (sessionId)
           window.history.replaceState(null, "", window.location.pathname);
         setConfig({ enabled: true, required: a.required, mode: a.mode });
@@ -165,6 +165,7 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
       if (generation === epoch.current) setBusy(false);
     }
   }
+  const ownerLicense = account?.ownerLicensed === true;
   const refundComplete =
     !account?.purchased && account?.guarantee?.state === "succeeded";
   const amount = config?.amount
@@ -183,7 +184,7 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
       <main className="purchase-content">
         <section className="purchase-card" aria-labelledby="purchase-title">
           <h1 id="purchase-title">
-            {account?.purchased
+            {account?.purchased || ownerLicense
               ? "Your workspace is ready"
               : accessBlocked && account?.connected
                 ? refundComplete
@@ -191,7 +192,19 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
                   : "Let’s check your account"
                 : "Own your field workspace"}
           </h1>
-          <p>One purchase. Your projects stay in your Google account.</p>
+          {ownerLicense ? (
+            <>
+              <p>
+                Your owner license is linked to{" "}
+                <strong>{account.account}</strong>.
+              </p>
+              <a className="purchase-primary" href="/">
+                Open workspace
+              </a>
+            </>
+          ) : (
+            <p>One purchase. Your projects stay in your Google account.</p>
+          )}
           {config?.mode === "test" && (
             <p className="purchase-test" role="note">
               Test checkout — use Stripe’s test card. No real payment is taken.
@@ -199,18 +212,21 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
             </p>
           )}
           {!config && !error && <p role="status">Checking purchase options…</p>}
-          {accessBlocked && account?.connected && !account.purchased && (
-            <>
-              <p role="status">
-                {refundComplete
-                  ? "Your full refund is complete, so access from that purchase has ended. Your Google files remain yours. You can download your device backup below."
-                  : "We could not find an active Core purchase for this Google account. If you already paid, use the Google account you purchased with, check again if your payment is still being confirmed, or contact support below. You do not need to pay again to check your purchase. Your saved work is kept."}
-              </p>
-              <p>
-                <a href="/?page=Connections">Check workspace access again</a>
-              </p>
-            </>
-          )}
+          {accessBlocked &&
+            account?.connected &&
+            !account.purchased &&
+            !ownerLicense && (
+              <>
+                <p role="status">
+                  {refundComplete
+                    ? "Your full refund is complete, so access from that purchase has ended. Your Google files remain yours. You can download your device backup below."
+                    : "We could not find an active Core purchase for this Google account. If you already paid, use the Google account you purchased with, check again if your payment is still being confirmed, or contact support below. You do not need to pay again to check your purchase. Your saved work is kept."}
+                </p>
+                <p>
+                  <a href="/?page=Connections">Check workspace access again</a>
+                </p>
+              </>
+            )}
           {config?.enabled === false && (
             <>
               <p>
@@ -228,6 +244,7 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
             </>
           )}
           {config?.enabled &&
+            !ownerLicense &&
             config.checkoutMode === "owner_qa" &&
             !account?.purchased && (
               <p role="note">
@@ -237,7 +254,7 @@ export default function Purchase({ onPurchased, accessBlocked = false }) {
                   " Live Stripe checkout uses real money."}
               </p>
             )}
-          {config?.enabled && (
+          {config?.enabled && !ownerLicense && (
             <>
               <ol className="purchase-steps" aria-label="Purchase steps">
                 <li className={account?.connected ? "done" : "current"}>

@@ -4,7 +4,7 @@ import { completeAdminSignin } from "./admin-auth.js";
 import { base64url as b64, base64urlBytes as unb64 } from "./base64.js";
 import { FOLDER_MIME } from "../src/drive-folders.js";
 import { reserveGoogleRequest, reserveSignIn } from "./google-limits.js";
-import { hasPurchase, licenseRequired } from "./purchase-access.js";
+import { hasCoreLicense, licenseRequired } from "./purchase-access.js";
 import { pilotAccess, pilotHistory } from "./pilot-access.js";
 import { ownerWorkspaceQa } from "./owner-core-qa.js";
 import {
@@ -611,7 +611,7 @@ export async function handleGoogle({ request, env, params }) {
         !row.workbook_id &&
         (await workspacePreferencesReady(env.GOOGLE_SESSIONS)) &&
         (!licenseRequired(env) ||
-          (await hasPurchase(env, row.google_subject)) ||
+          (await hasCoreLicense(env, row.google_subject)) ||
           (await ownerWorkspaceQa(env, row)) ||
           (await pilotAccess(env, row.google_subject)))
       ) {
@@ -743,7 +743,7 @@ export async function handleGoogle({ request, env, params }) {
     // and restore a purchase. Every server-backed workspace operation is gated.
     if (
       licenseRequired(env) &&
-      !(await hasPurchase(env, row.google_subject)) &&
+      !(await hasCoreLicense(env, row.google_subject)) &&
       !(await ownerWorkspaceQa(env, row)) &&
       !(await pilotAccess(env, row.google_subject)) &&
       !(

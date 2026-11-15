@@ -1,3 +1,4 @@
+import { projectBeforeOwnerLicense } from "./preflight-owner-license.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -5,6 +6,7 @@ const normalize = (s) => s.replace(/;\s*$/, "").replace(/\s+/g, " ").trim();
 export function coreGuaranteePreflight(input, legacyProjection = false) {
   if (!Array.isArray(input?.schema) || !input.stamps)
     throw Error("Provide complete schema definitions and stamps; STOP.");
+  input = projectBeforeOwnerLicense(input);
   const db = new DatabaseSync(":memory:");
   try {
     const dir = new URL("../migrations/", import.meta.url);

@@ -274,7 +274,7 @@ export async function verifyProspect(env, challengeHash, sessionHash, now) {
     .bind(challengeHash)
     .first();
   if (!challenge) return false;
-  const valid = `EXISTS(SELECT 1 FROM streamlion_prospect_challenges_v1 c JOIN streamlion_coordination_jobs_v1 j ON j.id=c.job_id JOIN streamlion_coordination_connections_v1 n ON n.id=j.connection_id WHERE c.hash=? AND c.job_id=streamlion_prospect_links_v1.job_id AND c.consumed=0 AND c.expires_at>? AND j.archived=0 AND j.closed_at IS NULL AND n.revoked=0 AND n.expires_at>? AND n.mode=? AND ${coordinationEligibilitySQL(env, "n", "b")} )`;
+  const valid = `EXISTS(SELECT 1 FROM streamlion_prospect_challenges_v1 c JOIN streamlion_coordination_jobs_v1 j ON j.id=c.job_id JOIN streamlion_coordination_connections_v1 n ON n.id=j.connection_id WHERE c.hash=? AND c.job_id=streamlion_prospect_links_v1.job_id AND c.consumed=0 AND c.expires_at>? AND j.archived=0 AND j.closed_at IS NULL AND n.revoked=0 AND n.expires_at>? AND n.mode=? AND ${await coordinationEligibilitySQL(env, "n", "b")} )`;
   const result = await env.GOOGLE_SESSIONS.batch([
     env.GOOGLE_SESSIONS.prepare(
       "UPDATE streamlion_prospect_links_v1 SET claimed_at=?,claimed_email_hash=?,claim_payload=?,claim_operation=? WHERE job_id=? AND claimed_at IS NULL AND revoked=0 AND expires_at>? AND (expected_email_hash IS NULL OR expected_email_hash=?) AND " +

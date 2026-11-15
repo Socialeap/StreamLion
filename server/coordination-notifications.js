@@ -1,3 +1,4 @@
+import { coreLicenseSQL } from "./purchase-access.js";
 import { buildPushPayload } from "@block65/webcrypto-web-push";
 import { hash, seal, unseal } from "./google-auth.js";
 import { CoordinationError, DAY } from "../src/client-workflow.js";
@@ -344,12 +345,11 @@ export async function enqueueNotice(env, row, id, message, role = "client") {
 }
 const backoff = (attempts) =>
   Math.min(3600000, 30000 * 2 ** Math.min(attempts, 7));
-async function grantFor(db, jobId, now, mode) {
-  return db
-    .prepare(
-      "SELECT j.*,c.revoked,c.expires_at,c.mode,c.google_subject FROM streamlion_coordination_jobs_v1 j JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id WHERE j.id=? AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND j.archived=0 AND (j.archive_at IS NULL OR j.archive_at>?) AND EXISTS(SELECT 1 FROM streamlion_purchases_v1 p WHERE p.google_subject=c.google_subject AND p.mode=c.mode AND p.status='paid')",
-    )
-    .bind(jobId, now, mode, now)
+async function grantFor(env, jobId, now) {
+  return env.GOOGLE_SESSIONS.prepare(
+    `SELECT j.*,c.revoked,c.expires_at,c.mode,c.google_subject FROM streamlion_coordination_jobs_v1 j JOIN streamlion_coordination_connections_v1 c ON c.id=j.connection_id WHERE j.id=? AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND j.archived=0 AND (j.archive_at IS NULL OR j.archive_at>?) AND ${await coreLicenseSQL(env, "c")}`,
+  )
+    .bind(jobId, now, env.STREAMLION_PAYMENTS_MODE, now)
     .first();
 }
 export async function sendResend(env, id, payload) {
@@ -431,12 +431,7 @@ export async function dispatchNotifications(
         try {
           const payload = await unseal(env, row.payload, "mail:" + row.id);
           if (
-            !(await grantFor(
-              db,
-              row.job_id,
-              now,
-              env.STREAMLION_PAYMENTS_MODE,
-            )) ||
+            !(await grantFor(env, row.job_id, now)) ||
             (payload.expiresAt && payload.expiresAt <= now) ||
             !payload.to ||
             (resendReady(env) && !approvedResendRecipient(env, payload.to))
@@ -591,12 +586,7 @@ export async function dispatchNotifications(
             )
             .bind(row.subscription_id, now)
             .first();
-          const grant = await grantFor(
-            db,
-            row.job_id,
-            now,
-            env.STREAMLION_PAYMENTS_MODE,
-          );
+          const grant = await grantFor(env, row.job_id, now);
           const session =
             sub?.role === "client"
               ? await db

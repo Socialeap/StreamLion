@@ -1,5 +1,5 @@
 import { OWNER_EMAIL } from "./admin-data.js";
-import { hasPurchase } from "./purchase-access.js";
+import { coreLicenseSQL, hasCoreLicense } from "./purchase-access.js";
 import { ownerWorkspaceQa } from "./owner-core-qa.js";
 
 // A separate coordination window can coexist with the workspace-only window.
@@ -44,13 +44,15 @@ function coordinationGrant(env) {
 
 // This predicate is used inside the same atomic SQL statements that authorize
 // intake/verification. Never insert a fake purchase or expand hasPurchase.
-export function coordinationEligibilitySQL(env, connection, purchase = "p") {
-  if (!["c", "n"].includes(connection) || !["p", "b"].includes(purchase))
-    throw new Error("Invalid eligibility alias");
-  const paid = `EXISTS(SELECT 1 FROM streamlion_purchases_v1 ${purchase} WHERE ${purchase}.google_subject=${connection}.google_subject AND ${purchase}.mode=${connection}.mode AND ${purchase}.status='paid')`;
+export async function coordinationEligibilitySQL(
+  env,
+  connection,
+  purchase = "p",
+) {
+  const eligible = await coreLicenseSQL(env, connection, purchase);
   try {
     const raw = coordinationGrant(env);
-    if (typeof raw !== "string" || raw.length > 2048) return paid;
+    if (typeof raw !== "string" || raw.length > 2048) return eligible;
     const g = JSON.parse(raw || "null");
     const now = Date.now();
     if (
@@ -74,17 +76,17 @@ export function coordinationEligibilitySQL(env, connection, purchase = "p") {
       !g.reason.trim() ||
       g.reason.length > 200
     )
-      return paid;
+      return eligible;
     // Only validated identifier characters and safe integers enter SQL. The DB
     // clock and fresh owner/policy rows also guard expiry and role revocation.
-    return `(${paid} OR (${connection}.mode='live' AND ${connection}.google_subject='${g.subject}' AND CAST((julianday('now')-2440587.5)*86400000 AS INTEGER)>=${g.issuedAt} AND CAST((julianday('now')-2440587.5)*86400000 AS INTEGER)<${g.expiresAt} AND EXISTS(SELECT 1 FROM streamlion_admin_owners_v1 qo JOIN streamlion_admin_policy_v1 qp ON qp.mode=qo.mode WHERE qo.mode='live' AND qo.google_subject=${connection}.google_subject AND qo.email='${OWNER_EMAIL}' AND qo.enabled=1 AND qp.enabled=1)))`;
+    return `(${eligible} OR (${connection}.mode='live' AND ${connection}.google_subject='${g.subject}' AND CAST((julianday('now')-2440587.5)*86400000 AS INTEGER)>=${g.issuedAt} AND CAST((julianday('now')-2440587.5)*86400000 AS INTEGER)<${g.expiresAt} AND EXISTS(SELECT 1 FROM streamlion_admin_owners_v1 qo JOIN streamlion_admin_policy_v1 qp ON qp.mode=qo.mode WHERE qo.mode='live' AND qo.google_subject=${connection}.google_subject AND qo.email='${OWNER_EMAIL}' AND qo.enabled=1 AND qp.enabled=1)))`;
   } catch {
-    return paid;
+    return eligible;
   }
 }
 
 export async function hasCoordinationAccess(env, subject) {
-  if (await hasPurchase(env, subject)) return true;
+  if (await hasCoreLicense(env, subject)) return true;
   const raw = coordinationGrant(env);
   let grant;
   try {

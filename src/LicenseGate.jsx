@@ -7,6 +7,7 @@ import { AppHeader, BottomNavigation } from "./AppNavigation.jsx";
 const KEY = "streamlion-purchase-receipt-v1";
 export default function LicenseGate({ children }) {
   const [pilot, setPilot] = useState(null);
+  const [ownerLicensed, setOwnerLicensed] = useState(false);
   const [ownerQa, setOwnerQa] = useState(null);
   const [profileQa, setProfileQa] = useState(null);
   const [allowed, setAllowed] = useState(false),
@@ -18,10 +19,14 @@ export default function LicenseGate({ children }) {
     setError("");
     try {
       const receipt = await purchaseRequest("status");
+      const owner =
+        receipt.connected === true && receipt.ownerLicensed === true;
+      setOwnerLicensed(owner);
       const qa =
         navigator.onLine &&
         receipt.connected === true &&
         !receipt.purchased &&
+        !owner &&
         receipt.ownerQa?.scope === "google-workspace" &&
         Number.isSafeInteger(receipt.ownerQa.expiresAt) &&
         receipt.ownerQa.expiresAt > Date.now() &&
@@ -43,7 +48,7 @@ export default function LicenseGate({ children }) {
           expiresAt: receipt.profileQa.expiresAt,
         });
       let free = null;
-      if (receipt.required && !receipt.purchased && !qa) {
+      if (receipt.required && !receipt.purchased && !owner && !qa) {
         try {
           const status = await pilotRequest("status");
           setPilot(status.enabled ? status : null);
@@ -52,13 +57,15 @@ export default function LicenseGate({ children }) {
           setPilot(null);
         }
       } else setPilot(null);
-      setAllowed(!receipt.required || receipt.purchased || !!free || !!qa);
+      setAllowed(
+        !receipt.required || receipt.purchased || owner || !!free || !!qa,
+      );
       // A bounded device cache permits paid or unexpired pilot local work offline.
       // This is not an authorization credential: server Google routes always
-      // verify the account's durable purchase; browser storage grants no API access.
+      // verify the account's access; browser storage grants no API access.
       try {
         if (qa) localStorage.removeItem(KEY);
-        else if (!receipt.required || receipt.purchased || free)
+        else if (!receipt.required || receipt.purchased || owner || free)
           localStorage.setItem(
             KEY,
             JSON.stringify(free || { expires: Date.now() + 7 * 86400000 }),
@@ -89,6 +96,18 @@ export default function LicenseGate({ children }) {
   useEffect(() => {
     check();
   }, []);
+  useEffect(() => {
+    if (!ownerLicensed) return;
+    const refresh = () => {
+      if (navigator.onLine) check(true);
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+    };
+  }, [ownerLicensed]);
   useEffect(() => {
     if (!ownerQa) return;
     const refresh = () => check(true);

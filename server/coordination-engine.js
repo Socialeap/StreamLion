@@ -1,4 +1,4 @@
-import { hasPurchase } from "./purchase-access.js";
+import { hasCoreLicense, hasPurchase } from "./purchase-access.js";
 import { completionBrief } from "./completion-brief.js";
 import { hash, seal, unseal } from "./google-auth.js";
 import { base64Bytes } from "./base64.js";
@@ -487,7 +487,7 @@ export class CoordinationEngine {
     if (
       command.action === "progress" &&
       command.state === "delivered" &&
-      !(await hasPurchase(this.env, this.connection.google_subject))
+      !(await hasCoreLicense(this.env, this.connection.google_subject))
     )
       throw new CoordinationError(
         "QA access cannot authorize paid delivery or spend credits.",
@@ -971,17 +971,18 @@ export class CoordinationEngine {
           Date.now(),
         );
       if ((plan.activation && !plan.deferProjectCharge) || plan.settlement) {
-        if (!(await hasPurchase(this.env, this.connection.google_subject)))
+        if (!(await hasCoreLicense(this.env, this.connection.google_subject)))
           throw new CoordinationError(
-            "A paid purchase is required for delivery charges; QA access cannot spend credits.",
+            "A StreamLion license is required for delivery charges.",
             403,
           );
-        await grantStarter(
-          this.db,
-          this.connection.mode,
-          this.connection.google_subject,
-          Date.now(),
-        );
+        if (await hasPurchase(this.env, this.connection.google_subject))
+          await grantStarter(
+            this.db,
+            this.connection.mode,
+            this.connection.google_subject,
+            Date.now(),
+          );
         const spend = await reserveProject(
           this.db,
           this.connection.mode,

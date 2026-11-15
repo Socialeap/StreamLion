@@ -874,3 +874,24 @@ test("offline cold starts reject missing, malformed and expired paid cache", asy
     cleanup();
   }
 });
+
+test("a complimentary owner license opens Core without claiming a purchase", async (t) => {
+  t.after(cleanup);
+  t.mock.method(globalThis, "fetch", async (url) => {
+    assert.ok(url.endsWith("status"));
+    return response({
+      enabled: true,
+      required: true,
+      connected: true,
+      purchased: false,
+      ownerLicensed: true,
+    });
+  });
+  const ui = render(
+    <LicenseGate>
+      <p>Owner projects</p>
+    </LicenseGate>,
+  );
+  await ui.findByText("Owner projects");
+  assert.equal(ui.queryByText(/purchase to continue/i), null);
+});

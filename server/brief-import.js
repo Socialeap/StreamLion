@@ -1,5 +1,5 @@
 import { getSession, hash, seal, unseal } from "./google-auth.js";
-import { hasPurchase, paymentMode } from "./purchase-access.js";
+import { hasCoreLicense, hasPurchase, paymentMode } from "./purchase-access.js";
 import { sharedWallet } from "./shared-credits.js";
 import { base64urlBytes } from "./base64.js";
 import { boundedText } from "./request-body.js";
@@ -200,7 +200,7 @@ export async function handleBriefImport(
             404,
           );
     }
-    if (!(await hasPurchase(env, subject)))
+    if (!(await (qa ? hasPurchase : hasCoreLicense)(env, subject)))
       return config
         ? reply({ enabled: false, reason: "license_required" })
         : reply({ error: "A StreamLion license is required." }, 402);
@@ -451,7 +451,7 @@ export async function handleBriefImport(
               !currentPolicy?.active ||
               currentPolicy.price_micros !== policy.price_micros ||
               currentPolicy.reserve_micros !== policy.reserve_micros ||
-              !(await hasPurchase(env, subject)) ||
+              !(await hasCoreLicense(env, subject)) ||
               currentSession?.google_subject !== subject ||
               currentSession.workbook_id !== session.workbook_id
             )
