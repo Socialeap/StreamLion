@@ -93,6 +93,19 @@ export function validatePricing(input) {
     typeof input.budgetPerClient !== "boolean"
   )
     fail("Choose whether budgets are decided per client request.");
+  const minimum = input.minimumPrice ?? "";
+  let minimumPrice;
+  if (input.method !== "quote" && minimum !== "") {
+    try {
+      if (typeof minimum !== "string" && typeof minimum !== "number")
+        fail("Invalid amount.");
+      if (decimalUnits(minimum, 2) > 0n) minimumPrice = String(minimum);
+    } catch {
+      fail(
+        "Enter a minimum price from 0 to 1,000,000 with up to two decimal places.",
+      );
+    }
+  }
   const rate = String(input.rate ?? "0");
   decimalUnits(rate);
   const tiered = ["whole", "progressive", "flat"].includes(input.method);
@@ -150,6 +163,7 @@ export function validatePricing(input) {
     tiers: cleanTiers,
     extras,
     allowBudget: input.allowBudget,
+    ...(minimumPrice ? { minimumPrice } : {}),
     // Per-client budgets: each request link records its own choice, and
     // allowBudget is the starting choice. Omitted when off, as saved before.
     ...(input.budgetPerClient ? { budgetPerClient: true } : {}),
@@ -253,7 +267,17 @@ export function calculatePricing(config, area, quantities = {}) {
         amountCents: cents(decimalUnits(extra.price) * qty, 10000n),
       });
   }
-  const subtotalCents = lines.reduce((sum, line) => sum + line.amountCents, 0);
+  let subtotalCents = lines.reduce((sum, line) => sum + line.amountCents, 0);
+  if (baseKnown && c.minimumPrice) {
+    const minimumCents = Number(decimalUnits(c.minimumPrice, 2));
+    if (subtotalCents < minimumCents) {
+      lines.push({
+        name: "Minimum price adjustment",
+        amountCents: minimumCents - subtotalCents,
+      });
+      subtotalCents = minimumCents;
+    }
+  }
   if (subtotalCents > 10000000000)
     fail("The estimate exceeds the supported amount.");
   return {
