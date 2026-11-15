@@ -16,7 +16,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { updateReady, subscribeUpdate, applyUpdate } from "./updates.js";
+import { updateStatus, subscribeUpdate, applyUpdate } from "./updates.js";
 import Jobs from "./Jobs";
 import {
   AppHeader,
@@ -111,7 +111,7 @@ function requestedPage() {
 }
 export default function App() {
   const entryPage = useRef(requestedPage());
-  const newerVersion = useSyncExternalStore(subscribeUpdate, updateReady);
+  const appUpdate = useSyncExternalStore(subscribeUpdate, updateStatus);
   const [local, setLocal] = useState(emptyWorkspace),
     current = useRef(null),
     writing = useRef(false);
@@ -1012,6 +1012,14 @@ export default function App() {
       }));
   }
   const disabled = captureBusy || syncBusy || outboxBusy;
+  const updateBlocked = useRef(false);
+  updateBlocked.current =
+    disabled ||
+    !!editing ||
+    page === "Field notes" ||
+    page === "Measurements" ||
+    welcomeOpen ||
+    setupOpen;
   const navigate = (p) => {
     if (disabled) return;
     refreshDrafts();
@@ -1153,12 +1161,19 @@ export default function App() {
               : status}
           </p>
         )}
-        {newerVersion && (
+        {appUpdate !== "idle" && (
           <section className="sync-bar" aria-label="App update">
-            <span className={page === "Ask" ? "sr-only" : undefined}>
-              {page === "Ask"
-                ? "Update available. "
-                : "A new version is ready. "}
+            <span
+              role="status"
+              className={page === "Ask" && appUpdate === "ready" ? "sr-only" : undefined}
+            >
+              {appUpdate === "applying"
+                ? "Updating StreamLion. "
+                : appUpdate === "retry"
+                  ? "The update did not finish. Try again when you’re ready. "
+                  : page === "Ask"
+                    ? "Update available. "
+                    : "A new version is ready. "}
               {editing || page === "Field notes" || page === "Measurements"
                 ? "Finish this edit or return to Projects before updating."
                 : page === "Ask"
@@ -1166,15 +1181,10 @@ export default function App() {
                   : "Saved drafts will be kept."}
             </span>
             <button
-              disabled={
-                disabled ||
-                !!editing ||
-                page === "Field notes" ||
-                page === "Measurements"
-              }
-              onClick={applyUpdate}
+              disabled={updateBlocked.current || appUpdate === "applying"}
+              onClick={() => applyUpdate(() => !updateBlocked.current)}
             >
-              Update StreamLion
+              {appUpdate === "applying" ? "Updating…" : "Update StreamLion"}
             </button>
           </section>
         )}
