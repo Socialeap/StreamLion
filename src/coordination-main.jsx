@@ -11,17 +11,13 @@ import "./brief-privacy-notice.css";
 import "./app-navigation.css";
 import { preferredTheme, applyTheme } from "./theme.js";
 import { registerSW } from "virtual:pwa-register";
-import { offerUpdate } from "./updates.js";
+import { registerAppUpdates } from "./updates.js";
 applyTheme(preferredTheme());
 const root = createRoot(document.getElementById("root"));
 if (new URLSearchParams(window.location.search).get("preview") === "intake") {
   root.render(<IntakePreview />);
 } else {
-  const updateSW = registerSW({
-    onNeedRefresh() {
-      offerUpdate(() => updateSW(true));
-    },
-  });
+  registerAppUpdates(registerSW);
   root.render(
     <CoordinationPortal
       client={

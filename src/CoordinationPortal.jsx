@@ -41,7 +41,7 @@ import { estimateMoney } from "./capture-estimate.js";
 import { activeIntakeQuestions, pinIntakeTemplate, TM_CAPTURE_PRESET } from "./intake-templates.js";
 import { openIntakePreview } from "./IntakePreview.jsx";
 import { startCoordinationRefresh } from "./coordination-refresh.js";
-import { subscribeUpdate, updateReady, applyUpdate } from "./updates.js";
+import { subscribeUpdate, updateStatus, applyUpdate } from "./updates.js";
 import { downloadClientWorkOrder } from "./client-work-order.js";
 import {
   coordinationDraftKey,
@@ -188,7 +188,9 @@ export default function CoordinationPortal({
     [capacity, setCapacity] = useState(null);
   const refreshRef = useRef(null),
     loadRef = useRef(null);
-  const updateAvailable = useSyncExternalStore(subscribeUpdate, updateReady);
+  const appUpdate = useSyncExternalStore(subscribeUpdate, updateStatus);
+  const updateBlocked = useRef(false);
+  updateBlocked.current = busy || Boolean(verification);
   const jobId =
     typeof window === "undefined"
       ? ""
@@ -656,13 +658,14 @@ export default function CoordinationPortal({
   ];
   // Shared forms and invitations open the guided request assistant; the
   // one-page form stays one tap away.
-  if (
+  const showRequestAssistant =
     client &&
     prospect &&
     !verified &&
     intakeView === "chat" &&
-    assistantSupported(prospect)
-  )
+    assistantSupported(prospect);
+  if (showRequestAssistant) {
+    updateBlocked.current = true;
     return (
       <RequestAssistant
         key={prospectToken}
@@ -676,6 +679,7 @@ export default function CoordinationPortal({
         }}
       />
     );
+  }
   return (
     <div className="coord-shell has-section-navigation">
       <AppHeader
@@ -715,16 +719,22 @@ export default function CoordinationPortal({
         {client && branding?.name && (
           <ProviderBrand branding={branding} recipient />
         )}
-        {updateAvailable && (
+        {appUpdate !== "idle" && (
           <p className="coord-notice">
-            {verification
-              ? "An app update is ready. Finish opening your private link first."
-              : "An app update is ready. Save any edits first."}{" "}
+            <span role="status">
+              {verification
+                ? "An app update is ready. Finish opening your private link first."
+                : appUpdate === "applying"
+                  ? "Updating StreamLion."
+                  : appUpdate === "retry"
+                    ? "The update did not finish. Try again when you’re ready."
+                    : "An app update is ready. Save any edits first."}
+            </span>{" "}
             <button
-              disabled={busy || Boolean(verification)}
-              onClick={applyUpdate}
+              disabled={updateBlocked.current || appUpdate === "applying"}
+              onClick={() => applyUpdate(() => !updateBlocked.current)}
             >
-              Update StreamLion
+              {appUpdate === "applying" ? "Updating…" : "Update StreamLion"}
             </button>
           </p>
         )}
