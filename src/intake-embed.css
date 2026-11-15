@@ -1,0 +1,19 @@
+body {
+  margin: 0;
+}
+
+.intake-embed-form,
+.intake-embed-message {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: clamp(0.75rem, 3vw, 1.5rem);
+}
+
+.intake-embed .setup-screen {
+  min-height: 100dvh;
+}
+
+.intake-embed-form .coord-prospect,
+.intake-embed-form .coord-form-grid > * {
+  min-width: 0;
+}

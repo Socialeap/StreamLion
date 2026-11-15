@@ -12,6 +12,7 @@ import NotificationSettings from "./NotificationSettings.jsx";
 import IntakeTemplateSettings from "./IntakeTemplateSettings.jsx";
 import ArchiveRecoverySettings from "./ArchiveRecoverySettings.jsx";
 import ProspectIntake from "./ProspectIntake.jsx";
+import IntakeEmbedSettings from "./IntakeEmbedSettings.jsx";
 import RequestAssistant from "./RequestAssistant.jsx";
 import { jobMilestones } from "./job-progress.js";
 import { assistantSupported } from "./request-assistant.js";
@@ -1466,6 +1467,13 @@ export default function CoordinationPortal({
                         jobId={form.id}
                         link={{ ...form, reusable: true }}
                       />
+                      {Object.hasOwn(form, "websiteEmbed") && (
+                        <IntakeEmbedSettings
+                          form={form}
+                          busy={busy}
+                          update={(body) => perform("provider/form-embed", body)}
+                        />
+                      )}
                     </article>
                   ))}
                 </div>

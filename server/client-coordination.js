@@ -1,4 +1,9 @@
 import {
+  providerIntakeEmbeds,
+  readIntakeEmbed,
+  saveIntakeEmbed,
+} from "./intake-embeds.js";
+import {
   hasCoordinationAccess,
   coordinationEligibilitySQL,
 } from "./coordination-qa-access.js";
@@ -62,6 +67,8 @@ import {
 import {
   publicIntakeSchema,
   openPublicForm,
+  openEmbeddedPublicForm,
+  submitEmbeddedPublicForm,
   submitPublicForm,
   verifyPublicSubmission,
   renewPublicVerification,
@@ -350,8 +357,16 @@ export async function handleCoordination({ request, env, params = {} }) {
       await limited(
         env,
         "public-ip:" + request.headers.get("CF-Connecting-IP"),
-        route === "public/open" ? 60 : 20,
+        route.endsWith("/open") ? 60 : 20,
       );
+      if (route === "public/embed/open" || route === "public/embed/submit") {
+        const embed = await readIntakeEmbed(env, body?.embedId);
+        if (route === "public/embed/open")
+          return json(await openEmbeddedPublicForm(env, embed, body.preview === true));
+        // Share the public form's quota with the direct link and all embeds.
+        await limited(env, "public-form:" + embed.tokenHash, 100);
+        return json(await submitEmbeddedPublicForm(env, embed.id, body));
+      }
       if (route === "public/open")
         return json(await openPublicForm(env, body.token));
       if (route === "public/submit") {
@@ -879,6 +894,7 @@ export async function handleCoordination({ request, env, params = {} }) {
     if (route === "provider/jobs" && request.method === "GET") {
       const links = await prospectLinksForProvider(env, connection);
       const forms = await formsForProvider(env, connection);
+      const intakeEmbeds = await providerIntakeEmbeds(env, connection);
       if (await publicIntakeSchema(env)) {
         const submissions = await env.GOOGLE_SESSIONS.prepare(
           "SELECT s.job_id FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id WHERE j.connection_id=? AND j.archived=0 AND s.state IN('pending','expired') ORDER BY s.created_at LIMIT 5",
@@ -905,6 +921,7 @@ export async function handleCoordination({ request, env, params = {} }) {
         mail,
         links,
         forms,
+        ...(intakeEmbeds ? { intakeEmbeds } : {}),
       });
       if (read.unchanged)
         return json({ unchanged: true, refresh: read.refresh });
@@ -926,7 +943,12 @@ export async function handleCoordination({ request, env, params = {} }) {
           .slice(1)
           .map((r) => ({ jobId: r[0], fileId: r[2] })),
         links,
-        forms,
+        forms: intakeEmbeds
+          ? forms.map((form) => ({
+              ...form,
+              websiteEmbed: intakeEmbeds[form.id] || null,
+            }))
+          : forms,
       };
       const capacity = await finishRead(
         env,
@@ -1085,6 +1107,8 @@ export async function handleCoordination({ request, env, params = {} }) {
         shareLink: body.shareLink === true,
       });
     }
+    if (route === "provider/form-embed" && request.method === "POST")
+      return json(await saveIntakeEmbed(env, connection, body));
     if (route === "provider/form-pricing" && request.method === "POST")
       return json(await updateFormPricing(env, connection, body));
     if (route === "provider/form" && request.method === "POST")

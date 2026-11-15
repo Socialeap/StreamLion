@@ -1,3 +1,4 @@
+import { projectBeforeIntakeEmbeds } from "./preflight-intake-embeds.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -14,6 +15,7 @@ const same = (a, b) =>
 function classify(input, projectionOnly) {
   if (!Array.isArray(input?.schema) || !input.stamps)
     throw Error("Provide the complete schema and version stamps; STOP.");
+  input = projectBeforeIntakeEmbeds(input);
   const actual = new Map(input.schema.map((row) => [row.name, row]));
   if (actual.size !== input.schema.length)
     throw Error("Duplicate schema marker; STOP.");

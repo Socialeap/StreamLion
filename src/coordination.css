@@ -714,3 +714,24 @@ body {
   margin: 6px 0 0;
   color: var(--muted);
 }
+
+.coord-embed-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.coord-embed-settings summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.coord-embed-settings textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 42rem;
+}
+
+.coord-embed-snippet {
+  margin-top: .75rem;
+}

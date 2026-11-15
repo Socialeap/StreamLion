@@ -1,4 +1,4 @@
-export default function BriefPrivacyNotice({ client = false }) {
+export default function BriefPrivacyNotice({ client = false, embedded = false }) {
   return (
     <details className="brief-privacy-notice">
       <summary>Privacy for brief preparation and AI questions</summary>
@@ -32,7 +32,7 @@ export default function BriefPrivacyNotice({ client = false }) {
       <p>
         Manual brief entry is also available. Exports and backups retain your
         saved details; review them before sharing outside StreamLion. Read the{" "}
-        <a href="/api/privacy#brief-preparation">brief data-handling details</a>
+        <a href="/api/privacy#brief-preparation" target={embedded ? "_blank" : undefined} rel={embedded ? "noopener noreferrer" : undefined}>brief data-handling details</a>
         .
       </p>
     </details>
