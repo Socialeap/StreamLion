@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import {
   blankPricing,
   PRICING_METHODS,
   tmPricingSample,
 } from "./provider-pricing.js";
+import { estimateMoney } from "./capture-estimate.js";
 import { EstimateInputs, EstimatePreview } from "./PricingEstimate.jsx";
 export default function PricingEditor({ config, onChange, disabled = false }) {
   const [area, setArea] = useState("5000"),
     [quantities, setQuantities] = useState({});
+  const minimumHint = useId();
   const patch = (value) => onChange({ ...config, ...value });
   const extra = (i, value) =>
     patch({
@@ -138,6 +140,39 @@ export default function PricingEditor({ config, onChange, disabled = false }) {
             </fieldset>
           ))}
         </>
+      )}
+      {config.method !== "quote" && (
+        <div>
+          <label>
+            Minimum price (optional)
+            <input
+              inputMode="decimal"
+              aria-describedby={minimumHint}
+              value={config.minimumPrice ?? ""}
+              disabled={disabled}
+              onChange={(e) => patch({ minimumPrice: e.target.value })}
+            />
+          </label>
+          <p id={minimumHint}>
+            Choose a preset or enter a custom amount in the profile’s currency.
+            The estimate, including selected extras, won’t go below this amount.
+            Leave blank for no minimum.
+          </p>
+          <div className="pricing-presets">
+            {[150, 200, 250].map((amount) => (
+              <button
+                key={amount}
+                type="button"
+                disabled={disabled}
+                onClick={() => patch({ minimumPrice: String(amount) })}
+              >
+                {/^[A-Z]{3}$/.test(config.currency)
+                  ? estimateMoney(amount * 100, config.currency)
+                  : amount}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       <h3 data-page-section>Named extras</h3>
       <p>

@@ -18,6 +18,12 @@ Supported methods:
 - Two/three progressive bands: each portion uses its own band's rate.
 - Two/three flat-fee area ranges: size selects a single project fee.
 
+Under Rates & tiers, automatic estimates can use an optional minimum price in
+the profile currency. Pick 150, 200 or 250, or enter a custom amount. The estimate
+adds a minimum price adjustment only when the calculated capture and selected
+extras fall below the floor. Manual quotes and profiles without a minimum work
+as before. The preview updates immediately; forms use the published snapshot.
+
 Bands start at 1 sq ft, use strictly increasing inclusive upper limits, and end
 with an open final range. Extra charges use provider-defined names, unit prices,
 units, required/optional choices and positive default/maximum quantities. Clients

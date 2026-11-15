@@ -4489,6 +4489,38 @@ test("provider pricing is recomputed server-side; client budgets and extras surv
     0,
   );
 });
+test("the public request uses the sealed minimum including any selected extras", async (t) => {
+  const f = await pricedPublicFixture(t);
+  const original = publicBody(f, "original-no-floor");
+  original.fields.propertySizeSqFt = "300";
+  const old = await f.submit({ ...original, pricingKey: "default:1" });
+  f.sql
+    .prepare(
+      "UPDATE streamlion_provider_pricing_v1 SET config=?,version=2 WHERE google_subject='a'",
+    )
+    .run(JSON.stringify({ ...f.config, minimumPrice: "200" }));
+  await updateFormPricing(f.env, f.connection, {
+    formId: f.form.id,
+    expectedPricingKey: "default:1",
+    targetPricingKey: "default:2",
+  });
+  const current = publicBody(f, "with-floor");
+  current.fields.propertySizeSqFt = "300";
+  const result = await f.submit({
+    ...current,
+    pricingKey: "default:2",
+    quantities: { editing: "1" },
+  });
+  const estimate = f.google.heads.get(result.jobId).pricingRequest.estimate;
+  assert.equal(estimate.totalCents, 20000);
+  assert.deepEqual(estimate.lines.map((line) => line.amountCents), [
+    4500, 5000, 10500,
+  ]);
+  assert.equal(
+    f.google.heads.get(old.jobId).pricingRequest.estimate.totalCents,
+    4500,
+  );
+});
 test("explicit form repricing rejects stale fresh submissions but recovers an already-saved original submission", async (t) => {
   const f = await pricedPublicFixture(t),
     body = {

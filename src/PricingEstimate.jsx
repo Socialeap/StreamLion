@@ -9,9 +9,11 @@ export function PriceBreakdown({ estimate, label = "Estimated total" }) {
         <div className="pricing-line" key={line.id || i}>
           <span>
             <strong>{line.name}</strong>
-            <small>
-              {line.quantity} {line.unit} × {estimate.currency} {line.rate}
-            </small>
+            {line.quantity != null && (
+              <small>
+                {line.quantity} {line.unit} × {estimate.currency} {line.rate}
+              </small>
+            )}
           </span>
           <strong>{estimateMoney(line.amountCents, estimate.currency)}</strong>
         </div>
