@@ -868,6 +868,12 @@ export default function AdminPortal() {
               {session.mode.toUpperCase()}
             </span>
             <small>{session.account}</small>
+            <button
+              onClick={() => open({ subject: session.subject })}
+              disabled={busy}
+            >
+              My account
+            </button>
             <button onClick={signOut} disabled={busy}>
               <LockKeyhole size={15} />
               Sign out

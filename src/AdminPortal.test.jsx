@@ -98,6 +98,22 @@ function setup(t, options = {}) {
     if (url.endsWith("/session"))
       return res(options.session || session, options.denied ? 403 : 200);
     if (url.includes("/overview")) return res(overview);
+    if (options.ownerAccount && url.includes("/users/owner?"))
+      return res({
+        user: {
+          ...user,
+          subject: session.subject,
+          name: "StreamLion Owner",
+          email: session.account,
+          ownerLicensed: true,
+          ownerCreditsRemaining: 800,
+        },
+        grants: [],
+        purchases: [],
+        audit: [],
+        allowance: overview.allowance,
+        unreconciledLegacyAI: { count: 0 },
+      });
     if (url.includes("/users/member"))
       return res({
         user: { ...user, grantedCredits: changed ? 240 : 0 },
@@ -265,4 +281,20 @@ test("private account data clears after fifteen minutes without a successful adm
   await act(async () => t.mock.timers.tick(900001));
   await ui.findByRole("link", { name: "Sign in with Google" });
   assert.equal(ui.queryByText("Jamie Field"), null);
+});
+
+test("the owner can open their own account outside the customer directory and review an 800-credit grant", async (t) => {
+  const calls = setup(t, { ownerAccount: true });
+  const ui = render(<Admin />);
+  const button = await ui.findByRole("button", { name: "My account" });
+  fireEvent.click(button);
+  await ui.findByRole("heading", { name: "StreamLion Owner" });
+  fireEvent.click(ui.getByRole("button", { name: "Add free credits" }));
+  fireEvent.change(ui.getByLabelText("Credits"), { target: { value: "800" } });
+  fireEvent.change(ui.getByLabelText("Reason"), {
+    target: { value: "Approved owner allowance" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Review change" }));
+  await ui.findByText(/Grant 800 credits to shakoure@transcendencemedia.com/);
+  assert.equal(calls.length, 0);
 });
