@@ -55,7 +55,7 @@ const randomToken = () =>
     .replaceAll("/", "_")
     .replaceAll("=", "");
 
-function StatusLink({ receipt, brand }) {
+function StatusLink({ receipt, brand, embedded }) {
   const [copied, setCopied] = useState("");
   const input = useRef(null);
   async function copy() {
@@ -83,7 +83,7 @@ function StatusLink({ receipt, brand }) {
           <Copy size={16} aria-hidden="true" />
           Copy link
         </button>
-        <a className="setup-link-button" href={receipt.url}>
+        <a className="setup-link-button" href={receipt.url} target={embedded ? "_blank" : undefined} rel={embedded ? "noopener noreferrer" : undefined}>
           <ExternalLink size={16} aria-hidden="true" />
           Open request status
         </a>
@@ -129,6 +129,7 @@ export default function RequestAssistant({
   api,
   onShowForm,
   preview = false,
+  embedded = false,
   initial,
   storage = globalThis.localStorage,
   today = localDate(),
@@ -139,6 +140,7 @@ export default function RequestAssistant({
     () => initial?.fromForm ? requestFromForm(initialDescriptor, initial) : readRequest(token, storage) || newRequest(),
   );
   const stateRef = useRef(state);
+  const [formSeed, setFormSeed] = useState(initial);
   const [editing, setEditing] = useState(""),
     [error, setError] = useState(""),
     [fieldErrors, setFieldErrors] = useState({}),
@@ -146,7 +148,8 @@ export default function RequestAssistant({
     [notice, setNotice] = useState(""),
     [pricingChanged, setPricingChanged] = useState(false),
     [emailLink, setEmailLink] = useState(true),
-    [storageWarning, setStorageWarning] = useState(false);
+    [storageWarning, setStorageWarning] = useState(false),
+    [restartPrompt, setRestartPrompt] = useState("");
   const feed = useRef(null),
     dock = useRef(null);
   const brand = brandName(descriptor);
@@ -164,14 +167,14 @@ export default function RequestAssistant({
     scrollToLatest(feed.current);
   }, [current?.id, history.length, notice]);
   useEffect(() => {
-    if (!current || busy) return;
+    if (!current || busy || (embedded && !document.hasFocus())) return;
     focusAnswer(dock.current);
   }, [current?.id, editing]);
 
   function commit(next) {
     stateRef.current = next;
     setState(next);
-    if (!preview) setStorageWarning(!writeRequest(token, next, storage));
+    if (!preview && storage) setStorageWarning(!writeRequest(token, next, storage));
   }
   function fail(e) {
     setError(e.message);
@@ -213,8 +216,10 @@ export default function RequestAssistant({
     }
     setEditing("");
   }
-  function restart(message) {
-    if (!window.confirm(message)) return;
+  function resetRequest() {
+    setRestartPrompt("");
+    setFormSeed(null);
+    setEmailLink(true);
     clearRequest(token, storage);
     const next = newRequest();
     stateRef.current = next;
@@ -224,6 +229,10 @@ export default function RequestAssistant({
     setFieldErrors({});
     setNotice("");
     setPricingChanged(false);
+  }
+  function restart(message) {
+    if (embedded) setRestartPrompt(message);
+    else if (window.confirm(message)) resetRequest();
   }
   async function send() {
     if (preview) {
@@ -311,9 +320,9 @@ export default function RequestAssistant({
   }
   function showForm() {
     onShowForm({
-      fields: { ...initial?.fields, ...requestFields(descriptor, answers) },
+      fields: { ...formSeed?.fields, ...requestFields(descriptor, answers) },
       guidedState: stateRef.current,
-      email: answers.contact?.email ?? initial?.email ?? "",
+      email: answers.contact?.email ?? formSeed?.email ?? "",
       quantities: requestQuantities(descriptor, answers),
       budget: budgetAllowed(descriptor) ? answers.budget || "" : "",
     });
@@ -470,7 +479,7 @@ export default function RequestAssistant({
         <button
           type="button"
           className="setup-quiet"
-          disabled={disabled}
+          disabled={disabled || !!restartPrompt}
           onClick={() =>
             restart(
               complete
@@ -504,7 +513,7 @@ export default function RequestAssistant({
         aria-live="polite"
         aria-label="Request conversation"
       >
-        <BriefPrivacyNotice client />
+        <BriefPrivacyNotice client embedded={embedded} />
         <ol>
           {history.map(({ step, value }) =>
             step.id === "review" ? null : (
@@ -560,7 +569,7 @@ export default function RequestAssistant({
               text={`Thanks, ${answers.name}! Your request is with ${brand}.`}
               hint={receipt?.url ? undefined : receipt?.message}
             >
-              {receipt?.url && <StatusLink receipt={receipt} brand={brand} />}
+              {receipt?.url && <StatusLink receipt={receipt} brand={brand} embedded={embedded} />}
               <p className="setup-plan-title">What happens next</p>
               <NextSteps brand={brand} />
             </AssistantMessage>
@@ -607,7 +616,13 @@ export default function RequestAssistant({
             {error}
           </p>
         )}
-        {complete ? (
+        {restartPrompt ? (
+          <div className="setup-dock-actions">
+            <p role="status">{restartPrompt}</p>
+            <button type="button" onClick={resetRequest}>Start fresh</button>
+            <button type="button" onClick={() => setRestartPrompt("")}>Keep this request</button>
+          </div>
+        ) : complete ? (
           <div className="setup-dock-actions setup-finish">
             {receipt?.confirm && (
               <>
@@ -651,9 +666,13 @@ export default function RequestAssistant({
         )}
         <p className="request-footnote">
           StreamLion provides this form for {brand}.{" "}
-          {complete
-            ? `This device remembers this request for ${REQUEST_KEEP_DAYS} days.`
-            : `Your answers stay on this device for ${REQUEST_KEEP_DAYS} days until you send them.`}
+          {embedded
+            ? complete
+              ? "Save your status link or check your email before closing this form."
+              : "Unsubmitted answers stay in this form while it is open."
+            : complete
+              ? `This device remembers this request for ${REQUEST_KEEP_DAYS} days.`
+              : `Your answers stay on this device for ${REQUEST_KEEP_DAYS} days until you send them.`}
         </p>
       </section>
     </Container>

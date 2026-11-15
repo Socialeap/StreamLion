@@ -16,6 +16,7 @@ export const navigationFallbackDenylist = [
   /^\/pilot(?:[/?]|$)/,
   /^\/client(?:[/?]|$)/,
   /^\/coordination(?:[/?]|$)/,
+  /^\/intake-embed-shell(?:\.html)?(?:[/?]|$)/,
 ];
 export default defineConfig({
   build: {
@@ -32,6 +33,7 @@ export default defineConfig({
         client: "client/index.html",
         clientPortal: "api/client-portal.html",
         clientRequests: "api/client-requests.html",
+        intakeEmbed: "intake-embed-shell.html",
       },
     },
   },
@@ -94,6 +96,7 @@ export default defineConfig({
           "coordination/index.html",
           "api/client-portal.html",
           "api/client-requests.html",
+          "intake-embed-shell.html",
           // Public copy and consent policies must reach their current routes.
           "api/welcome.html",
           "api/terms.html",

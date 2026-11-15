@@ -32,6 +32,7 @@ export default function ProspectIntake({
   initial,
   onShowAssistant,
   preview = false,
+  embedded = false,
 }) {
   const [pricingNotice, setPricingNotice] = useState("");
   const [descriptor, setDescriptor] = useState(initialDescriptor),
@@ -80,7 +81,7 @@ export default function ProspectIntake({
         {descriptor.reusable ? "public work-order form" : "private invitation"}
       </p>
       <h2>Estimate & work-order request</h2>
-      {onShowAssistant && (
+      {onShowAssistant && !attempt.current && !notice && (
         <p>
           <strong>One-page form</strong>{" "}
           <button
@@ -122,7 +123,7 @@ export default function ProspectIntake({
             : descriptor.intake.description}
         </p>
       )}
-      <BriefPrivacyNotice client />
+      <BriefPrivacyNotice client embedded={embedded} />
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -520,7 +521,7 @@ export default function ProspectIntake({
         {notice && <p role="status">{notice}</p>}
         {verificationUrl && (
           <div>
-            <a href={verificationUrl}>
+            <a href={verificationUrl} target={embedded ? "_blank" : undefined} rel={embedded ? "noopener noreferrer" : undefined}>
               Recover this request / resend confirmation
             </a>
             <p>
@@ -540,7 +541,7 @@ export default function ProspectIntake({
                 onFocus={(e) => e.target.select()}
               />
             </label>
-            <a className="coord-share-action" href={receipt.url}>
+            <a className="coord-share-action" href={receipt.url} target={embedded ? "_blank" : undefined} rel={embedded ? "noopener noreferrer" : undefined}>
               Open request status
             </a>
             <p>

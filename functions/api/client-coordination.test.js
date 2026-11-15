@@ -5379,3 +5379,129 @@ test("separate coordination window requires the matching active workspace and cl
   );
   await check({ ...f.env, STREAMLION_CHECKOUT_MODE: "open" }, false);
 });
+
+async function intakeEmbedFixture(t, needsEmail = false) {
+  const f = await publicFixture(t, needsEmail);
+  const profile = { businessProfile: { id: "f3d-business" } };
+  f.env.ENABLE_INTAKE_EMBEDS = "true";
+  f.env.INTAKE_EMBED_PILOT_SUBJECTS = "a";
+  function link() {
+    f.sql.prepare(
+      "INSERT INTO streamlion_f3d_profile_v1(mode, google_subject, f3d_account_id, snapshot, verified_at) VALUES('test','a','f3d-owner',?,?)",
+    ).run(JSON.stringify(profile), Date.now());
+  }
+  link();
+  const auth = randomProspectToken();
+  f.sql.prepare(
+    "INSERT INTO streamlion_google_sessions_v1(session_hash,google_subject,email,credentials,expires_at,workbook_id,folder_id) VALUES(?,'a','a@example.com','encrypted',?,'book-a','folder-a')",
+  ).run(await hash(auth), Date.now() + 60000);
+  const request = (route, data, headers = {}) => handleCoordination({
+    env: f.env,
+    params: { path: route },
+    request: new Request("https://app.example/api/coordination/" + route, {
+      method: "POST",
+      headers: { Origin: "https://app.example", "Content-Type": "application/json", ...headers },
+      body: JSON.stringify(data),
+    }),
+  });
+  const update = (data) => request("provider/form-embed", { formId: f.form.id, ...data }, {
+    Cookie: "__Host-streamlion-session=" + auth,
+    "X-StreamLion-Account": "a",
+  });
+  return { ...f, link, request, update };
+}
+
+test("intake embeds have their own public ID and are revoked on unlink", async (t) => {
+  const f = await intakeEmbedFixture(t);
+  const settings = { enabled: true, origins: ["https://studio.example", "https://www.studio.example"] };
+  const saved = await f.update(settings);
+  assert.equal(saved.status, 200, await saved.clone().text());
+  const { embed } = await saved.json();
+  assert.match(embed.id, /^[\w-]{43}$/);
+  assert.notEqual(embed.id, f.token);
+  const opened = await f.request("public/embed/open", { embedId: embed.id });
+  assert.equal(opened.status, 200);
+  const descriptor = await opened.json();
+  assert.deepEqual(descriptor.origins, settings.origins);
+  assert.equal(descriptor.reusable, true);
+  assert.ok(!JSON.stringify(descriptor).includes(f.token));
+  f.sql.exec("DELETE FROM streamlion_f3d_profile_v1 WHERE google_subject='a'");
+  f.link();
+  assert.equal((await f.request("public/embed/open", { embedId: embed.id })).status, 404);
+  assert.equal((await f.request("public/open", { token: f.token })).status, 200);
+});
+
+test("intake embed management requires a recent profile verification and safe website origins", async (t) => {
+  const f = await intakeEmbedFixture(t);
+  assert.equal((await f.update({ enabled: true, origins: ["https://studio.example/path"] })).status, 400);
+  f.sql.exec("UPDATE streamlion_f3d_profile_v1 SET verified_at=1");
+  assert.equal((await f.update({ enabled: true, origins: ["https://studio.example"] })).status, 409);
+});
+
+test("embed intake keeps the normal submission receipt, deduplication and provider routing", async (t) => {
+  const f = await intakeEmbedFixture(t);
+  const { embed } = await (await f.update({ enabled: true, origins: ["https://studio.example"] })).json();
+  assert.ok(embed);
+  const { submitEmbeddedPublicForm } = await import("../../server/public-intake.js");
+  const { token, ...body } = publicBody(f, "embedded-lead");
+  const first = await submitEmbeddedPublicForm(f.env, embed.id, body, () => f.engine);
+  const replay = await submitEmbeddedPublicForm(f.env, embed.id, body, () => f.engine);
+  assert.equal(first.url, replay.url);
+  assert.match(first.url, /^https:\/\/app\.example\/api\/client-portal\?job=.*#access=/);
+  assert.equal(f.google.heads.size, 1);
+  assert.equal(f.google.heads.get(first.jobId).fields.address, "Synthetic site");
+  assert.equal((await f.update({ enabled: false })).status, 200);
+  await assert.rejects(submitEmbeddedPublicForm(f.env, embed.id, body, () => f.engine), /unavailable/);
+});
+
+test("only the website intake shell may be framed by the saved HTTPS origins", async (t) => {
+  const f = await intakeEmbedFixture(t);
+  const { embed } = await (await f.update({ enabled: true, origins: ["https://studio.example"] })).json();
+  const { onRequest } = await import("./intake-embed/[id].js");
+  f.env.ASSETS = { fetch: async () => new Response("<!doctype html><div id='root'></div>", {
+    headers: { "Content-Type": "text/html", "Content-Security-Policy": "frame-ancestors 'self'", "X-Frame-Options": "SAMEORIGIN" },
+  }) };
+  const load = () => onRequest({ request: new Request("https://app.example/api/intake-embed/" + embed.id), env: f.env, params: { id: embed.id } });
+  const response = await load();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("Content-Security-Policy"), /(?:^|; )frame-ancestors https:\/\/studio\.example(?:;|$)/);
+  assert.equal(response.headers.get("X-Frame-Options"), null);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  await f.update({ enabled: false });
+  const disabled = await load();
+  assert.equal(disabled.status, 404);
+  assert.match(disabled.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
+});
+
+test("website intake shares email confirmation and cannot start with the feature off", async (t) => {
+  const f = await intakeEmbedFixture(t, true);
+  const { embed } = await (await f.update({ enabled: true, origins: ["https://studio.example"] })).json();
+  assert.equal((await f.request("public/embed/open", { embedId: embed.id }, { Origin: "https://studio.example" })).status, 403);
+  const { token, ...body } = publicBody(f, "embed-confirm", "client@example.com");
+  const submitted = await f.request("public/embed/submit", { ...body, embedId: embed.id });
+  assert.equal(submitted.status, 200, await submitted.clone().text());
+  const receipt = await submitted.json();
+  assert.equal(receipt.verificationRequired, true);
+  assert.equal(receipt.url, undefined);
+  assert.equal(f.google.heads.size, 0);
+  assert.equal(f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_coordination_outbox_v1").get().n, 1);
+  f.env.ENABLE_INTAKE_EMBEDS = "false";
+  assert.equal((await f.request("public/embed/open", { embedId: embed.id })).status, 404);
+  assert.equal((await f.request("public/open", { token })).status, 200);
+});
+
+test("intake embed migration stops on partially added or altered framing schema", async (t) => {
+  const { sql } = fixture(t);
+  const { intakeEmbedsPreflight } = await import("../../scripts/preflight-intake-embeds.mjs");
+  const schema = sql.prepare("SELECT name,type,sql FROM sqlite_master WHERE name LIKE 'streamlion_%'").all();
+  const stamps = { streamlion_intake_embed_schema_v1: 1 };
+  assert.equal(intakeEmbedsPreflight({ schema, stamps }).migration, "already_applied");
+  assert.throws(() => intakeEmbedsPreflight({
+    schema: schema.filter((row) => row.name !== "streamlion_intake_embeds_unlink_v1"),
+    stamps,
+  }), /Missing or altered intake embed schema/);
+  assert.equal(intakeEmbedsPreflight({
+    schema: schema.filter((row) => !row.name.startsWith("streamlion_intake_embed")),
+    stamps: {},
+  }).migration, "pending");
+});

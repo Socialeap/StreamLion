@@ -1,4 +1,9 @@
 import {
+  embedProfileJoin,
+  embedUnavailable,
+  readIntakeEmbed,
+} from "./intake-embeds.js";
+import {
   hasCoordinationAccess,
   coordinationEligibilitySQL,
 } from "./coordination-qa-access.js";
@@ -359,14 +364,37 @@ export async function updateFormPricing(env, connection, body) {
     );
   return { updated: true };
 }
-export async function openPublicForm(env, token) {
-  const { row, connection } = await publicForm(env, token),
-    now = Date.now();
-  await env.GOOGLE_SESSIONS.prepare(
-    "UPDATE streamlion_public_forms_v1 SET opened_at=COALESCE(opened_at,?) WHERE id=?",
+async function embeddedPublicForm(env, embed) {
+  if (!(await publicIntakeSchema(env))) throw embedUnavailable();
+  const row = await env.GOOGLE_SESSIONS.prepare(
+    "SELECT * FROM streamlion_public_forms_v1 WHERE id=? AND active=1",
   )
-    .bind(now, row.id)
-    .run();
+    .bind(embed.formId)
+    .first();
+  if (!row) throw embedUnavailable();
+  return { row, connection: await connectionFor(env, row.connection_id) };
+}
+
+export async function openEmbeddedPublicForm(env, embed, preview = false) {
+  const form = await embeddedPublicForm(env, embed);
+  return {
+    ...(await openResolvedForm(env, form, preview)),
+    origins: embed.origins,
+  };
+}
+
+export async function openPublicForm(env, token) {
+  return openResolvedForm(env, await publicForm(env, token));
+}
+
+async function openResolvedForm(env, { row, connection }, preview = false) {
+  const now = Date.now();
+  if (!preview)
+    await env.GOOGLE_SESSIONS.prepare(
+      "UPDATE streamlion_public_forms_v1 SET opened_at=COALESCE(opened_at,?) WHERE id=?",
+    )
+      .bind(now, row.id)
+      .run();
   const descriptor = await unseal(env, row.descriptor, "public-form:" + row.id);
   const branding = await brandingForConnection(
     env,
@@ -379,7 +407,9 @@ export async function openPublicForm(env, token) {
     branding,
     reusable: true,
     verificationRequired: Boolean(row.verification_required),
-    visit: await seal(env, { formId: row.id, openedAt: now }, "public-visit"),
+    ...(!preview && {
+      visit: await seal(env, { formId: row.id, openedAt: now }, "public-visit"),
+    }),
   };
 }
 export async function syncPublicSubmission(env, engine, jobId) {
@@ -436,7 +466,28 @@ export async function submitPublicForm(
   body,
   makeEngine = (c) => new CoordinationEngine(env, c),
 ) {
-  const { row, connection } = await publicForm(env, body.token);
+  const form = await publicForm(env, body.token);
+  return submitResolvedForm(env, body, form, makeEngine);
+}
+
+export async function submitEmbeddedPublicForm(
+  env,
+  embedId,
+  body,
+  makeEngine = (c) => new CoordinationEngine(env, c),
+) {
+  const embed = await readIntakeEmbed(env, embedId);
+  const form = await embeddedPublicForm(env, embed);
+  return submitResolvedForm(env, body, form, makeEngine, embed);
+}
+
+async function submitResolvedForm(
+  env,
+  body,
+  { row, connection },
+  makeEngine,
+  embed,
+) {
   if (
     !operationID(body.operation) ||
     body.operation.length > 73 ||
@@ -556,10 +607,14 @@ export async function submitPublicForm(
     const challenge = randomProspectToken(),
       challengeHash = row.verification_required ? await hash(challenge) : null;
     if (row.verification_required) await requirePublicEmail(env, email);
+    // Check revocation again at admission, after validation and asynchronous work.
+    const embedConstraint = embed
+      ? `AND EXISTS(SELECT 1 FROM streamlion_intake_embeds_v1 e ${embedProfileJoin} WHERE e.id=? AND e.form_id=f.id)`
+      : "";
     // One transaction enforces the workspace bound even for concurrent public submissions.
     await env.GOOGLE_SESSIONS.batch([
       env.GOOGLE_SESSIONS.prepare(
-        `INSERT OR IGNORE INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL)<100 AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id WHERE f.id=? AND f.descriptor=? AND f.active=1 AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${await coordinationEligibilitySQL(env, "c", "p")} )`,
+        `INSERT OR IGNORE INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL)<100 AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id WHERE f.id=? AND f.descriptor=? AND f.active=1 AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${await coordinationEligibilitySQL(env, "c", "p")} ${embedConstraint} )`,
       ).bind(
         id,
         connection.id,
@@ -571,6 +626,7 @@ export async function submitPublicForm(
         row.descriptor,
         now,
         paymentMode(env),
+        ...(embed ? [embed.id] : []),
       ),
       env.GOOGLE_SESSIONS.prepare(
         "INSERT OR IGNORE INTO streamlion_public_submissions_v1(job_id,form_id,operation,fingerprint,access_hash,payload,state,challenge_hash,challenge_token,challenge_expires,created_at,expires_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM streamlion_coordination_jobs_v1 WHERE id=? AND connection_id=?)",
@@ -599,7 +655,9 @@ export async function submitPublicForm(
       .bind(op)
       .first();
     if (!s) {
-      const current = await publicForm(env, body.token);
+      const current = embed
+        ? await embeddedPublicForm(env, await readIntakeEmbed(env, embed.id))
+        : await publicForm(env, body.token);
       if (current.row.descriptor !== row.descriptor)
         throw Object.assign(
           new CoordinationError(
