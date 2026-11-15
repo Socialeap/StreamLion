@@ -84,13 +84,14 @@ export async function reserveSpeech(
     .run();
 }
 export async function finishSpeech(db, subject, id, state) {
+  // D1 counts funding trigger writes in meta.changes. Check the speech row itself.
   const result = await db
     .prepare(
-      "UPDATE streamlion_speech_turns_v1 SET state=? WHERE mode='live' AND google_subject=? AND request_id=? AND state='reserved'",
+      "UPDATE streamlion_speech_turns_v1 SET state=? WHERE mode='live' AND google_subject=? AND request_id=? AND state='reserved' RETURNING state",
     )
     .bind(state, subject, id)
-    .run();
-  if (state === "complete") {
+    .first();
+  if (result?.state === "complete") {
     try {
       await observeActivity(db, "live", subject);
     } catch {
@@ -465,7 +466,7 @@ export async function handleSpeech({ request, env }, dependencies = {}) {
         input.requestId,
         "complete",
       );
-      if (finished.meta.changes !== 1) throw Error("speech_state");
+      if (finished?.state !== "complete") throw Error("speech_state");
       return response;
     } catch {
       const refunded = await finishSpeech(
@@ -474,7 +475,7 @@ export async function handleSpeech({ request, env }, dependencies = {}) {
         input.requestId,
         "failed",
       );
-      if (refunded.meta.changes !== 1)
+      if (refunded?.state !== "failed")
         return reply(
           {
             error:

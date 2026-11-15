@@ -375,8 +375,7 @@ export default function VoiceControls({
       ) : (
         <p>
           {creditLabel(config.priceMicros)} per clip, up to {config.maxChars}{" "}
-          characters. Uses purchased credits. Review a fresh quote before every
-          charge.
+          characters. Review a fresh quote before every charge.
         </p>
       )}
       {pending && (
@@ -408,8 +407,8 @@ export default function VoiceControls({
           <p className="note-text">{quote.text}</p>
           <p>
             {creditLabel(quote.priceMicros)} ·{" "}
-            {creditLabel(quote.balanceMicros)} purchased credits available.
-            Quote expires in one minute.
+            {creditLabel(quote.balanceMicros)} available. Quote expires in one
+            minute.
           </p>
           <button
             type="button"
