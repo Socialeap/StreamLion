@@ -112,6 +112,55 @@ test("Account previews tier choices, named extras and budgets before an explicit
   });
   await preview.findByText("$1,050.00");
 });
+test("a provider can preview presets and publish or clear a custom minimum", async (t) => {
+  t.after(cleanup);
+  const writes = [];
+  const api = async (body) => {
+    if (body) writes.push(body);
+    return {
+      subject: "a",
+      available: true,
+      profiles: body ? [{ ...body, version: writes.length }] : [],
+    };
+  };
+  const ui = render(<Settings connected account="a@example.com" api={api} />);
+  const publish = await ui.findByRole("button", {
+    name: "Publish pricing for new forms",
+  });
+  assert.equal(ui.queryByLabelText("Minimum price (optional)"), null);
+  fireEvent.change(ui.getByLabelText("Pricing method"), {
+    target: { value: "area" },
+  });
+  fireEvent.change(ui.getByLabelText("Rate per square foot"), {
+    target: { value: "0.18" },
+  });
+  fireEvent.change(ui.getByLabelText("Preview square footage"), {
+    target: { value: "300" },
+  });
+  const preview = within(ui.getByRole("region", { name: "Pricing preview" }));
+  assert.match(
+    preview.getByText("Estimated total").parentElement.textContent,
+    /\$54\.00/,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "$200.00" }));
+  await preview.findByText("$200.00");
+  await preview.findByText("Minimum price adjustment");
+  const minimum = ui.getByLabelText("Minimum price (optional)");
+  fireEvent.change(minimum, { target: { value: "225.50" } });
+  await preview.findByText("$225.50");
+  assert.equal(writes.length, 0);
+  fireEvent.click(publish);
+  await ui.findByText(/Pricing published/);
+  assert.equal(writes[0].config.minimumPrice, "225.50");
+  assert.equal(ui.getByLabelText("Minimum price (optional)").value, "225.50");
+  fireEvent.change(ui.getByLabelText("Minimum price (optional)"), {
+    target: { value: "" },
+  });
+  assert.equal(preview.queryByText("Minimum price adjustment"), null);
+  fireEvent.click(publish);
+  await ui.findByText(/Pricing published/);
+  assert.equal(Object.hasOwn(writes[1].config, "minimumPrice"), false);
+});
 test("invalid pricing retains the editor draft and a switched account ignores a late load", async (t) => {
   t.after(cleanup);
   let writes = 0;

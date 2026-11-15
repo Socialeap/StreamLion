@@ -49,6 +49,60 @@ test("all three tier methods apply their distinct boundary rules and retain exac
     null,
   );
 });
+test("the optional minimum floors the estimate across area pricing methods", () => {
+  for (const method of ["area", "whole", "progressive", "flat"]) {
+    const config = {
+      ...blankPricing(),
+      method,
+      rate: "0.18",
+      tiers:
+        method === "flat"
+          ? [
+              { upTo: "5000", price: "54" },
+              { upTo: "", price: "300" },
+            ]
+          : [
+              { upTo: "5000", price: "0.18" },
+              { upTo: "", price: "0.12" },
+            ],
+      minimumPrice: "200.25",
+    };
+    const small = calculatePricing(config, "300");
+    assert.equal(small.totalCents, 20025, method);
+    assert.equal(small.lines.at(-1).name, "Minimum price adjustment");
+    assert.equal(small.lines.at(-1).amountCents, 14625);
+    assert.equal(
+      calculatePricing({ ...config, minimumPrice: "" }, "300").totalCents,
+      5400,
+    );
+    const large = calculatePricing(config, "6000");
+    assert.equal(
+      large.totalCents,
+      { area: 108000, whole: 72000, progressive: 102000, flat: 30000 }[method],
+    );
+    assert.ok(
+      !large.lines.some((line) => line.name === "Minimum price adjustment"),
+    );
+    assert.equal(calculatePricing(config, "").totalCents, null);
+  }
+});
+test("a minimum price must be a valid currency amount and manual quotes stay open", () => {
+  const config = { ...blankPricing(), method: "area", rate: "0.18" };
+  for (const minimumPrice of ["-1", "200.001", "1000001", "Infinity", ["200"]])
+    assert.throws(
+      () => validatePricing({ ...config, minimumPrice }),
+      /minimum price/i,
+    );
+  assert.deepEqual(
+    validatePricing({ ...config, minimumPrice: "0" }),
+    validatePricing(config),
+  );
+  assert.equal(
+    calculatePricing({ ...config, method: "quote", minimumPrice: "200" }, "300")
+      .totalCents,
+    null,
+  );
+});
 test("fractional named extras round once; required quantities and per-extra bounds are enforced", () => {
   const c = {
     ...blankPricing(),
