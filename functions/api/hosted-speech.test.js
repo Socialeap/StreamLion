@@ -180,6 +180,63 @@ test("speech-only quotes authoritative text, charges once, and replay/status nev
   );
 });
 
+test("settlement returns audio or a definitive refund when D1 counts funding trigger writes", async (t) => {
+  const f = await fixture(t);
+  f.db.exec(`
+    CREATE TABLE fixture_speech_funding (state TEXT);
+    INSERT INTO fixture_speech_funding VALUES ('reserved');
+    CREATE TRIGGER fixture_funding_settlement AFTER UPDATE OF state ON streamlion_speech_turns_v1
+    BEGIN
+      UPDATE fixture_speech_funding SET state=NEW.state;
+    END;
+  `);
+  const database = f.env.GOOGLE_SESSIONS;
+  const prepare = database.prepare;
+  t.mock.method(database, "prepare", (sql) => {
+    if (!sql.startsWith("UPDATE streamlion_speech_turns_v1 SET state=?"))
+      return prepare(sql);
+    const statement = f.db.prepare(sql);
+    return {
+      bind: (...args) => ({
+        first: async () => statement.get(...args),
+        run: async () => {
+          const totalChanges = () =>
+            f.db.prepare("SELECT total_changes() AS n").get().n;
+          const before = totalChanges();
+          statement.run(...args);
+          return { meta: { changes: totalChanges() - before } };
+        },
+      }),
+    };
+  });
+  const quote = await (
+    await f.call("quote", { projectId: "p", question: "deliverables" })
+  ).json();
+  const clip = await f.call("speak", {
+    requestId: id,
+    quoteToken: quote.quoteToken,
+  });
+  assert.equal(clip.status, 200);
+  assert.equal(clip.headers.get("X-Speech-Request-ID"), id);
+  assert.deepEqual(
+    Buffer.from(await clip.arrayBuffer()),
+    Buffer.from(wav(), "base64"),
+  );
+  assert.equal(f.balance(), 87500);
+  assert.equal(f.calls, 1);
+
+  const rejected = await f.call(
+    "speak",
+    {
+      requestId: "22222222-2222-4222-8222-222222222222",
+      quoteToken: quote.quoteToken,
+    },
+    { deps: { generate: async () => "invalid audio" } },
+  );
+  assert.equal(rejected.status, 502);
+  assert.equal(f.balance(), 87500);
+});
+
 test("policy/price, project, account/workbook, expiry and forged quote changes reject before charging", async (t) => {
   const f = await fixture(t);
   const q = await (

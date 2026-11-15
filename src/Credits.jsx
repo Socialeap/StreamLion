@@ -437,9 +437,9 @@ export default function Credits() {
               <li>
                 <strong>Speech-only clips:</strong> review the exact text and
                 separate quote before confirming. A failed preparation returns
-                reserved purchased credits. A prepared clip is charged once even
-                if playback fails; replaying a loaded clip does not buy it
-                again. Starter credits are unchanged.
+                reserved credits. A prepared clip is charged once even if
+                playback fails; replaying a loaded clip does not buy it again.
+                Starter credits are unchanged.
               </li>
               <li>
                 Keep enough credits for the delivery fee and any separately

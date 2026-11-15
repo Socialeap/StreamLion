@@ -143,6 +143,8 @@ test("a fresh speech-only quote and explicit confirmation are required; double c
   );
   fireEvent.click(ui.getByRole("button", { name: "Review speech-only price" }));
   await ui.findByText("Site contact: Example Person");
+  assert.ok(ui.getByText(/8 credits available/));
+  assert.equal(ui.queryByText(/purchased credits/), null);
   assert.equal(calls.filter((c) => c.url.endsWith("/speak")).length, 0);
   const button = ui.getByRole("button", {
     name: "Prepare speech — 1 credit",
