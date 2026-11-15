@@ -1,5 +1,5 @@
 import { getSession } from "./google-auth.js";
-import { paymentMode, hasPurchase } from "./purchase-access.js";
+import { paymentMode, hasCoreLicense } from "./purchase-access.js";
 import { pilotAccess } from "./pilot-access.js";
 import { boundedText } from "./request-body.js";
 import { reserveGoogleRequest } from "./google-limits.js";
@@ -270,7 +270,7 @@ export async function handleFreePilot({ request, env, params }) {
             400,
             "Confirm professional provider use, readiness and the free pilot terms.",
           );
-        if (await hasPurchase(env, subject))
+        if (await hasCoreLicense(env, subject))
           throw fail(
             409,
             "Your paid access is already available. No pilot grant is needed.",
@@ -369,7 +369,7 @@ export async function handleFreePilot({ request, env, params }) {
           400,
           "Confirm readiness and the pilot terms before activation.",
         );
-      if (await hasPurchase(env, subject))
+      if (await hasCoreLicense(env, subject))
         throw fail(
           409,
           "Your paid access is already available. No pilot grant is needed.",

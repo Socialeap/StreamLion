@@ -216,7 +216,7 @@ function AccountDrawer({
           </button>
         </header>
         <span className={`admin-status ${u.status}`}>
-          {statusName(u.status)}
+          {u.ownerLicensed ? "Owner license" : statusName(u.status)}
         </span>
         <div className="admin-wallet-grid">
           {[
@@ -232,7 +232,8 @@ function AccountDrawer({
             </div>
           ))}
         </div>
-        {u.wallet.goodwill > 0 && !u.canGrant ? (
+        {u.wallet.goodwill > 0 &&
+        (u.wallet.hold || (!u.ownerLicensed && !u.canGrant)) ? (
           <p className="admin-notice">
             Retained goodwill is unavailable until the account meets its
             existing access requirements.
@@ -278,7 +279,8 @@ function AccountDrawer({
               target: u.subject,
               credits:
                 detail.allowance.perAccountMonth - u.grantedThisMonth >= 240 &&
-                detail.allowance.remaining >= 240
+                detail.allowance.remaining >= 240 &&
+                (u.ownerCreditsRemaining ?? 800) >= 240
                   ? 240
                   : "",
               reason: "",
@@ -303,6 +305,12 @@ function AccountDrawer({
           800 per grant and account/month · {number(detail.allowance.remaining)}{" "}
           of 4,000 monthly credits remaining. Grants do not activate access.
         </p>
+        {u.ownerLicensed && (
+          <p className="admin-subtle">
+            {number(u.ownerCreditsRemaining)} credits remain available to grant
+            under the lifetime owner allowance.
+          </p>
+        )}
         {receipt ? (
           <div className="admin-receipt" role="status">
             <strong>Credit change recorded</strong>
@@ -1423,6 +1431,7 @@ export default function AdminPortal() {
                             800,
                             detail.allowance.remaining,
                             800 - detail.user.grantedThisMonth,
+                            detail.user.ownerCreditsRemaining ?? 800,
                           )
                         : 800
                     }

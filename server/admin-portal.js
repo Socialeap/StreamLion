@@ -1,3 +1,4 @@
+import { ownerLicense, hasPurchase } from "./purchase-access.js";
 import { getSession, hash } from "./google-auth.js";
 import { boundedText } from "./request-body.js";
 import {
@@ -279,6 +280,19 @@ export async function handleAdmin(
           : 30,
       );
       if (!detail) throw fail(404, "Account not found.");
+      const license = await ownerLicense(env, target);
+      if (license) {
+        const user = detail.user;
+        user.ownerLicensed = true;
+        user.ownerCreditsRemaining = Math.max(
+          0,
+          license.credit_cap_micros / CREDIT_UNIT - user.grantedCredits,
+        );
+        user.canGrant = !user.wallet.hold && user.ownerCreditsRemaining > 0;
+        if (!user.wallet.hold)
+          user.wallet.available =
+            user.wallet.purchased + user.wallet.starter + user.wallet.goodwill;
+      }
       return reply(detail);
     }
     if (!["authorize", "grants", "reversals"].includes(path))
@@ -357,7 +371,15 @@ export async function handleAdmin(
         "Confirmation expired or changed. Review the exact change again.",
       );
     try {
-      if (op.type === "grant")
+      if (op.type === "grant") {
+        if (
+          !(await hasPurchase(env, op.target)) &&
+          !(await ownerLicense(env, op.target))
+        )
+          throw fail(
+            409,
+            "A StreamLion license is required for complimentary credits.",
+          );
         await db
           .prepare(
             "INSERT INTO streamlion_admin_grants_v1 VALUES(?,?,?,?,?,?,?,?,?,?,1)",
@@ -375,7 +397,7 @@ export async function handleAdmin(
             payload,
           )
           .run();
-      else {
+      } else {
         const g = await db
           .prepare(
             "SELECT id FROM streamlion_admin_grants_v1 WHERE id=? AND mode=?",
@@ -422,10 +444,12 @@ export async function handleAdmin(
           409,
           "Only unused, unreserved credits from this grant can be reversed. Refresh the account.",
         );
+      if (message.includes("owner_license_credit_cap"))
+        throw fail(409, "This exceeds the lifetime owner credit allowance.");
       if (message.includes("admin_eligibility"))
         throw fail(
           409,
-          "Valid paid access and an unrestricted purchased balance are required.",
+          "A valid StreamLion license and an unrestricted balance are required.",
         );
       throw e;
     }

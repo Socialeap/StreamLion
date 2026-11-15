@@ -1,3 +1,4 @@
+import { OWNER_EMAIL } from "./admin-data.js";
 import { profilePanelQa } from "./profile-panel-qa.js";
 import {
   requireBusinessSchema,
@@ -35,6 +36,8 @@ import {
   paymentMode,
   licenseRequired,
   hasPurchase,
+  ownerLicense,
+  ownerLicenseEnvironment,
 } from "./purchase-access.js";
 const API_VERSION = "2026-08-26.dahlia";
 const purchaseMethods = new Map([
@@ -655,6 +658,36 @@ export async function handlePurchase({ request, env, params }) {
     response.headers.set("Allow", method);
     return response;
   }
+  if (
+    path === "status" &&
+    ownerLicenseEnvironment(env) &&
+    new URL(request.url).origin === env.GOOGLE_AUTH_ORIGIN
+  ) {
+    try {
+      const identity = await getSession(request, env);
+      if (
+        identity?.email === OWNER_EMAIL &&
+        (await ownerLicense(env, identity.google_subject))
+      ) {
+        const purchased = await hasPurchase(env, identity.google_subject);
+        return json({
+          enabled: true,
+          required,
+          mode,
+          connected: true,
+          account: identity.email,
+          subject: identity.google_subject,
+          purchased,
+          ownerLicensed: true,
+          guarantee: purchased
+            ? await guaranteeStatus(env, mode, identity.google_subject)
+            : null,
+        });
+      }
+    } catch {
+      return json({ error: "Could not verify workspace access." }, 503);
+    }
+  }
   // Turning on test setup must not enforce purchases for current testers.
   // Price/key setup failures affect checkout; the explicit license flag controls access.
   if (path === "status" && request.method === "GET" && !required) {
@@ -766,6 +799,15 @@ export async function handlePurchase({ request, env, params }) {
         request.headers.get("X-StreamLion-Account") !== identity.google_subject)
     )
       return json({ error: "Your account changed. Reopen this page." }, 403);
+    if (
+      path === "checkout" &&
+      identity.email === OWNER_EMAIL &&
+      (await ownerLicense(env, identity.google_subject))
+    )
+      return json(
+        { error: "Your owner license already includes StreamLion access." },
+        409,
+      );
     if (path === "checkout" && !checkoutAccess(env, identity).allowed)
       return json(CHECKOUT_PAUSED, 403);
     if (path === "checkout" && !refundsEnabled(env))

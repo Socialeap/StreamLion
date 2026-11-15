@@ -6,7 +6,7 @@ import {
   unseal,
 } from "./google-auth.js";
 import { reserveSignIn } from "./google-limits.js";
-import { hasPurchase, licenseRequired } from "./purchase-access.js";
+import { hasCoreLicense, licenseRequired } from "./purchase-access.js";
 import { boundedText, RequestBodyError } from "./request-body.js";
 
 // Pilot supports one pre-registered public client with PKCE. No dynamic registration,
@@ -119,7 +119,10 @@ export async function extensionPrincipal(request, env) {
       "Reconnect Google in StreamLion, then reconnect this extension.",
       401,
     );
-  if (licenseRequired(env) && !(await hasPurchase(env, session.google_subject)))
+  if (
+    licenseRequired(env) &&
+    !(await hasCoreLicense(env, session.google_subject))
+  )
     throw new ExtensionError(
       "This account does not have workspace access. Open the browser workspace to check your account.",
       403,
@@ -273,7 +276,7 @@ export async function handleExtensionAuth({ request, env, params }) {
         );
       if (
         licenseRequired(env) &&
-        !(await hasPurchase(env, session.google_subject))
+        !(await hasCoreLicense(env, session.google_subject))
       )
         return page(
           `<p>This Google account does not have workspace access. Check the account in your browser workspace, then return here.</p><a href="/" target="_blank" rel="noopener">Open StreamLion</a>`,
@@ -336,7 +339,7 @@ export async function handleExtensionAuth({ request, env, params }) {
       );
       if (
         licenseRequired(env) &&
-        !(await hasPurchase(env, session.google_subject))
+        !(await hasCoreLicense(env, session.google_subject))
       )
         throw new ExtensionError(
           "Workspace access is unavailable for this account.",

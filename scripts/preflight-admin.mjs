@@ -1,3 +1,4 @@
+import { projectBeforeOwnerLicense } from "./preflight-owner-license.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -41,6 +42,7 @@ export function expectedAdminSchema(after = true) {
 function classify(input, legacyProjection = false) {
   if (!input || !Array.isArray(input.schema) || !input.stamps)
     throw Error("Provide schema definitions and verified stamps; STOP.");
+  input = projectBeforeOwnerLicense(input);
   if (
     input.schema.some(
       (r) => r.name === "streamlion_core_guarantee_schema_v1",

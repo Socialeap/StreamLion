@@ -5312,7 +5312,7 @@ test("separate coordination window requires the matching active workspace and cl
   );
   const check = async (e, expected) => {
     assert.equal(await hasCoordinationAccess(e, "a"), expected);
-    const predicate = coordinationEligibilitySQL(e, "c");
+    const predicate = await coordinationEligibilitySQL(e, "c");
     assert.equal(
       Boolean(
         f.sql

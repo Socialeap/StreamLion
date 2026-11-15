@@ -1,6 +1,6 @@
 import { getSession, hash } from "./google-auth.js";
 import { getExtensionProject } from "./extension-workbook.js";
-import { hasPurchase, licenseRequired } from "./purchase-access.js";
+import { hasCoreLicense, licenseRequired } from "./purchase-access.js";
 import { ownerAiQa } from "./owner-ai-qa.js";
 import { OWNER_EMAIL } from "./admin-data.js";
 import { boundedText } from "./request-body.js";
@@ -185,7 +185,7 @@ export async function handleAI(context) {
     if (
       !qa &&
       (paid || licenseRequired(env) || env.ENABLE_FREE_PILOT === "true") &&
-      !(await hasPurchase(env, session.google_subject))
+      !(await hasCoreLicense(env, session.google_subject))
     )
       return json({ error: "A StreamLion license is required." }, 402);
     const database = env.GOOGLE_SESSIONS;

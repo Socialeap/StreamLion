@@ -1,7 +1,7 @@
 import { observeActivity } from "./admin-data.js";
 import { goodwillBalance } from "./shared-credits.js";
 import { getSession, hash, seal, unseal } from "./google-auth.js";
-import { hasPurchase, paymentMode } from "./purchase-access.js";
+import { hasCoreLicense, paymentMode } from "./purchase-access.js";
 import { getExtensionProject } from "./extension-workbook.js";
 import { boundedText, RequestBodyError } from "./request-body.js";
 import { synthesize } from "./ai-providers.js";
@@ -248,8 +248,8 @@ export async function handleSpeech({ request, env }, dependencies = {}) {
         return reply({ error: "Return to the original workspace." }, 409);
       return reply({ state: row.state, priceMicros: row.price_micros });
     }
-    if (!(await hasPurchase(env, subject)))
-      return reply({ error: "A StreamLion purchase is required." }, 402);
+    if (!(await hasCoreLicense(env, subject)))
+      return reply({ error: "A StreamLion license is required." }, 402);
     const policy = await db
       .prepare("SELECT * FROM streamlion_speech_policy_v1 WHERE mode='live'")
       .first();

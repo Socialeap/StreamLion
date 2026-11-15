@@ -1,3 +1,4 @@
+import { OWNER_EMAIL } from "./admin-data.js";
 import {
   requireBusinessSchema,
   requireBusinessConsent,
@@ -24,7 +25,12 @@ import {
   checkoutQuoteAccess,
   CHECKOUT_PAUSED,
 } from "./checkout-access.js";
-import { hasPurchase, paymentMode } from "./purchase-access.js";
+import {
+  hasPurchase,
+  ownerLicense,
+  ownerLicenseEnvironment,
+  paymentMode,
+} from "./purchase-access.js";
 import { boundedText, RequestBodyError } from "./request-body.js";
 import {
   paidCreditMode,
@@ -970,6 +976,42 @@ export async function handleCredits({ request, env, params }) {
   if (!method) return json({ error: "Not found." }, 404);
   if (request.method !== method)
     return json({ error: "Method not allowed." }, 405);
+  if (
+    path === "status" &&
+    ownerLicenseEnvironment(env) &&
+    new URL(request.url).origin === env.GOOGLE_AUTH_ORIGIN &&
+    request.headers.get("Sec-Fetch-Site") !== "cross-site"
+  ) {
+    try {
+      const identity = await getSession(request, env);
+      if (
+        identity?.email === OWNER_EMAIL &&
+        (await ownerLicense(env, identity.google_subject)) &&
+        !(await hasPurchase(env, identity.google_subject))
+      ) {
+        const wallet = await creditAccount(
+          env.GOOGLE_SESSIONS,
+          "live",
+          identity.google_subject,
+        );
+        return json({
+          enabled: true,
+          mode: "live",
+          connected: true,
+          account: identity.email,
+          subject: identity.google_subject,
+          purchased: false,
+          ownerLicensed: true,
+          balanceMicros: Math.max(0, wallet.balance_micros),
+          creditHold: wallet.balance_micros < 0,
+          priceMicros: wallet.price_micros,
+          card: null,
+        });
+      }
+    } catch {
+      return json({ error: "Could not verify the credit wallet." }, 503);
+    }
+  }
   if (mode === "disabled")
     return json(
       { enabled: false, connected: false },

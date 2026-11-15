@@ -111,7 +111,7 @@ export async function renewPublicVerification(env, row) {
       challengeHash = await hash(challenge),
       expires = Math.min(now + 20 * 60000, s.expires_at);
     const changed = await env.GOOGLE_SESSIONS.prepare(
-      `UPDATE streamlion_public_submissions_v1 SET challenge_hash=?,challenge_token=?,challenge_expires=? WHERE job_id=? AND state='verification' AND challenge_hash IS ? AND payload IS NOT NULL AND expires_at>? AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id JOIN streamlion_coordination_jobs_v1 j ON j.id=streamlion_public_submissions_v1.job_id WHERE f.id=streamlion_public_submissions_v1.form_id AND f.active=1 AND c.id=? AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND j.connection_id=c.id AND j.archived=0 AND j.closed_at IS NULL AND ${coordinationEligibilitySQL(env, "c", "p")} )`,
+      `UPDATE streamlion_public_submissions_v1 SET challenge_hash=?,challenge_token=?,challenge_expires=? WHERE job_id=? AND state='verification' AND challenge_hash IS ? AND payload IS NOT NULL AND expires_at>? AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id JOIN streamlion_coordination_jobs_v1 j ON j.id=streamlion_public_submissions_v1.job_id WHERE f.id=streamlion_public_submissions_v1.form_id AND f.active=1 AND c.id=? AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND j.connection_id=c.id AND j.archived=0 AND j.closed_at IS NULL AND ${await coordinationEligibilitySQL(env, "c", "p")} )`,
     )
       .bind(
         challengeHash,
@@ -559,7 +559,7 @@ export async function submitPublicForm(
     // One transaction enforces the workspace bound even for concurrent public submissions.
     await env.GOOGLE_SESSIONS.batch([
       env.GOOGLE_SESSIONS.prepare(
-        `INSERT OR IGNORE INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL)<100 AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id WHERE f.id=? AND f.descriptor=? AND f.active=1 AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${coordinationEligibilitySQL(env, "c", "p")} )`,
+        `INSERT OR IGNORE INTO streamlion_coordination_jobs_v1(id,connection_id,project_id,client_email,created_at) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM streamlion_coordination_jobs_v1 WHERE connection_id=? AND archived=0 AND closed_at IS NULL)<100 AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id WHERE f.id=? AND f.descriptor=? AND f.active=1 AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${await coordinationEligibilitySQL(env, "c", "p")} )`,
       ).bind(
         id,
         connection.id,
@@ -712,7 +712,7 @@ export async function verifyPublicSubmission(
   job.emailVerified = true;
   const result = await env.GOOGLE_SESSIONS.batch([
     env.GOOGLE_SESSIONS.prepare(
-      `UPDATE streamlion_public_submissions_v1 SET state='pending',verified_at=?,payload=?,verified_session_hash=? WHERE job_id=? AND state='verification' AND challenge_expires>? AND expires_at>? AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id JOIN streamlion_coordination_jobs_v1 j ON j.connection_id=c.id WHERE f.id=? AND f.active=1 AND j.id=streamlion_public_submissions_v1.job_id AND j.archived=0 AND j.closed_at IS NULL AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${coordinationEligibilitySQL(env, "c", "p")} )`,
+      `UPDATE streamlion_public_submissions_v1 SET state='pending',verified_at=?,payload=?,verified_session_hash=? WHERE job_id=? AND state='verification' AND challenge_expires>? AND expires_at>? AND EXISTS(SELECT 1 FROM streamlion_public_forms_v1 f JOIN streamlion_coordination_connections_v1 c ON c.id=f.connection_id JOIN streamlion_coordination_jobs_v1 j ON j.connection_id=c.id WHERE f.id=? AND f.active=1 AND j.id=streamlion_public_submissions_v1.job_id AND j.archived=0 AND j.closed_at IS NULL AND c.revoked=0 AND c.expires_at>? AND c.mode=? AND ${await coordinationEligibilitySQL(env, "c", "p")} )`,
     ).bind(
       now,
       await seal(env, job, "public-submission:" + s.job_id),

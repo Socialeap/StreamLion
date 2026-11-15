@@ -522,6 +522,11 @@ export default function Credits() {
                 <p className="credit-balance">
                   {creditLabel(account.balanceMicros)} available
                 </p>
+                {account.ownerLicensed && (
+                  <p>
+                    Your StreamLion owner license uses complimentary credits.
+                  </p>
+                )}
                 {account.creditHold && (
                   <p role="alert">
                     A refunded or disputed payment affects this balance. Contact
@@ -576,11 +581,13 @@ export default function Credits() {
                   Continue with Google
                 </a>
               ) : !account.purchased ? (
-                <p>
-                  <a className="purchase-primary" href="/api/purchase">
-                    Purchase or restore StreamLion first
-                  </a>
-                </p>
+                !account.ownerLicensed && (
+                  <p>
+                    <a className="purchase-primary" href="/api/purchase">
+                      Purchase or restore StreamLion first
+                    </a>
+                  </p>
+                )
               ) : (
                 <>
                   {config.businessUseRequired && (
