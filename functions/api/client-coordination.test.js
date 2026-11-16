@@ -5505,3 +5505,73 @@ test("intake embed migration stops on partially added or altered framing schema"
     stamps: {},
   }).migration, "pending");
 });
+test("F|3D storefront reads only the linked, active reusable form's public prices", async (t) => {
+  const f = await publicFixture(t);
+  const { onRequest } = await import("./provider-storefront.js");
+  const { PROFILE_ISSUER, PROFILE_AUDIENCE } = await import("../../src/f3d-profile.js");
+  const profileId = "a7310000-0000-4000-8000-000000000011";
+  Object.assign(f.env, {
+    GOOGLE_AUTH_ORIGIN: PROFILE_AUDIENCE,
+    ENABLE_F3D_PROFILE_BRIDGE: "true",
+    F3D_PROVIDER_PROFILE_PUBLIC_JWK: JSON.stringify({ kty: "OKP", crv: "Ed25519", x: "F".repeat(43) }),
+  });
+  const link = () => f.sql.prepare(
+    "INSERT INTO streamlion_f3d_profile_v1(mode,google_subject,f3d_account_id,snapshot,verified_at) VALUES('test','a','f3d-owner',?,?)",
+  ).run(JSON.stringify({ businessProfile: { id: profileId }, email: "private@example.test" }), Date.now());
+  const config = {
+    schemaVersion: 1, method: "progressive", currency: "USD", rate: "0",
+    tiers: [{ upTo: "5000", price: "0.15" }, { upTo: "", price: "0.12" }],
+    minimumPrice: "200", allowBudget: false,
+    extras: [{ id: "travel", name: "Travel", unit: "visit", price: "90", required: true }],
+  };
+  const putPricing = async (priceConfig) => {
+    const descriptor = {
+      intake: { name: "Capture request", defaults: { address: "Private default" } },
+      pricing: { config: priceConfig, key: "private-pricing-key" },
+    };
+    f.sql.prepare("UPDATE streamlion_public_forms_v1 SET descriptor=? WHERE id=?")
+      .run(await seal(f.env, descriptor, "public-form:" + f.form.id), f.form.id);
+  };
+  const call = (data = {}) => onRequest({
+    env: f.env,
+    request: new Request(PROFILE_AUDIENCE + "/api/provider-storefront", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: f.token, profileId, ...data }),
+    }),
+  });
+
+  assert.equal((await call()).status, 404);
+  link();
+  await putPricing(config);
+  let response = await call();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await response.json(), {
+    version: 1, formName: "Capture request", guided: true, embedId: null,
+    pricing: {
+      currency: "USD", method: "progressive", rate: "0", tiers: config.tiers, minimumPrice: "200",
+      extras: [{ name: "Travel", unit: "visit", price: "90", required: true }],
+    },
+  });
+  assert.equal(f.sql.prepare("SELECT opened_at FROM streamlion_public_forms_v1 WHERE id=?").get(f.form.id).opened_at, null);
+  assert.equal((await call({ profileId: profileId.replace(/11$/, "12") })).status, 404);
+  assert.equal((await call({ token: "X".repeat(43) })).status, 404);
+
+  const { saveIntakeEmbed } = await import("../../server/intake-embeds.js");
+  f.env.ENABLE_INTAKE_EMBEDS = "true";
+  f.env.INTAKE_EMBED_PILOT_SUBJECTS = "a";
+  await saveIntakeEmbed(f.env, f.connection, { formId: f.form.id, enabled: true, origins: ["https://another.example.test"] });
+  assert.equal((await (await call()).json()).embedId, null);
+  const { embed } = await saveIntakeEmbed(f.env, f.connection, { formId: f.form.id, enabled: true, origins: [PROFILE_ISSUER] });
+  assert.equal((await (await call()).json()).embedId, embed.id);
+  f.env.ENABLE_INTAKE_EMBEDS = "false";
+  assert.equal((await (await call()).json()).embedId, null);
+  await putPricing({ ...config, method: "quote" });
+  assert.equal((await (await call()).json()).pricing, null);
+  f.sql.exec("UPDATE streamlion_public_forms_v1 SET active=0");
+  assert.equal((await call()).status, 404);
+  f.sql.exec("UPDATE streamlion_public_forms_v1 SET active=1");
+  f.sql.exec("DELETE FROM streamlion_f3d_profile_v1");
+  assert.equal((await call()).status, 404);
+});

@@ -42,6 +42,14 @@ function configured(env) {
     return false;
   }
 }
+export async function linkedBusinessProfileId(env, connection) {
+  if (!configured(env)) return null;
+  const row = await env.GOOGLE_SESSIONS.prepare(
+    "SELECT snapshot FROM " + table + " WHERE mode=? AND google_subject=? AND verified_at IS NOT NULL",
+  ).bind(connection.mode, connection.google_subject).first();
+  return row?.snapshot ? JSON.parse(row.snapshot).businessProfile?.id ?? null : null;
+}
+
 export async function handleF3DProfile({ request, env }) {
   try {
     if (!["GET", "POST"].includes(request.method))

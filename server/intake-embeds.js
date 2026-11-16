@@ -85,6 +85,21 @@ export async function providerIntakeEmbeds(env, connection) {
   );
 }
 
+export async function approvedProfileEmbedId(env, connection, formId, origin) {
+  if (!pilotEnabled(env, connection.google_subject) || !(await embedSchema(env)))
+    return null;
+  const row = await env.GOOGLE_SESSIONS.prepare(
+    "SELECT id FROM streamlion_intake_embeds_v1 WHERE form_id=?",
+  ).bind(formId).first();
+  if (!row) return null;
+  try {
+    const embed = await readIntakeEmbed(env, row.id);
+    return embed.formId === formId && embed.origins.includes(origin) ? embed.id : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function saveIntakeEmbed(env, connection, body) {
   if (
     !pilotEnabled(env, connection.google_subject) ||
