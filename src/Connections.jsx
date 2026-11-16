@@ -53,6 +53,7 @@ export default function Connections({
     [googleConfig, setGoogleConfig] = useState(null);
   const connected = hasGoogleSession();
   const [folderId, setFolderId] = useState(googleFolderId());
+  const [createdSelection, setCreatedSelection] = useState("");
   const [folderDetails, setFolderDetails] = useState(null);
   const [folderDetailsError, setFolderDetailsError] = useState("");
   const [folderLoading, setFolderLoading] = useState(false);
@@ -157,11 +158,11 @@ export default function Connections({
       onConnectionBusy?.(false);
     }
   }
-  async function open(id) {
+  async function open(id, message = "Workbook verified. Project records stay in Google.") {
     if (!id) return;
     const data = await readWorkbook(id);
     await onWorkbook(id, data);
-    setStatus("Workbook verified. Project records stay in Google.");
+    setStatus(message);
   }
   return (
     <>
@@ -325,15 +326,17 @@ export default function Connections({
             disabled={busy || busyCapture || !connected}
             onClick={() =>
               act(async () => {
+                setCreatedSelection("");
                 const b = createdWorkbook.current || (await createWorkbook());
                 createdWorkbook.current = b;
                 await moveWorkbookToFolder(b.spreadsheetId);
-                await open(b.spreadsheetId);
+                await open(b.spreadsheetId, "");
+                setCreatedSelection(b.spreadsheetId);
                 createdWorkbook.current = null;
               })
             }
           >
-            Create workbook
+            {createdWorkbook.current && error ? "Finish workbook setup" : "Create workbook"}
           </button>
           <button
             disabled={
@@ -368,6 +371,12 @@ export default function Connections({
             </button>
           )}
         </div>
+        {connected && createdSelection && bookId === createdSelection && (
+          <div>
+            <p role="status">Workbook created and selected.</p>
+            <a href="/api/client-requests">Open Client requests</a>
+          </div>
+        )}
         {connected && (
           <section className="google-folder" aria-label="StreamLion folder">
             <h3
@@ -506,7 +515,7 @@ export default function Connections({
         )}
         {createdWorkbook.current && error && (
           <p>
-            A workbook was created. Retry Create workbook to finish its setup,
+            A workbook was created. Choose Finish workbook setup to use it,
             or{" "}
             <a
               href={`https://docs.google.com/spreadsheets/d/${createdWorkbook.current.spreadsheetId}/edit`}

@@ -124,6 +124,70 @@ test("Connections lets the user retry a failed Google config request", async () 
   }
 });
 
+test("workbook creation resumes a failed move and confirms the new selection", async (t) => {
+  const google = await import("./google.js");
+  const { TABS } = await import("./workbook.js");
+  google.disconnectGoogle();
+  let creations = 0;
+  let moves = 0;
+  t.after(() => {
+    cleanup();
+    google.disconnectGoogle();
+  });
+  t.mock.method(globalThis, "fetch", async (input, options = {}) => {
+    const url = new URL(input, window.location.origin);
+    const target = url.searchParams.get("path");
+    if (url.pathname === "/api/google/session")
+      return Response.json({
+        enabled: true, connected: true, subject: "owner",
+        account: "owner@example.com", bookId: "old-book", folderId: "folder-a",
+      });
+    if (url.pathname === "/api/google-config")
+      return Response.json({ clientId: "synthetic", apiKey: "synthetic", appId: "123" });
+    if (target === "" && options.method === "POST") {
+      creations++;
+      return Response.json({ spreadsheetId: "new-book" });
+    }
+    if (url.pathname === "/api/google/drive") {
+      if (options.method === "PATCH") {
+        moves++;
+        return moves === 1
+          ? Response.json({}, { status: 503 })
+          : Response.json({ parents: ["folder-a"] });
+      }
+      if (target.startsWith("drive/v3/files/new-book?"))
+        return Response.json({
+          mimeType: "application/vnd.google-apps.spreadsheet", parents: [],
+        });
+      return Response.json({
+        id: "folder-a", name: "Private workspace",
+        mimeType: "application/vnd.google-apps.folder",
+        capabilities: { canAddChildren: true },
+      });
+    }
+    if (target.startsWith("/new-book/values:batchGet"))
+      return Response.json({ valueRanges: Object.values(TABS).map((headers) => ({ values: [headers] })) });
+    if (target.startsWith("/new-book?"))
+      return Response.json({ sheets: Object.keys(TABS).map((title) => ({
+        properties: { title, gridProperties: { rowCount: 1000 } },
+      })) });
+    throw Error("Unexpected fixture route");
+  });
+  await google.restoreGoogleSession();
+  function Workspace() {
+    const [bookId, setBookId] = React.useState("old-book");
+    return <Connections bookId={bookId} googleConnected onWorkbook={setBookId} />;
+  }
+  const ui = render(<Workspace />);
+  await act(async () => fireEvent.click(ui.getByRole("button", { name: "Create workbook" })));
+  assert.equal(ui.queryByRole("link", { name: "Open Client requests" }), null);
+  await act(async () => fireEvent.click(ui.getByRole("button", { name: "Finish workbook setup" })));
+  assert.ok(ui.getByText("Workbook created and selected."));
+  assert.equal(ui.getByRole("link", { name: "Open Client requests" }).getAttribute("href"), "/api/client-requests");
+  assert.equal(creations, 1);
+  assert.equal(moves, 2);
+});
+
 test("Connections shows folder name, location and exact address; refresh reports restricted parents without losing selection", async (t) => {
   const google = await import("./google.js");
   google.disconnectGoogle();
