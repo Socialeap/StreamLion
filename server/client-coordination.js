@@ -17,6 +17,7 @@ import { pricingProfiles } from "./provider-pricing.js";
 import { brandingForConnection } from "./provider-branding.js";
 import {
   getSession,
+  recoverGoogleWorkspace,
   hash,
   seal,
   unseal,
@@ -687,7 +688,7 @@ export async function handleCoordination({ request, env, params = {} }) {
       }
       return json({ error: "Unknown client action." }, 404);
     }
-    const session = await provider(request, env, unsafe);
+    let session = await provider(request, env, unsafe);
     if (request.method === "POST")
       await limited(env, "provider:" + session.google_subject, 120);
     let connection = await selectedConnection(env, session);
@@ -739,17 +740,25 @@ export async function handleCoordination({ request, env, params = {} }) {
         ? await bodyJSON(request, route === "provider/upload" ? 750000 : 50000)
         : null;
     if (route === "provider/connect" && request.method === "POST") {
-      if (
-        body.consent !== true ||
-        !/^[\w-]{1,100}$/.test(session.workbook_id || "") ||
-        !/^[\w-]{1,100}$/.test(session.folder_id || "") ||
-        typeof body.brand !== "string" ||
-        !body.brand.trim() ||
-        body.brand.length > 100
-      )
-        throw new CoordinationError(
-          "Choose a Google workbook and private folder, then consent to background coordination.",
+      if (body.consent !== true)
+        throw new CoordinationError("Check the authorization box to enable client coordination.");
+      if (typeof body.brand !== "string" || !body.brand.trim() || body.brand.length > 100)
+        throw new CoordinationError("Enter a provider name between 1 and 100 characters.");
+      if (!session.workbook_id || !session.folder_id) {
+        await recoverGoogleWorkspace(env, session);
+        session = await provider(request, env, unsafe);
+        connection = await selectedConnection(env, session);
+      }
+      const missing = [];
+      if (!/^[\w-]{1,100}$/.test(session.workbook_id || "")) missing.push("workbook");
+      if (!/^[\w-]{1,100}$/.test(session.folder_id || "")) missing.push("private Drive folder");
+      if (missing.length) {
+        const error = new CoordinationError(
+          `In Connections, select your ${missing.join(" and ")} for this Google account, then return to Client requests.`,
         );
+        error.code = "coordination_selection_required";
+        throw error;
+      }
       const credentials = await unseal(
         env,
         session.credentials,
@@ -1197,6 +1206,7 @@ export async function handleCoordination({ request, env, params = {} }) {
           "invalid_project_fields",
           "pricing_changed",
           "invalid_pricing",
+          "coordination_selection_required",
         ].includes(error.code)
           ? { code: error.code }
           : {}),

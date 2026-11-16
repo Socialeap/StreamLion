@@ -153,6 +153,39 @@ export async function getSession(request, env) {
   }
   return row;
 }
+export async function recoverGoogleWorkspace(env, row) {
+  return restoreAccountWorkspace(
+    env.GOOGLE_SESSIONS,
+    row,
+    async (kind, id) => {
+      const capacity = await reserveGoogleRequest(
+        env.GOOGLE_SESSIONS,
+        row.google_subject,
+        "GET",
+      );
+      if (!capacity.allowed) throw Error("temporary");
+      const check = await googleFetch(
+        kind === "workbook"
+          ? `https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=spreadsheetId`
+          : `https://www.googleapis.com/drive/v3/files/${id}?fields=id,mimeType,trashed,capabilities(canAddChildren)`,
+        {
+          headers: {
+            Authorization: `Bearer ${await accessToken(env, row)}`,
+          },
+        },
+      );
+      if ([403, 404].includes(check.status)) return false;
+      if (!check.ok) throw Error("temporary");
+      const file = await check.json();
+      return kind === "workbook"
+        ? file.spreadsheetId === id
+        : file.id === id &&
+            file.mimeType === FOLDER_MIME &&
+            !file.trashed &&
+            !!file.capabilities?.canAddChildren;
+    },
+  );
+}
 export async function googleFetch(url, options) {
   // Workers rejects redirect: "error". Never follow a credential-bearing
   // request to another destination: inspect and reject redirects ourselves.
@@ -608,44 +641,14 @@ export async function handleGoogle({ request, env, params }) {
       await accessToken(env, row);
       let recovery;
       if (
-        !row.workbook_id &&
+        (!row.workbook_id || !row.folder_id) &&
         (await workspacePreferencesReady(env.GOOGLE_SESSIONS)) &&
         (!licenseRequired(env) ||
           (await hasCoreLicense(env, row.google_subject)) ||
           (await ownerWorkspaceQa(env, row)) ||
           (await pilotAccess(env, row.google_subject)))
       ) {
-        const restored = await restoreAccountWorkspace(
-          env.GOOGLE_SESSIONS,
-          row,
-          async (kind, id) => {
-            const capacity = await reserveGoogleRequest(
-              env.GOOGLE_SESSIONS,
-              row.google_subject,
-              "GET",
-            );
-            if (!capacity.allowed) throw Error("temporary");
-            const check = await googleFetch(
-              kind === "workbook"
-                ? `https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=spreadsheetId`
-                : `https://www.googleapis.com/drive/v3/files/${id}?fields=id,mimeType,trashed,capabilities(canAddChildren)`,
-              {
-                headers: {
-                  Authorization: `Bearer ${await accessToken(env, row)}`,
-                },
-              },
-            );
-            if ([403, 404].includes(check.status)) return false;
-            if (!check.ok) throw Error("temporary");
-            const file = await check.json();
-            return kind === "workbook"
-              ? file.spreadsheetId === id
-              : file.id === id &&
-                  file.mimeType === FOLDER_MIME &&
-                  !file.trashed &&
-                  !!file.capabilities?.canAddChildren;
-          },
-        );
+        const restored = await recoverGoogleWorkspace(env, row);
         if (restored?.unavailable) recovery = "unavailable";
         else if (restored) row = restored;
         // A concurrent sign-out cannot acquire a new session or selection cookie.

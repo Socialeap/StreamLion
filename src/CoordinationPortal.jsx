@@ -458,7 +458,8 @@ export default function CoordinationPortal({
       if (
         !writeAcknowledged &&
         e.status === 400 &&
-        e.code === "invalid_project_fields"
+        (e.code === "invalid_project_fields" ||
+          (path === "provider/connect" && e.code === "coordination_selection_required"))
       )
         requestRef.current = null;
       reportAccessError(e);

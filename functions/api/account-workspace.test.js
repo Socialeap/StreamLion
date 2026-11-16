@@ -129,6 +129,37 @@ test("explicit device choice is preserved and preference updates preserve the ot
   assert.equal(p.workbook_id, "book-b");
   assert.equal(p.folder_id, "folder-a");
 });
+test("an existing workbook recovers its verified saved folder", async () => {
+  const f = fixture();
+  f.apply();
+  await seedSelection(f.store, "alice", "workbook_id", "book-a");
+  await seedSelection(f.store, "alice", "folder_id", "folder-a");
+  const row = f.add("partial", "alice", "book-a");
+  assert.equal(
+    await restoreAccountWorkspace(f.store, row, async () => false),
+    null,
+  );
+  const restored = await restoreAccountWorkspace(f.store, row, async (kind, id) => {
+    assert.equal(kind, "folder");
+    assert.equal(id, "folder-a");
+    return true;
+  });
+  assert.equal(restored.workbook_id, "book-a");
+  assert.equal(restored.folder_id, "folder-a");
+});
+test("folder recovery preserves a concurrent workbook change", async () => {
+  const f = fixture();
+  f.apply();
+  await seedSelection(f.store, "alice", "workbook_id", "book-a");
+  await seedSelection(f.store, "alice", "folder_id", "folder-a");
+  const row = f.add("partial", "alice", "book-a");
+  const restored = await restoreAccountWorkspace(f.store, row, async () => {
+    f.db.prepare("UPDATE streamlion_google_sessions_v1 SET workbook_id='book-b' WHERE session_hash='partial'").run();
+    return true;
+  });
+  assert.equal(restored.workbook_id, "book-b");
+  assert.equal(restored.folder_id, "");
+});
 test("revoked permission and temporary errors do not bind or erase the saved preference", async () => {
   const f = fixture();
   f.apply();
