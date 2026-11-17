@@ -5493,6 +5493,14 @@ test("intake embed management requires a signed F|3D command, exact ownership, a
   assert.equal((await f.update({ enabled: false })).status, 200);
   assert.equal((await f.update(oneTime)).status, 404);
   assert.deepEqual(await (await f.update({ action: "read" })).json(), { embed: null });
+  const expiredTimestamp = String(Date.now() - 40_000);
+  const clock = t.mock.method(Date, "now", () => Number(expiredTimestamp));
+  try {
+    // A stale JavaScript clock must not let D1 admit an expired command.
+    assert.equal((await f.update(valid, { timestamp: expiredTimestamp })).status, 404);
+  } finally {
+    clock.mock.restore();
+  }
 });
 
 test("embed intake keeps the normal submission receipt, deduplication and provider routing", async (t) => {
