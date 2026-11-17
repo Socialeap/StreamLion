@@ -8,12 +8,16 @@ export const embedUnavailable = () =>
     404,
   );
 
-function pilotEnabled(env, subject) {
+function embedAccessEnabled(env, subject) {
+  if (env.ENABLE_INTAKE_EMBEDS !== "true") return false;
+  if (env.INTAKE_EMBED_ACCESS === "eligible") return true;
+  // Keep the legacy allowlist when no release mode is configured.
+  if (env.INTAKE_EMBED_ACCESS !== undefined) return false;
   return (
-    env.ENABLE_INTAKE_EMBEDS === "true" &&
-    (env.INTAKE_EMBED_PILOT_SUBJECTS || "")
-      .split(",")
-      .some((entry) => entry.trim() === subject)
+    typeof env.INTAKE_EMBED_PILOT_SUBJECTS === "string" &&
+    env.INTAKE_EMBED_PILOT_SUBJECTS.split(",").some(
+      (entry) => entry.trim() === subject,
+    )
   );
 }
 
@@ -70,7 +74,7 @@ const configuration = (row) => ({
 
 export async function providerIntakeEmbeds(env, connection) {
   if (
-    !pilotEnabled(env, connection.google_subject) ||
+    !embedAccessEnabled(env, connection.google_subject) ||
     !(await embedSchema(env))
   )
     return null;
@@ -86,7 +90,7 @@ export async function providerIntakeEmbeds(env, connection) {
 }
 
 export async function approvedProfileEmbedId(env, connection, formId, origin) {
-  if (!pilotEnabled(env, connection.google_subject) || !(await embedSchema(env)))
+  if (!embedAccessEnabled(env, connection.google_subject) || !(await embedSchema(env)))
     return null;
   const row = await env.GOOGLE_SESSIONS.prepare(
     "SELECT id FROM streamlion_intake_embeds_v1 WHERE form_id=?",
@@ -102,7 +106,7 @@ export async function approvedProfileEmbedId(env, connection, formId, origin) {
 
 export async function saveIntakeEmbed(env, connection, body) {
   if (
-    !pilotEnabled(env, connection.google_subject) ||
+    !embedAccessEnabled(env, connection.google_subject) ||
     !(await embedSchema(env))
   )
     throw embedUnavailable();
@@ -182,7 +186,7 @@ export async function readIntakeEmbed(env, id) {
   )
     .bind(id, paymentMode(env), Date.now())
     .first();
-  if (!row || !pilotEnabled(env, row.google_subject)) throw embedUnavailable();
+  if (!row || !embedAccessEnabled(env, row.google_subject)) throw embedUnavailable();
   return {
     ...configuration(row),
     formId: row.form_id,

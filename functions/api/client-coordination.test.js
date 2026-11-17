@@ -5490,6 +5490,117 @@ test("website intake shares email confirmation and cannot start with the feature
   assert.equal((await f.request("public/open", { token })).status, 200);
 });
 
+test("eligible intake embed mode admits two linked providers without an allowlist", async (t) => {
+  const f = await intakeEmbedFixture(t);
+  const { saveIntakeEmbed, readIntakeEmbed, approvedProfileEmbedId } =
+    await import("../../server/intake-embeds.js");
+  const { submitEmbeddedPublicForm } =
+    await import("../../server/public-intake.js");
+  const origin = "https://studio.example";
+  const { PROFILE_ISSUER } = await import("../../src/f3d-profile.js");
+  const settings = { enabled: true, origins: [origin, PROFILE_ISSUER] };
+  const connection = {
+    ...f.connection,
+    id: "connection-b",
+    google_subject: "b",
+    workbook_id: "book-b",
+  };
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_coordination_connections_v1(id,google_subject,mode,workbook_id,folder_id,credentials,client_brand,expires_at,revoked) VALUES(?,?,?,?,?,?,?,?,?)",
+    )
+    .run(...Object.values(connection));
+  const form = await createPublicForm(
+    f.env,
+    connection,
+    "second-embed-form",
+    newClientJob({
+      id: "fixture-b",
+      provider: "b",
+      clientEmail: "",
+      title: "Second fixture",
+      prospect: true,
+      now: Date.now(),
+    }),
+  );
+
+  delete f.env.INTAKE_EMBED_PILOT_SUBJECTS;
+  f.env.INTAKE_EMBED_ACCESS = "eligible";
+  const first = await f.update(settings);
+  assert.equal(first.status, 200, await first.clone().text());
+  const { embed: one } = await first.json();
+  assert.equal((await f.update({ ...settings, formId: form.id })).status, 404);
+  await assert.rejects(
+    saveIntakeEmbed(f.env, connection, { ...settings, formId: form.id }),
+    /Refresh your Frontiers/,
+  );
+  f.sql
+    .prepare(
+      "INSERT INTO streamlion_f3d_profile_v1(mode,google_subject,f3d_account_id,snapshot,verified_at) VALUES('test','b','f3d-owner-b',?,?)",
+    )
+    .run(
+      JSON.stringify({ businessProfile: { id: "f3d-business-b" } }),
+      Date.now(),
+    );
+  const { embed: two } = await saveIntakeEmbed(f.env, connection, {
+    ...settings,
+    formId: form.id,
+  });
+  assert.notEqual(one.id, two.id);
+  assert.equal((await readIntakeEmbed(f.env, one.id)).formId, f.form.id);
+  assert.equal((await readIntakeEmbed(f.env, two.id)).formId, form.id);
+  assert.equal(
+    await approvedProfileEmbedId(f.env, connection, form.id, PROFILE_ISSUER),
+    two.id,
+  );
+  assert.equal(
+    await approvedProfileEmbedId(
+      f.env,
+      connection,
+      form.id,
+      "https://elsewhere.example",
+    ),
+    null,
+  );
+  assert.equal(
+    (await f.request("public/embed/open", { embedId: two.id })).status,
+    200,
+  );
+
+  f.env.ENABLE_INTAKE_EMBEDS = "false";
+  assert.equal((await f.update(settings)).status, 404);
+  assert.equal(
+    (await f.request("public/embed/open", { embedId: one.id })).status,
+    404,
+  );
+  await assert.rejects(
+    submitEmbeddedPublicForm(f.env, two.id, publicBody(f), () => f.engine),
+    /unavailable/,
+  );
+  assert.equal(
+    await approvedProfileEmbedId(f.env, connection, form.id, PROFILE_ISSUER),
+    null,
+  );
+  assert.equal(
+    (await f.request("public/open", { token: f.token })).status,
+    200,
+  );
+  assert.equal(
+    f.sql.prepare("SELECT COUNT(*) AS n FROM streamlion_intake_embeds_v1").get()
+      .n,
+    2,
+  );
+
+  f.env.ENABLE_INTAKE_EMBEDS = "true";
+  f.env.INTAKE_EMBED_ACCESS = "typo";
+  f.env.INTAKE_EMBED_PILOT_SUBJECTS = "a";
+  assert.equal((await f.update(settings)).status, 404);
+  assert.equal(
+    (await f.request("public/embed/open", { embedId: one.id })).status,
+    404,
+  );
+});
+
 test("intake embed migration stops on partially added or altered framing schema", async (t) => {
   const { sql } = fixture(t);
   const { intakeEmbedsPreflight } = await import("../../scripts/preflight-intake-embeds.mjs");
