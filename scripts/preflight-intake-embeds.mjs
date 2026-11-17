@@ -30,16 +30,22 @@ function inspect(input, project = false) {
     const before = new Map(rows.all().map((row) => [row.name, row]));
     db.exec(readFileSync(new URL(file, migrations), "utf8"));
     const added = rows.all().filter((row) => !before.has(row.name));
-    const markers = new Set(added.map((row) => row.name));
+    db.exec(readFileSync(new URL("0030_f3d_intake_embed_publication.sql", migrations), "utf8"));
+    const afterSuccessor = rows.all();
+    const successorTable = afterSuccessor.find((row) => row.name === "streamlion_intake_embeds_v1");
+    const markers = new Set(afterSuccessor.filter((row) => !before.has(row.name)).map((row) => row.name));
+    const originalMarkers = new Set(added.map((row) => row.name));
+    const successorMarkers = afterSuccessor.filter((row) => !before.has(row.name) && !originalMarkers.has(row.name));
     const present =
       Object.hasOwn(input.stamps, stamp) ||
-      added.some((row) => actual.has(row.name));
+      [...markers].some((name) => actual.has(name));
 
-    function requireExact(expected) {
+    function requireExact(expected, successor) {
       const found = actual.get(expected.name);
       if (
         found?.type !== expected.type ||
-        normalize(found?.sql) !== normalize(expected.sql)
+        (normalize(found?.sql) !== normalize(expected.sql) &&
+          (!successor || normalize(found?.sql) !== normalize(successor.sql)))
       )
         throw Error(
           "Missing or altered intake embed schema " + expected.name + "; STOP.",
@@ -48,7 +54,12 @@ function inspect(input, project = false) {
     if (present) {
       if (input.stamps[stamp] !== 1)
         throw Error("Missing or altered intake embed stamp; STOP.");
-      for (const row of added) requireExact(row);
+      for (const row of added) requireExact(row, row.name === successorTable.name ? successorTable : null);
+      if (successorMarkers.some((row) => actual.has(row.name)) ||
+          normalize(actual.get(successorTable.name)?.sql) === normalize(successorTable.sql)) {
+        requireExact(successorTable);
+        for (const row of successorMarkers) requireExact(row);
+      }
     }
     if (project) {
       if (!present) return input;

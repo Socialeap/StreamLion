@@ -1,8 +1,4 @@
-import {
-  providerIntakeEmbeds,
-  readIntakeEmbed,
-  saveIntakeEmbed,
-} from "./intake-embeds.js";
+import { readIntakeEmbed } from "./intake-embeds.js";
 import {
   hasCoordinationAccess,
   coordinationEligibilitySQL,
@@ -903,7 +899,6 @@ export async function handleCoordination({ request, env, params = {} }) {
     if (route === "provider/jobs" && request.method === "GET") {
       const links = await prospectLinksForProvider(env, connection);
       const forms = await formsForProvider(env, connection);
-      const intakeEmbeds = await providerIntakeEmbeds(env, connection);
       if (await publicIntakeSchema(env)) {
         const submissions = await env.GOOGLE_SESSIONS.prepare(
           "SELECT s.job_id FROM streamlion_public_submissions_v1 s JOIN streamlion_coordination_jobs_v1 j ON j.id=s.job_id WHERE j.connection_id=? AND j.archived=0 AND s.state IN('pending','expired') ORDER BY s.created_at LIMIT 5",
@@ -930,7 +925,6 @@ export async function handleCoordination({ request, env, params = {} }) {
         mail,
         links,
         forms,
-        ...(intakeEmbeds ? { intakeEmbeds } : {}),
       });
       if (read.unchanged)
         return json({ unchanged: true, refresh: read.refresh });
@@ -952,12 +946,7 @@ export async function handleCoordination({ request, env, params = {} }) {
           .slice(1)
           .map((r) => ({ jobId: r[0], fileId: r[2] })),
         links,
-        forms: intakeEmbeds
-          ? forms.map((form) => ({
-              ...form,
-              websiteEmbed: intakeEmbeds[form.id] || null,
-            }))
-          : forms,
+        forms,
       };
       const capacity = await finishRead(
         env,
@@ -1116,8 +1105,6 @@ export async function handleCoordination({ request, env, params = {} }) {
         shareLink: body.shareLink === true,
       });
     }
-    if (route === "provider/form-embed" && request.method === "POST")
-      return json(await saveIntakeEmbed(env, connection, body));
     if (route === "provider/form-pricing" && request.method === "POST")
       return json(await updateFormPricing(env, connection, body));
     if (route === "provider/form" && request.method === "POST")

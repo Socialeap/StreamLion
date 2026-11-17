@@ -59,7 +59,7 @@ export async function handleProviderStorefront({ request, env }) {
     const { row, connection } = await publicForm(env, input.token);
     if ((await linkedBusinessProfileId(env, connection)) !== input.profileId) return unavailable();
     const descriptor = await unseal(env, row.descriptor, "public-form:" + row.id);
-    const embedId = await approvedProfileEmbedId(env, connection, row.id, PROFILE_ISSUER);
+    const embedId = await approvedProfileEmbedId(env, row.id, PROFILE_ISSUER);
     const name = descriptor.intake?.name;
     const formName = typeof name === "string" && name.trim() && name.length <= 120 &&
       !/[\x00-\x1f\x7f]/.test(name) ? name.trim() : null;

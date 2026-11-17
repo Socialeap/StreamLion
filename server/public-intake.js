@@ -608,6 +608,7 @@ async function submitResolvedForm(
       challengeHash = row.verification_required ? await hash(challenge) : null;
     if (row.verification_required) await requirePublicEmail(env, email);
     // Check revocation again at admission, after validation and asynchronous work.
+    if (embed) await readIntakeEmbed(env, embed.id);
     const embedConstraint = embed
       ? `AND EXISTS(SELECT 1 FROM streamlion_intake_embeds_v1 e ${embedProfileJoin} WHERE e.id=? AND e.form_id=f.id)`
       : "";
