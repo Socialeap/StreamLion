@@ -71,7 +71,13 @@ function fixture(t) {
     run: async () => ({
       meta: { changes: sql.prepare(q).run(...args).changes },
     }),
-    sync: () => ({ meta: { changes: sql.prepare(q).run(...args).changes } }),
+    sync: () => {
+      if (/\bRETURNING\b/i.test(q)) {
+        const results = sql.prepare(q).all(...args);
+        return { results, meta: { changes: results.length } };
+      }
+      return { meta: { changes: sql.prepare(q).run(...args).changes } };
+    },
   });
   const db = {
     prepare: wrap,
@@ -5380,21 +5386,38 @@ test("separate coordination window requires the matching active workspace and cl
   await check({ ...f.env, STREAMLION_CHECKOUT_MODE: "open" }, false);
 });
 
+const embedOwnerId = "a7310000-0000-4000-8000-000000000010";
+const embedProfileId = "a7310000-0000-4000-8000-000000000011";
+const embedSlug = "synthetic-studio";
+
+function mockEmbedPublication(t, publications) {
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url, "https://www.frontiers3d.com/api/public/intake-embed-publication");
+    assert.equal(options.cache, "no-store");
+    const { profileId, slug, tokenHash } = JSON.parse(options.body);
+    const published = publications.get(slug);
+    return new Response(null, {
+      status: published?.profileId === profileId && published?.tokenHash === tokenHash ? 204 : 404,
+    });
+  });
+}
+
 async function intakeEmbedFixture(t, needsEmail = false) {
   const f = await publicFixture(t, needsEmail);
-  const profile = { businessProfile: { id: "f3d-business" } };
+  const profile = { businessProfile: { id: embedProfileId } };
   f.env.ENABLE_INTAKE_EMBEDS = "true";
-  f.env.INTAKE_EMBED_PILOT_SUBJECTS = "a";
+  f.env.ENABLE_F3D_PROFILE_BRIDGE = "true";
+  const bridge = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+  f.env.F3D_PROVIDER_PROFILE_PUBLIC_JWK = JSON.stringify(await crypto.subtle.exportKey("jwk", bridge.publicKey));
+  const publications = new Map([[embedSlug, { profileId: embedProfileId, tokenHash: await hash(f.token) }]]);
+  mockEmbedPublication(t, publications);
+
   function link() {
     f.sql.prepare(
-      "INSERT INTO streamlion_f3d_profile_v1(mode, google_subject, f3d_account_id, snapshot, verified_at) VALUES('test','a','f3d-owner',?,?)",
-    ).run(JSON.stringify(profile), Date.now());
+      "INSERT INTO streamlion_f3d_profile_v1(mode, google_subject, f3d_account_id, snapshot, verified_at) VALUES('test','a',?,?,?)",
+    ).run(embedOwnerId, JSON.stringify(profile), Date.now());
   }
   link();
-  const auth = randomProspectToken();
-  f.sql.prepare(
-    "INSERT INTO streamlion_google_sessions_v1(session_hash,google_subject,email,credentials,expires_at,workbook_id,folder_id) VALUES(?,'a','a@example.com','encrypted',?,'book-a','folder-a')",
-  ).run(await hash(auth), Date.now() + 60000);
   const request = (route, data, headers = {}) => handleCoordination({
     env: f.env,
     params: { path: route },
@@ -5404,11 +5427,30 @@ async function intakeEmbedFixture(t, needsEmail = false) {
       body: JSON.stringify(data),
     }),
   });
-  const update = (data) => request("provider/form-embed", { formId: f.form.id, ...data }, {
-    Cookie: "__Host-streamlion-session=" + auth,
-    "X-StreamLion-Account": "a",
-  });
-  return { ...f, link, request, update };
+  const { onRequest } = await import("./f3d-intake-embed.js");
+  const update = async (data, { unsigned = false, timestamp = String(Date.now()), tampered = false } = {}) => {
+    const { enabled, ...input } = data;
+    const body = JSON.stringify({
+      accountId: embedOwnerId, profileId: embedProfileId, slug: embedSlug, token: f.token,
+      action: enabled === false ? "disable" : "save", commandId: crypto.randomUUID(), ...input,
+    });
+    const signed = new TextEncoder().encode("f3d.intake-embed.v1\n" + timestamp + "\n" + body);
+    const signature = await crypto.subtle.sign("Ed25519", bridge.privateKey, signed);
+    const origin = "https://streamlion.transcendencemedia.com";
+    return onRequest({
+      env: { ...f.env, GOOGLE_AUTH_ORIGIN: origin },
+      request: new Request(origin + "/api/f3d-intake-embed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-F3D-Embed-Timestamp": timestamp,
+          ...(!unsigned && { "X-F3D-Embed-Signature": Buffer.from(signature).toString("base64url") }),
+        },
+        body: tampered ? body + " " : body,
+      }),
+    });
+  };
+  return { ...f, link, request, update, publications };
 }
 
 test("intake embeds have their own public ID and are revoked on unlink", async (t) => {
@@ -5431,11 +5473,41 @@ test("intake embeds have their own public ID and are revoked on unlink", async (
   assert.equal((await f.request("public/open", { token: f.token })).status, 200);
 });
 
-test("intake embed management requires a recent profile verification and safe website origins", async (t) => {
+test("intake embed management requires a signed F|3D command, exact ownership, and safe website origins", async (t) => {
   const f = await intakeEmbedFixture(t);
-  assert.equal((await f.update({ enabled: true, origins: ["https://studio.example/path"] })).status, 400);
-  f.sql.exec("UPDATE streamlion_f3d_profile_v1 SET verified_at=1");
-  assert.equal((await f.update({ enabled: true, origins: ["https://studio.example"] })).status, 409);
+  const valid = { enabled: true, origins: ["https://studio.example"] };
+  assert.equal((await f.update({ ...valid, origins: ["https://studio.example/path"] })).status, 400);
+  assert.equal((await f.update(valid, { unsigned: true })).status, 404);
+  assert.equal((await f.update(valid, { tampered: true })).status, 404);
+  assert.equal((await f.update(valid, { timestamp: String(Date.now() - 31_000) })).status, 404);
+  assert.equal((await f.update({ ...valid, accountId: embedProfileId })).status, 404);
+  assert.equal((await f.update({ ...valid, slug: "different-studio" })).status, 404);
+  assert.notEqual((await f.request("provider/form-embed", { formId: f.form.id, ...valid })).status, 200);
+  const initial = await f.update({ action: "read" });
+  assert.deepEqual(await initial.json(), { embed: null });
+  const saved = await f.update(valid);
+  assert.equal(saved.status, 200, await saved.clone().text());
+  assert.deepEqual(await (await f.update({ action: "read" })).json(), await saved.json());
+  const oneTime = { ...valid, commandId: crypto.randomUUID() };
+  assert.equal((await f.update(oneTime)).status, 200);
+  const fastTimestamp = Date.now() + 40_000;
+  const fastClock = t.mock.method(Date, "now", () => fastTimestamp);
+  try {
+    assert.equal((await f.update({ enabled: false })).status, 200);
+  } finally {
+    fastClock.mock.restore();
+  }
+  // A fast Worker must not prune a command ID that D1 still considers live.
+  assert.equal((await f.update(oneTime)).status, 404);
+  assert.deepEqual(await (await f.update({ action: "read" })).json(), { embed: null });
+  const expiredTimestamp = String(Date.now() - 40_000);
+  const clock = t.mock.method(Date, "now", () => Number(expiredTimestamp));
+  try {
+    // A stale JavaScript clock must not let D1 admit an expired command.
+    assert.equal((await f.update(valid, { timestamp: expiredTimestamp })).status, 404);
+  } finally {
+    clock.mock.restore();
+  }
 });
 
 test("embed intake keeps the normal submission receipt, deduplication and provider routing", async (t) => {
@@ -5490,6 +5562,47 @@ test("website intake shares email confirmation and cannot start with the feature
   assert.equal((await f.request("public/open", { token })).status, 200);
 });
 
+test("unpublishing a linked F|3D profile disables embed HTML, open and already-open submissions", async (t) => {
+  const f = await intakeEmbedFixture(t);
+  const settings = { enabled: true, origins: ["https://studio.example", "https://www.frontiers3d.com"] };
+  const { onRequest } = await import("./intake-embed/[id].js");
+  const { approvedProfileEmbedId } = await import("../../server/intake-embeds.js");
+  const publication = f.publications.get(embedSlug);
+  const saved = await f.update(settings);
+  assert.equal(saved.status, 200, await saved.clone().text());
+  const { embed } = await saved.json();
+  f.env.ASSETS = { fetch: async () => new Response("<!doctype html><div id='root'></div>", {
+    headers: { "Content-Type": "text/html" },
+  }) };
+  const load = () => onRequest({
+    request: new Request("https://app.example/api/intake-embed/" + embed.id),
+    env: f.env, params: { id: embed.id },
+  });
+  assert.equal((await load()).status, 200);
+  assert.equal((await f.request("public/embed/open", { embedId: embed.id })).status, 200);
+  assert.equal(await approvedProfileEmbedId(f.env, f.form.id, "https://www.frontiers3d.com"), embed.id);
+  const removed = f.publications.delete(embedSlug);
+  assert.equal(removed, true);
+  assert.equal((await load()).status, 404);
+  assert.equal((await f.request("public/embed/open", { embedId: embed.id })).status, 404);
+  const { token, ...submission } = publicBody(f, "stale-open-form");
+  assert.equal((await f.request("public/embed/submit", { ...submission, embedId: embed.id })).status, 404);
+  assert.equal(f.google.heads.size, 0);
+  assert.equal((await f.update(settings)).status, 404);
+  assert.equal((await f.request("public/open", { token })).status, 200);
+
+  f.publications.set(embedSlug, { ...publication, tokenHash: await hash("different-form") });
+  assert.equal((await load()).status, 404);
+  f.publications.set(embedSlug, { ...publication, profileId: embedOwnerId });
+  assert.equal((await load()).status, 404);
+  f.publications.set(embedSlug, publication);
+  assert.equal((await load()).status, 200);
+  f.env.ENABLE_INTAKE_EMBEDS = "false";
+  assert.equal((await load()).status, 404);
+  assert.equal(await approvedProfileEmbedId(f.env, f.form.id, "https://www.frontiers3d.com"), null);
+  assert.equal((await f.request("public/open", { token })).status, 200);
+});
+
 test("intake embed migration stops on partially added or altered framing schema", async (t) => {
   const { sql } = fixture(t);
   const { intakeEmbedsPreflight } = await import("../../scripts/preflight-intake-embeds.mjs");
@@ -5500,8 +5613,12 @@ test("intake embed migration stops on partially added or altered framing schema"
     schema: schema.filter((row) => row.name !== "streamlion_intake_embeds_unlink_v1"),
     stamps,
   }), /Missing or altered intake embed schema/);
+  assert.throws(() => intakeEmbedsPreflight({
+    schema: schema.filter((row) => row.name !== "streamlion_f3d_embed_commands_v1"),
+    stamps,
+  }), /Missing or altered intake embed schema/);
   assert.equal(intakeEmbedsPreflight({
-    schema: schema.filter((row) => !row.name.startsWith("streamlion_intake_embed")),
+    schema: schema.filter((row) => !row.name.startsWith("streamlion_intake_embed") && !row.name.startsWith("streamlion_f3d_embed_command")),
     stamps: {},
   }).migration, "pending");
 });
@@ -5558,12 +5675,16 @@ test("F|3D storefront reads only the linked, active reusable form's public price
   assert.equal((await call({ profileId: profileId.replace(/11$/, "12") })).status, 404);
   assert.equal((await call({ token: "X".repeat(43) })).status, 404);
 
-  const { saveIntakeEmbed } = await import("../../server/intake-embeds.js");
+  const { manageIntakeEmbed } = await import("../../server/intake-embeds.js");
+  const { publicForm } = await import("../../server/public-intake.js");
   f.env.ENABLE_INTAKE_EMBEDS = "true";
-  f.env.INTAKE_EMBED_PILOT_SUBJECTS = "a";
-  await saveIntakeEmbed(f.env, f.connection, { formId: f.form.id, enabled: true, origins: ["https://another.example.test"] });
+  mockEmbedPublication(t, new Map([[embedSlug, { profileId, tokenHash: await hash(f.token) }]]));
+  const linked = f.sql.prepare("SELECT f3d_account_id FROM streamlion_f3d_profile_v1").get();
+  const form = await publicForm(f.env, f.token);
+  const settings = { accountId: linked.f3d_account_id, profileId, slug: embedSlug, action: "save" };
+  await manageIntakeEmbed(f.env, form, { ...settings, commandId: crypto.randomUUID(), origins: ["https://another.example.test"] }, { expiresAt: Date.now() + 30_000 });
   assert.equal((await (await call()).json()).embedId, null);
-  const { embed } = await saveIntakeEmbed(f.env, f.connection, { formId: f.form.id, enabled: true, origins: [PROFILE_ISSUER] });
+  const { embed } = await manageIntakeEmbed(f.env, form, { ...settings, commandId: crypto.randomUUID(), origins: [PROFILE_ISSUER] }, { expiresAt: Date.now() + 30_000 });
   assert.equal((await (await call()).json()).embedId, embed.id);
   f.env.ENABLE_INTAKE_EMBEDS = "false";
   assert.equal((await (await call()).json()).embedId, null);
