@@ -5490,7 +5490,14 @@ test("intake embed management requires a signed F|3D command, exact ownership, a
   assert.deepEqual(await (await f.update({ action: "read" })).json(), await saved.json());
   const oneTime = { ...valid, commandId: crypto.randomUUID() };
   assert.equal((await f.update(oneTime)).status, 200);
-  assert.equal((await f.update({ enabled: false })).status, 200);
+  const fastTimestamp = Date.now() + 40_000;
+  const fastClock = t.mock.method(Date, "now", () => fastTimestamp);
+  try {
+    assert.equal((await f.update({ enabled: false })).status, 200);
+  } finally {
+    fastClock.mock.restore();
+  }
+  // A fast Worker must not prune a command ID that D1 still considers live.
   assert.equal((await f.update(oneTime)).status, 404);
   assert.deepEqual(await (await f.update({ action: "read" })).json(), { embed: null });
   const expiredTimestamp = String(Date.now() - 40_000);

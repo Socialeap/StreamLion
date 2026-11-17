@@ -107,13 +107,14 @@ export async function manageIntakeEmbed(env, { row: form, connection }, input, a
   }
   const now = Date.now();
   if (authorization.expiresAt <= now) throw embedUnavailable();
+  const databaseTime = "(julianday('now') - 2440587.5) * 86400000";
   const consume = [
-    db.prepare("DELETE FROM streamlion_f3d_embed_commands_v1 WHERE expires_at<=?").bind(now),
+    db.prepare(`DELETE FROM streamlion_f3d_embed_commands_v1 WHERE expires_at <= ${databaseTime}`),
     // A request can wait between JavaScript and D1. Reject an expired command
     // inside the same transaction that claims its ID and changes the embed.
     db.prepare(
       `INSERT INTO streamlion_f3d_embed_commands_v1(id,expires_at)
-       VALUES(CASE WHEN (julianday('now') - 2440587.5) * 86400000 < ? THEN ? END, ?)`,
+       VALUES(CASE WHEN ${databaseTime} < ? THEN ? END, ?)`,
     ).bind(authorization.expiresAt, input.commandId, authorization.expiresAt),
   ];
   if (action === "disable") {
